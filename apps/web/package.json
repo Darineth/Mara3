@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mara/client-core": "workspace:*",
+    "@mara/plugin-api": "workspace:*",
     "@mara/protocol": "workspace:*",
     "@mara/ui": "workspace:*",
     "svelte": "^5.15.0"

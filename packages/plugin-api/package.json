@@ -1,5 +1,5 @@
 {
-  "name": "@mara/client-core",
+  "name": "@mara/plugin-api",
   "version": "3.0.0",
   "private": true,
   "type": "module",
@@ -16,18 +16,5 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@mara/plugin-api": "workspace:*",
-    "@mara/protocol": "workspace:*"
-  },
-  "peerDependencies": {
-    "svelte": "^5.0.0"
-  },
-  "devDependencies": {
-    "@mara/server": "workspace:*",
-    "@types/ws": "^8.5.13",
-    "svelte": "^5.15.0",
-    "ws": "^8.18.0"
   }
 }

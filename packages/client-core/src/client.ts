@@ -7,6 +7,7 @@ import {
   type Token,
   type UserInfo,
 } from '@mara/protocol';
+import type { TextPipeline } from '@mara/plugin-api';
 import { Emitter } from './events.js';
 import type {
   ChannelState,
@@ -58,6 +59,7 @@ export class MaraClient {
   /** Channel names we intend to be in (so we can rejoin after a reconnect). */
   private readonly intendedChannels = new Set<string>();
 
+  private readonly pipeline: TextPipeline | undefined;
   private readonly now: () => number;
   private readonly appVersion: number;
   private readonly autoReconnect: boolean;
@@ -74,6 +76,7 @@ export class MaraClient {
     this.channelMessages = { subscribe: this._channelMessages.subscribe };
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
 
+    this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
     this.appVersion = opts.appVersion ?? 1;
     this.autoReconnect = opts.autoReconnect ?? true;
@@ -118,11 +121,13 @@ export class MaraClient {
   }
 
   sendChat(channelToken: Token, text: string): void {
-    this.send({ type: 'chat', channelToken, text });
+    const out = this.pipeline ? this.pipeline.preprocessOutgoing(text, { channelToken }) : text;
+    this.send({ type: 'chat', channelToken, text: out });
   }
 
   sendEmote(channelToken: Token, text: string): void {
-    this.send({ type: 'emote', channelToken, text });
+    const out = this.pipeline ? this.pipeline.preprocessOutgoing(text, { channelToken }) : text;
+    this.send({ type: 'emote', channelToken, text: out });
   }
 
   sendAway(text: string): void {
@@ -229,7 +234,15 @@ export class MaraClient {
       this.events.emit('error', { code: 400, message: parsed.error.message });
       return;
     }
-    this.handle(parsed.data);
+    try {
+      this.handle(parsed.data);
+    } catch (err) {
+      // A handler bug (e.g. a misbehaving plugin) must not kill the socket.
+      this.events.emit('error', {
+        code: 500,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private handle(msg: ServerMessage): void {
@@ -339,31 +352,27 @@ export class MaraClient {
         this.events.emit('userLeftChannel', { token: msg.token, channelToken: msg.channelToken });
         return;
 
-      case 'chat':
+      case 'chat': {
+        const text = this.applyIncoming(msg.text, msg.channelToken, msg.from);
         this.pushLine(this._channelMessages, msg.channelToken, {
           kind: 'chat',
           from: msg.from,
-          text: msg.text,
+          text,
         });
-        this.events.emit('chat', {
-          from: msg.from,
-          channelToken: msg.channelToken,
-          text: msg.text,
-        });
+        this.events.emit('chat', { from: msg.from, channelToken: msg.channelToken, text });
         return;
+      }
 
-      case 'emote':
+      case 'emote': {
+        const text = this.applyIncoming(msg.text, msg.channelToken, msg.from);
         this.pushLine(this._channelMessages, msg.channelToken, {
           kind: 'emote',
           from: msg.from,
-          text: msg.text,
+          text,
         });
-        this.events.emit('emote', {
-          from: msg.from,
-          channelToken: msg.channelToken,
-          text: msg.text,
-        });
+        this.events.emit('emote', { from: msg.from, channelToken: msg.channelToken, text });
         return;
+      }
 
       case 'away': {
         const user = get(this._users).get(msg.token);
@@ -456,6 +465,13 @@ export class MaraClient {
 
   private nameOf(token: Token): string {
     return get(this._users).get(token)?.name ?? `#${token}`;
+  }
+
+  /** Run incoming text through the plugin pipeline (pre- then post-process). */
+  private applyIncoming(text: string, channelToken: Token, fromToken: Token): string {
+    if (!this.pipeline) return text;
+    const ctx = { channelToken, fromToken };
+    return this.pipeline.postprocessText(this.pipeline.preprocessText(text, ctx), ctx);
   }
 
   private ensureLog(store: Writable<Map<Token, ChatLine[]>>, key: Token): void {

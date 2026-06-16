@@ -1,4 +1,5 @@
 import type { Token, UserInfo, UserStyle } from '@mara/protocol';
+import type { TextPipeline } from '@mara/plugin-api';
 
 /** High-level connection lifecycle the UI binds to. */
 export type ConnectionState =
@@ -41,6 +42,8 @@ export interface ClientOptions {
   heartbeatIntervalMs?: number;
   /** Max retained lines per conversation. */
   historyLimit?: number;
+  /** Plugin pipeline applied to outgoing and incoming chat/emote text. */
+  plugins?: TextPipeline;
   now?: () => number;
 }
 

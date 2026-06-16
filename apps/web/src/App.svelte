@@ -1,7 +1,11 @@
 <script lang="ts">
   import { MaraClient } from '@mara/client-core';
+  import { createPipeline, shrugPlugin } from '@mara/plugin-api';
   import { loadSettings, saveSettings, type MaraSettings } from './lib/settings.js';
   import ChatApp from './ChatApp.svelte';
+
+  // Build-time plugin registry (CSP-safe for web/mobile). Add plugins here.
+  const plugins = createPipeline([shrugPlugin]);
 
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);
@@ -25,6 +29,7 @@
         },
         color: settings.color,
       },
+      plugins,
     });
     c.events.on('loginDenied', (d) => {
       error = d.updateRequired ? 'Client update required.' : d.reason;

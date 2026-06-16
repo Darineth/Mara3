@@ -67,6 +67,9 @@ importers:
       '@mara/client-core':
         specifier: workspace:*
         version: link:../../packages/client-core
+      '@mara/plugin-api':
+        specifier: workspace:*
+        version: link:../../packages/plugin-api
       '@mara/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -95,6 +98,9 @@ importers:
 
   packages/client-core:
     dependencies:
+      '@mara/plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
       '@mara/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -111,6 +117,8 @@ importers:
       ws:
         specifier: ^8.18.0
         version: 8.21.0
+
+  packages/plugin-api: {}
 
   packages/protocol:
     dependencies:
