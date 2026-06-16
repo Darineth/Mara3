@@ -1,0 +1,20 @@
+{
+  "name": "@mara/shell",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tauri 2 native shell (desktop + iOS/Android) wrapping the @mara/web build.",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "icons": "tauri icon src-tauri/icons/icon.png"
+  },
+  "dependencies": {
+    "@mara/web": "workspace:*",
+    "@tauri-apps/api": "^2.1.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

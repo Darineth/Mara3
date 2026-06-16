@@ -1,0 +1,25 @@
+[package]
+name = "mara-shell"
+version = "3.0.0"
+description = "Mara 3 — cross-platform chat"
+authors = ["Mara"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library target is required for Tauri 2 mobile (iOS/Android) support.
+[lib]
+name = "mara_shell_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Used by `tauri dev` / mobile tooling to enable custom-protocol asset loading.
+custom-protocol = ["tauri/custom-protocol"]
