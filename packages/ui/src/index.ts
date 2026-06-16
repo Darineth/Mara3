@@ -1,2 +1,4 @@
-// @mara/ui — shared Svelte components. Fleshed out in Phase 4.
-export { default as Hello } from './Hello.svelte';
+// @mara/ui — shared Svelte components for Mara clients.
+export { default as ChatView } from './ChatView.svelte';
+export { default as ChatInput } from './ChatInput.svelte';
+export { default as UserList } from './UserList.svelte';

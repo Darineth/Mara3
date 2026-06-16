@@ -1,6 +1,27 @@
-/* @mara/ui shared base styles. Expanded in Phase 4. */
+/* @mara/ui shared theme. Dark by default; mirrors Mara 2's dark chat aesthetic. */
 :root {
   --mara-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mara-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+
   --mara-bg: #1e1e1e;
+  --mara-bg-alt: #252526;
   --mara-fg: #e6e6e6;
+  --mara-border: #333;
+  --mara-hover: #2f2f2f;
+  --mara-input-bg: #2a2a2a;
+  --mara-accent: #3b82f6;
+  --mara-link: #5aa9ff;
+  --mara-danger: #e5534b;
+  --mara-ok: #3fb950;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --mara-bg: #ffffff;
+    --mara-bg-alt: #f3f3f3;
+    --mara-fg: #1a1a1a;
+    --mara-border: #ddd;
+    --mara-hover: #eee;
+    --mara-input-bg: #fafafa;
+  }
 }
