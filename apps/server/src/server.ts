@@ -32,11 +32,14 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       const address = wss.address();
       const port = typeof address === 'object' && address ? address.port : cfg.port;
       log.info({ host: cfg.host, port, name: cfg.serverName }, 'Mara 3 server listening');
+      let closed = false;
       resolve({
         hub,
         port,
         close: () =>
           new Promise<void>((res, rej) => {
+            if (closed) return res();
+            closed = true;
             for (const client of wss.clients) client.terminate();
             wss.close((err) => (err ? rej(err) : res()));
           }),

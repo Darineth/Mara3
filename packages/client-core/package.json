@@ -22,5 +22,11 @@
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@mara/server": "workspace:*",
+    "@types/ws": "^8.5.13",
+    "svelte": "^5.15.0",
+    "ws": "^8.18.0"
   }
 }
