@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@mara/web": "workspace:*",
-    "@tauri-apps/api": "^2.1.1"
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-updater": "^2.3.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0"

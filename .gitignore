@@ -13,6 +13,9 @@ build/
 apps/shell/src-tauri/target/
 apps/shell/src-tauri/gen/
 
+# Updater signing — keep the public key, never commit the private key
+apps/shell/.tauri/*.key
+
 # Test / coverage
 coverage/
 

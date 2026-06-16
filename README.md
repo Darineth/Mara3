@@ -44,12 +44,31 @@ pnpm dev          # run dev servers (web + server)
 
 ```bash
 pnpm --filter @mara/server dev    # ws server on :5050
-pnpm --filter @mara/web dev       # web client on :5173
+pnpm --filter @mara/web dev       # web client on :5173, open http://localhost:5173
 ```
+
+### Desktop app (Tauri 2 — needs the Rust toolchain)
+
+```bash
+pnpm --filter @mara/shell tauri:dev      # native window over the web UI
+pnpm --filter @mara/shell tauri:build    # installers in apps/shell/src-tauri/target
+```
+
+See `apps/shell/README.md` for desktop/mobile prerequisites and the signed updater.
 
 ## Status
 
-Built phase by phase per `../MIGRATION_PLAN.md`. See that file for the roadmap.
+All migration phases (0–7) are implemented — see `../MIGRATION_PLAN.md` for the
+roadmap and `PARITY.md` for the feature-by-feature Mara 2 → Mara 3 mapping.
+
+- **Verified:** protocol round-trips, server + client integration tests, the web
+  client in a browser (login → join → chat), and a Windows desktop build with a
+  signed auto-updater.
+- **Pending external toolchains:** macOS/Linux desktop builds and iOS/Android
+  (scaffolded; need those hosts/SDKs).
+
+Test suites (78 total): `@mara/protocol` (44), `@mara/server` (11),
+`@mara/client-core` (9), `@mara/chat-render` (9), `@mara/plugin-api` (5).
 
 ## License
 

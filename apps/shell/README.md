@@ -42,7 +42,27 @@ the full platform set with:
 pnpm --filter @mara/shell icons
 ```
 
-## Status — Spike A pending
+## Auto-update (replaces Mara 2's MaraUpdater)
+
+Desktop builds use the Tauri updater plugin with **signed** artifacts. The signing
+keypair was generated with `tauri signer generate`:
+
+- Public key lives in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`).
+- Private key is at `.tauri/mara-update.key` and is **git-ignored** — never commit it.
+
+To produce a signed release:
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(cat .tauri/mara-update.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""   # set if you chose a password
+pnpm --filter @mara/shell tauri:build
+```
+
+This emits installers plus `*.sig` files and a `latest.json` you host at the
+`plugins.updater.endpoints` URL (currently a placeholder). Mobile updates ship
+through the App Store / Play Store instead.
+
+## Status — Spike A pending (mobile)
 
 The migration plan's **Spike A** (prove a Tauri 2 app boots on a desktop window
 plus an iOS simulator and Android emulator) requires the Rust + mobile toolchains
