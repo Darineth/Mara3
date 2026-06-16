@@ -1,0 +1,33 @@
+{
+  "name": "@mara/ui",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "svelte": "./src/index.ts",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "build": "echo \"@mara/ui is consumed as source by Vite\"",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "lint": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@mara/chat-render": "workspace:*",
+    "@mara/client-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.15.0",
+    "svelte-check": "^4.1.1"
+  }
+}

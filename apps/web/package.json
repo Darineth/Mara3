@@ -1,0 +1,25 @@
+{
+  "name": "@mara/web",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "lint": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@mara/client-core": "workspace:*",
+    "@mara/protocol": "workspace:*",
+    "@mara/ui": "workspace:*",
+    "svelte": "^5.15.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^4.0.4",
+    "svelte-check": "^4.1.1",
+    "vite": "^5.4.11"
+  }
+}
