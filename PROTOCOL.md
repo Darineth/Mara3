@@ -1,8 +1,10 @@
 # Mara 3 Wire Protocol
 
-Transport: **WebSocket**, one **JSON text frame** per message. The schema lives in
-`@mara/protocol` (Zod) and is imported by both the server and every client, so a
-message shape changes in exactly one place and is validated identically on both ends.
+Transport: **WebSocket** at the `/ws` endpoint, one **JSON text frame** per message.
+The same Node server also serves the web client over HTTP on the same port, so the
+client connects to `ws(s)://<same-origin>/ws`. The schema lives in `@mara/protocol`
+(Zod) and is imported by both the server and every client, so a message shape changes
+in exactly one place and is validated identically on both ends.
 
 ## Frame shape
 

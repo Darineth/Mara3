@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import sirv from 'sirv';
 import { WebSocketServer } from 'ws';
 import { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
@@ -11,11 +13,53 @@ export interface MaraServer {
   close(): Promise<void>;
 }
 
-/** Start the WebSocket server and resolve once it is listening. */
+/**
+ * Start the unified server and resolve once it is listening. A single HTTP
+ * server hosts the built web client (and a `/health` check) while the WebSocket
+ * endpoint shares the same port on {@link ServerConfig.wsPath}.
+ */
 export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer> {
   return new Promise((resolve, reject) => {
     const hub = new Hub(cfg, log);
-    const wss = new WebSocketServer({ host: cfg.host, port: cfg.port });
+
+    const serveStatic = cfg.webRoot
+      ? sirv(cfg.webRoot, {
+          single: true,
+          dev: false,
+          setHeaders(res, pathname) {
+            // Content-hashed build assets are safe to cache forever; the HTML
+            // shell (and anything else) must always revalidate so a rebuild's
+            // renamed assets are picked up instead of a stale cached index.
+            if (pathname.includes('/assets/')) {
+              res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            } else {
+              res.setHeader('Cache-Control', 'no-cache');
+            }
+          },
+        })
+      : null;
+
+    const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+      if (req.url === '/health' || req.url === '/healthz') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
+        return;
+      }
+      if (serveStatic) {
+        serveStatic(req, res, () => {
+          res.writeHead(404, { 'content-type': 'text/plain' });
+          res.end('Not found');
+        });
+        return;
+      }
+      res.writeHead(503, { 'content-type': 'text/plain' });
+      res.end(
+        'Mara 3 server is running, but no web build was found.\nRun: pnpm --filter @mara/web build',
+      );
+    });
+
+    // Share the HTTP server; only upgrades on wsPath become WebSocket connections.
+    const wss = new WebSocketServer({ server: httpServer, path: cfg.wsPath });
     let counter = 0;
 
     wss.on('connection', (ws) => {
@@ -26,12 +70,21 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       ws.on('error', (err) => log.warn({ err, conn: conn.id }, 'socket error'));
     });
 
-    wss.on('error', reject);
+    httpServer.on('error', reject);
 
-    wss.on('listening', () => {
-      const address = wss.address();
+    httpServer.listen(cfg.port, cfg.host, () => {
+      const address = httpServer.address();
       const port = typeof address === 'object' && address ? address.port : cfg.port;
-      log.info({ host: cfg.host, port, name: cfg.serverName }, 'Mara 3 server listening');
+      log.info(
+        {
+          host: cfg.host,
+          port,
+          wsPath: cfg.wsPath,
+          web: cfg.webRoot ?? '(none)',
+          name: cfg.serverName,
+        },
+        'Mara 3 server listening',
+      );
       let closed = false;
       resolve({
         hub,
@@ -41,7 +94,8 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
             if (closed) return res();
             closed = true;
             for (const client of wss.clients) client.terminate();
-            wss.close((err) => (err ? rej(err) : res()));
+            wss.close();
+            httpServer.close((err) => (err ? rej(err) : res()));
           }),
       });
     });

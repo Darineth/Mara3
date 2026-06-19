@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "Tauri 2 native shell (desktop + iOS/Android) wrapping the @mara/web build.",
+  "description": "Thin Tauri 2 native shell that loads the Mara server's hosted web UI and exposes native client functions (e.g. local logging).",
   "scripts": {
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -11,7 +11,6 @@
     "icons": "tauri icon src-tauri/icons/icon.png"
   },
   "dependencies": {
-    "@mara/web": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-updater": "^2.3.0"
   },

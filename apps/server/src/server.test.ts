@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
@@ -8,13 +11,53 @@ let server: MaraServer;
 let url: string;
 
 beforeEach(async () => {
-  const cfg = { ...loadConfig(), host: '127.0.0.1', port: 0, motd: 'hello world' };
+  const cfg = {
+    ...loadConfig(),
+    host: '127.0.0.1',
+    port: 0,
+    motd: 'hello world',
+    defaultChannel: '',
+  };
   server = await startServer(cfg, createLogger('silent'));
-  url = `ws://127.0.0.1:${server.port}`;
+  url = `ws://127.0.0.1:${server.port}/ws`;
 });
 
 afterEach(async () => {
   await server.close();
+});
+
+describe('http', () => {
+  it('answers the health check on the shared port', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+  });
+
+  it('serves a clear message when no web build is present', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/`);
+    // 503 (no build) in CI/test, or 200 if a web build happens to exist locally.
+    expect([200, 503]).toContain(res.status);
+  });
+
+  it('never caches the HTML shell but caches hashed assets immutably', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mara-web-'));
+    writeFileSync(join(root, 'index.html'), '<!doctype html><title>mara</title>');
+    mkdirSync(join(root, 'assets'));
+    writeFileSync(join(root, 'assets', 'app.abcd1234.js'), 'export default 1;');
+
+    const s = await startServer(
+      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '', webRoot: root },
+      createLogger('silent'),
+    );
+    try {
+      const html = await fetch(`http://127.0.0.1:${s.port}/`);
+      expect(html.headers.get('cache-control')).toBe('no-cache');
+      const asset = await fetch(`http://127.0.0.1:${s.port}/assets/app.abcd1234.js`);
+      expect(asset.headers.get('cache-control')).toContain('immutable');
+    } finally {
+      await s.close();
+    }
+  });
 });
 
 describe('handshake', () => {
@@ -57,6 +100,25 @@ describe('handshake', () => {
     const err = await client.waitFor('error');
     expect(err.code).toBe(401);
     client.close();
+  });
+});
+
+describe('default channel', () => {
+  it('auto-joins every user to the configured default channel on login', async () => {
+    const s2 = await startServer(
+      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: 'Main' },
+      createLogger('silent'),
+    );
+    try {
+      const client = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      await login(client, 'alice');
+      const joined = await client.waitFor('channelJoined');
+      expect(joined.channel).toBe('Main');
+      expect(joined.users.map((u) => u.name)).toContain('alice');
+      client.close();
+    } finally {
+      await s2.close();
+    }
   });
 });
 

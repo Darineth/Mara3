@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mara 3</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        background: #1e1e1e;
+        color: #aaa;
+        font-family: system-ui, sans-serif;
+      }
+      .box {
+        text-align: center;
+      }
+      .title {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #e6e6e6;
+        margin-bottom: 0.5rem;
+      }
+      #status {
+        font-size: 0.9rem;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="title">Mara 3</div>
+      <div id="status">Connecting…</div>
+    </div>
+    <script>
+      // Retry loading the hosted UI until the server is reachable, then ask the
+      // native shell to navigate there (Rust-initiated navigation loads remote).
+      const url = (window.__MARA_URL__ || 'http://localhost:5050').replace(/\/+$/, '');
+      const statusEl = document.getElementById('status');
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      let attempt = 0;
+
+      async function tryConnect() {
+        attempt += 1;
+        statusEl.textContent = `Connecting to ${url} … (attempt ${attempt})`;
+        try {
+          // Network-level reachability probe (opaque response; CORS-agnostic).
+          await fetch(`${url}/health`, { mode: 'no-cors', cache: 'no-store' });
+          statusEl.textContent = 'Connected. Loading…';
+          if (invoke) await invoke('open_app');
+          else window.location.replace(url);
+        } catch {
+          setTimeout(tryConnect, 1500);
+        }
+      }
+
+      tryConnect();
+    </script>
+  </body>
+</html>

@@ -15,10 +15,10 @@ let url: string;
 
 beforeEach(async () => {
   server = await startServer(
-    { ...loadConfig(), host: '127.0.0.1', port: 0 },
+    { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '' },
     createLogger('silent'),
   );
-  url = `ws://127.0.0.1:${server.port}`;
+  url = `ws://127.0.0.1:${server.port}/ws`;
 });
 
 afterEach(async () => {
@@ -120,6 +120,71 @@ describe('channels + chat', () => {
   });
 });
 
+describe('presence system messages', () => {
+  it('logs a system line when a user leaves a channel', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    await connected(b);
+    a.joinChannel('lobby');
+    const aJoin = await waitEvent(a, 'channelJoined');
+    b.joinChannel('lobby');
+    const bJoin = await waitEvent(b, 'channelJoined');
+
+    const left = waitEvent(b, 'userLeftChannel');
+    a.leaveChannel(aJoin.token);
+    await left;
+
+    const lines = get(b.channelMessages).get(bJoin.token) ?? [];
+    expect(lines.some((l) => l.kind === 'system' && l.text.includes('alice left'))).toBe(true);
+
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('keeps a disconnected user in the directory so names survive', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    const sawBob = waitEvent(a, 'userConnect');
+    await connected(b);
+    const bob = await sawBob;
+
+    expect(get(a.users).get(bob.token)?.name).toBe('bob');
+    expect(get(a.directory).get(bob.token)?.name).toBe('bob');
+
+    const gone = waitEvent(a, 'userDisconnect');
+    b.disconnect();
+    await gone;
+
+    expect(get(a.users).has(bob.token)).toBe(false); // no longer online
+    expect(get(a.directory).get(bob.token)?.name).toBe('bob'); // name retained
+    a.disconnect();
+  });
+
+  it('logs a system line in the channel when a user disconnects', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    await connected(b);
+    a.joinChannel('lobby');
+    await waitEvent(a, 'channelJoined');
+    b.joinChannel('lobby');
+    const bJoin = await waitEvent(b, 'channelJoined'); // roster includes alice
+
+    const gone = waitEvent(b, 'userDisconnect');
+    a.disconnect();
+    await gone;
+
+    const lines = get(b.channelMessages).get(bJoin.token) ?? [];
+    expect(lines.some((l) => l.kind === 'system' && l.text.includes('alice disconnected'))).toBe(
+      true,
+    );
+
+    b.disconnect();
+  });
+});
+
 describe('private messages + ping', () => {
   it('records both sides of a private message', async () => {
     const a = makeClient('alice');
@@ -169,6 +234,33 @@ describe('reconnect', () => {
       status = await waitEvent(client, 'statusChanged');
     }
     expect(status).toBe('reconnecting');
+    client.disconnect();
+  });
+
+  it('replaces a channel instead of duplicating it when its token changes on reconnect', async () => {
+    const client = makeClient('alice', { autoReconnect: true, reconnectBaseDelayMs: 50 });
+    await connected(client);
+
+    const firstJoin = waitEvent(client, 'channelJoined');
+    client.joinChannel('Main');
+    const first = await firstJoin;
+
+    // Restart the server on the same port so 'Main' is allocated a fresh token.
+    const port = server.port;
+    await server.close();
+    server = await startServer(
+      { ...loadConfig(), host: '127.0.0.1', port, defaultChannel: '' },
+      createLogger('silent'),
+    );
+
+    // The client reconnects, re-logs in, and rejoins 'Main' under a new token.
+    const second = await waitEvent(client, 'channelJoined');
+    expect(second.token).not.toBe(first.token);
+
+    const mains = [...get(client.channels).values()].filter((c) => c.name === 'Main');
+    expect(mains).toHaveLength(1);
+    expect(mains[0]?.token).toBe(second.token);
+
     client.disconnect();
   });
 });

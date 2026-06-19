@@ -134,6 +134,9 @@ export class Hub {
 
     conn.send({ type: 'loginAccepted', token, name, resumeToken, motd: this.cfg.motd });
     this.broadcastAll({ type: 'userConnect', user: info, reconnect: false }, token);
+
+    // Drop everyone into the shared default channel automatically.
+    if (this.cfg.defaultChannel) this.joinChannelByName(session, this.cfg.defaultChannel);
   }
 
   // -- channel + chat -------------------------------------------------------
@@ -142,7 +145,12 @@ export class Hub {
     session: Session,
     msg: Extract<ClientMessage, { type: 'joinChannel' }>,
   ): void {
-    const channel = this.state.getOrCreateChannel(msg.channel);
+    this.joinChannelByName(session, msg.channel);
+  }
+
+  private joinChannelByName(session: Session, name: string): void {
+    const channel = this.state.getOrCreateChannel(name);
+    const alreadyMember = session.channels.has(channel.token);
     channel.members.add(session.info.token);
     session.channels.add(channel.token);
 
@@ -157,11 +165,14 @@ export class Hub {
       channel: channel.name,
       users,
     });
-    this.broadcastChannel(
-      channel.token,
-      { type: 'userJoinedChannel', token: session.info.token, channelToken: channel.token },
-      session.info.token,
-    );
+    // Only announce a genuinely new membership (idempotent on rejoin/resume).
+    if (!alreadyMember) {
+      this.broadcastChannel(
+        channel.token,
+        { type: 'userJoinedChannel', token: session.info.token, channelToken: channel.token },
+        session.info.token,
+      );
+    }
   }
 
   private handleLeaveChannel(

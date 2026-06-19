@@ -11,6 +11,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "start": "pnpm --filter @mara/web build && pnpm --filter @mara/server serve",
+    "package": "node scripts/package.mjs",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

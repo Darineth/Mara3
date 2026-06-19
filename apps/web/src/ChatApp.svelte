@@ -1,26 +1,68 @@
 <script lang="ts">
   import { ChatView, ChatInput, UserList } from '@mara/ui';
-  import type { ChannelState, MaraClient, Token, UserInfo } from '@mara/client-core';
+  import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
+  import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
+  import { isDesktop, nativeLog } from './lib/native.js';
+  import type { MaraSettings } from './lib/settings.js';
+  import MacrosDialog from './MacrosDialog.svelte';
 
   let {
     client,
-    showTimestamps = true,
+    settings,
     onDisconnect,
+    persist,
   }: {
     client: MaraClient;
-    showTimestamps?: boolean;
+    settings: MaraSettings;
     onDisconnect: () => void;
+    persist: () => void;
   } = $props();
+
+  let showMacros = $state(false);
+  let menuOpen = $state(false);
+  let showUsers = $state(true);
+  let menuEl = $state<HTMLElement | null>(null);
+  let joinOpen = $state(false);
+  let joinEl = $state<HTMLElement | null>(null);
+  let joinInput = $state<HTMLInputElement | null>(null);
 
   // The parent remounts ChatApp when `client` changes (keyed by {#if client}),
   // so capturing the (stable) stores once is correct.
   // svelte-ignore state_referenced_locally
-  const { connection, self, users, channels, channelMessages, privateMessages } = client;
+  const { connection, self, users, directory, channels, channelMessages, privateMessages } = client;
 
   // Active view: either a channel token or a private-message peer token.
   let activeChannel = $state<Token | null>(null);
   let activePm = $state<Token | null>(null);
   let joinName = $state('');
+  // Conversations with unread messages (reassigned, not mutated, for reactivity).
+  let unreadChannels = $state(new Set<Token>());
+  let unreadPms = $state(new Set<Token>());
+
+  function markChannelUnread(token: Token) {
+    if (activeChannel === token && activePm === null) return; // already looking at it
+    if (!unreadChannels.has(token)) unreadChannels = new Set(unreadChannels).add(token);
+  }
+  function markPmUnread(token: Token) {
+    if (activePm === token) return;
+    if (!unreadPms.has(token)) unreadPms = new Set(unreadPms).add(token);
+  }
+  function clearUnread(set: Set<Token>, token: Token): Set<Token> {
+    if (!set.has(token)) return set;
+    const next = new Set(set);
+    next.delete(token);
+    return next;
+  }
+
+  // Connection drop/recover notices, shown inline in every conversation.
+  let connectionLines = $state<ChatLine[]>([]);
+  let sysSeq = 0;
+  const noticeState: NoticeState = { dropAnnounced: false };
+
+  function pushSystem(text: string) {
+    const line: ChatLine = { id: --sysSeq, kind: 'system', from: null, text, at: Date.now() };
+    connectionLines = [...connectionLines, line].slice(-50);
+  }
 
   $effect(() => {
     const offs = [
@@ -29,17 +71,76 @@
         activePm = null;
       }),
       client.events.on('channelLeft', (ev) => {
-        if (activeChannel === ev.channelToken) activeChannel = null;
+        if (activeChannel === ev.channelToken) {
+          // Fall back to another channel we're still in, rather than an empty view.
+          activeChannel = [...$channels.keys()].find((t) => t !== ev.channelToken) ?? null;
+        }
       }),
       client.events.on('privateMessage', (pm) => {
         if (activePm === null && activeChannel === null) activePm = pm.from;
+        markPmUnread(pm.from);
+      }),
+      client.events.on('chat', (m) => markChannelUnread(m.channelToken)),
+      client.events.on('emote', (m) => markChannelUnread(m.channelToken)),
+      client.events.on('statusChanged', (status) => {
+        const notice = connectionNotice(status, noticeState);
+        if (notice) pushSystem(notice);
       }),
     ];
     return () => offs.forEach((off) => off());
   });
 
+  // Desktop shell only: mirror connection + chat activity to the local log file.
+  $effect(() => {
+    if (!isDesktop()) return;
+    const offs = [
+      client.events.on('connected', (i) => void nativeLog(`connected as ${i.name}`)),
+      client.events.on('statusChanged', (s) => void nativeLog(`status: ${s}`)),
+      client.events.on(
+        'chat',
+        (m) => void nativeLog(`#${m.channelToken} <${nameOf(m.from)}> ${m.text}`),
+      ),
+      client.events.on(
+        'privateMessage',
+        (m) => void nativeLog(`[pm] <${nameOf(m.from)}> ${m.text}`),
+      ),
+    ];
+    return () => offs.forEach((off) => off());
+  });
+
+  // Close the menu on any click outside it.
+  $effect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuEl && !menuEl.contains(e.target as Node)) menuOpen = false;
+    };
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
+  });
+
+  // Join-channel popover: focus its input, close on outside click.
+  $effect(() => {
+    if (!joinOpen) return;
+    joinInput?.focus();
+    const onDoc = (e: MouseEvent) => {
+      if (joinEl && !joinEl.contains(e.target as Node)) joinOpen = false;
+    };
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
+  });
+
   const channelList = $derived([...$channels.values()] as ChannelState[]);
   const pmPeers = $derived([...$privateMessages.keys()] as Token[]);
+  // Channels are a light-touch feature: only show the switcher when there's more
+  // than one conversation (e.g. you've joined another channel or opened a DM).
+  const showTabs = $derived(channelList.length + pmPeers.length > 1);
+  const title = $derived(
+    activePm !== null
+      ? `@${nameOf(activePm)}`
+      : activeChannel !== null
+        ? `#${$channels.get(activeChannel)?.name ?? ''}`
+        : 'Mara 3',
+  );
 
   function membersOf(token: Token): UserInfo[] {
     const channel = $channels.get(token);
@@ -50,17 +151,25 @@
   }
 
   function nameOf(token: Token): string {
-    return $users.get(token)?.name ?? `#${token}`;
+    // Directory keeps names of people who have since left, so labels don't
+    // degrade to a raw token when someone disconnects.
+    return $directory.get(token)?.name ?? `#${token}`;
   }
 
   function openChannel(token: Token) {
     activeChannel = token;
     activePm = null;
+    unreadChannels = clearUnread(unreadChannels, token);
+  }
+
+  function selectPm(token: Token) {
+    activePm = token;
+    activeChannel = null;
+    unreadPms = clearUnread(unreadPms, token);
   }
 
   function openPm(user: UserInfo) {
-    activePm = user.token;
-    activeChannel = null;
+    selectPm(user.token);
   }
 
   function join() {
@@ -68,10 +177,12 @@
     if (!name) return;
     client.joinChannel(name);
     joinName = '';
+    joinOpen = false;
   }
 
   function leaveActive() {
     if (activeChannel !== null) client.leaveChannel(activeChannel);
+    menuOpen = false;
   }
 
   function handleSend(text: string) {
@@ -86,83 +197,125 @@
     else client.sendChat(activeChannel, text);
   }
 
-  const activeLines = $derived(
+  const baseLines = $derived(
     activePm !== null
       ? ($privateMessages.get(activePm) ?? [])
       : activeChannel !== null
         ? ($channelMessages.get(activeChannel) ?? [])
         : [],
   );
+
+  // Interleave connection notices with the conversation, in time order.
+  const activeLines = $derived(
+    connectionLines.length === 0
+      ? baseLines
+      : [...baseLines, ...connectionLines].sort((a, b) => a.at - b.at || a.id - b.id),
+  );
 </script>
 
 <div class="app">
-  <aside class="sidebar">
-    <div class="brand">Mara 3</div>
-
-    <div class="section-title">Channels</div>
-    <ul class="nav">
-      {#each channelList as channel (channel.token)}
-        <li>
-          <button
-            class:active={activeChannel === channel.token}
-            onclick={() => openChannel(channel.token)}
-          >
-            #{channel.name}
-          </button>
-        </li>
-      {/each}
-    </ul>
-    <form class="join" onsubmit={(e) => (e.preventDefault(), join())}>
-      <input bind:value={joinName} placeholder="join channel…" />
-      <button type="submit">+</button>
-    </form>
-
-    {#if pmPeers.length > 0}
-      <div class="section-title">Messages</div>
-      <ul class="nav">
-        {#each pmPeers as peer (peer)}
-          <li>
-            <button class:active={activePm === peer} onclick={() => (activePm = peer)}
-              >@{nameOf(peer)}</button
+  <header class="topbar">
+    <div class="convos">
+      {#if showTabs}
+        <nav class="tabs">
+          {#each channelList as channel (channel.token)}
+            <button
+              class:active={activePm === null && activeChannel === channel.token}
+              class:unread={unreadChannels.has(channel.token)}
+              onclick={() => openChannel(channel.token)}
             >
-          </li>
-        {/each}
-      </ul>
-    {/if}
+              #{channel.name}
+            </button>
+          {/each}
+          {#if channelList.length > 0 && pmPeers.length > 0}
+            <span class="tabsep" aria-hidden="true"></span>
+          {/if}
+          {#each pmPeers as peer (peer)}
+            <button
+              class="pm"
+              class:active={activeChannel === null && activePm === peer}
+              class:unread={unreadPms.has(peer)}
+              onclick={() => selectPm(peer)}>@{nameOf(peer)}</button
+            >
+          {/each}
+        </nav>
+      {:else}
+        <div class="title">{title}</div>
+      {/if}
 
-    <div class="spacer"></div>
-    <div class="status" data-state={$connection}>
-      <span class="dot"></span>
-      {$connection}{#if $self}
-        · {$self.name}{/if}
+      <div class="join-wrap" bind:this={joinEl}>
+        <button
+          class="addbtn"
+          aria-label="Join a channel"
+          aria-expanded={joinOpen}
+          onclick={() => (joinOpen = !joinOpen)}>+</button
+        >
+        {#if joinOpen}
+          <form class="join-pop" onsubmit={(e) => (e.preventDefault(), join())}>
+            <input
+              bind:this={joinInput}
+              bind:value={joinName}
+              placeholder="channel name"
+              aria-label="Channel name"
+              onkeydown={(e) => {
+                if (e.key === 'Escape') joinOpen = false;
+              }}
+            />
+            <button type="submit">Join</button>
+          </form>
+        {/if}
+      </div>
     </div>
-    <button class="disconnect" onclick={onDisconnect}>Disconnect</button>
-  </aside>
 
-  <main class="main">
+    <div class="actions">
+      <span
+        class="dot"
+        data-state={$connection}
+        title={`${$connection}${$self ? ` · ${$self.name}` : ''}`}
+      ></span>
+      <div class="menu-wrap" bind:this={menuEl}>
+        <button
+          class="iconbtn"
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          onclick={() => (menuOpen = !menuOpen)}>⋯</button
+        >
+        {#if menuOpen}
+          <div class="menu" role="menu">
+            {#if activeChannel !== null}
+              <button class="item" onclick={leaveActive}>Leave channel</button>
+              <button class="item" onclick={() => ((showUsers = !showUsers), (menuOpen = false))}>
+                {showUsers ? 'Hide' : 'Show'} user list
+              </button>
+            {/if}
+            <button class="item" onclick={() => ((showMacros = true), (menuOpen = false))}
+              >Macros…</button
+            >
+            <div class="sep"></div>
+            <button class="item danger" onclick={onDisconnect}>Disconnect</button>
+            <div class="who" data-state={$connection}>
+              {$connection}{#if $self}
+                · {$self.name}{/if}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </header>
+
+  <main class="body">
     {#if activeChannel === null && activePm === null}
       <div class="placeholder">
         {#if $connection !== 'active'}
           <p>Connecting…</p>
         {:else}
-          <p>Join a channel to start chatting.</p>
+          <p>Join a channel with the + button to start chatting.</p>
         {/if}
       </div>
     {:else}
-      <header class="head">
-        <h1>
-          {activePm !== null
-            ? `@${nameOf(activePm)}`
-            : `#${$channels.get(activeChannel as Token)?.name ?? ''}`}
-        </h1>
-        {#if activeChannel !== null}
-          <button class="leave" onclick={leaveActive}>Leave</button>
-        {/if}
-      </header>
-
-      <div class="body">
-        <ChatView lines={activeLines} users={$users} {showTimestamps} />
-        {#if activeChannel !== null}
+      <div class="convo" class:with-users={activeChannel !== null && showUsers}>
+        <ChatView lines={activeLines} users={$directory} showTimestamps={settings.showTimestamps} />
+        {#if activeChannel !== null && showUsers}
           <UserList
             users={membersOf(activeChannel)}
             selfToken={$self?.token ?? null}
@@ -170,169 +323,255 @@
           />
         {/if}
       </div>
-
-      <ChatInput onsend={handleSend} disabled={$connection !== 'active'} />
+      <ChatInput onsend={handleSend} disabled={$connection !== 'active'} macros={settings.macros} />
     {/if}
   </main>
 </div>
 
+{#if showMacros}
+  <MacrosDialog
+    macros={settings.macros}
+    onClose={() => {
+      showMacros = false;
+      persist();
+    }}
+  />
+{/if}
+
 <style>
   .app {
-    display: grid;
-    grid-template-columns: 220px 1fr;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
     background: var(--mara-bg);
     color: var(--mara-fg);
   }
-  .sidebar {
+  .topbar {
     display: flex;
-    flex-direction: column;
-    background: var(--mara-bg-alt);
-    border-right: 1px solid var(--mara-border);
-    padding: 0.5rem;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--mara-border);
+    min-height: 2.6rem;
   }
-  .brand {
-    font-weight: 700;
-    padding: 0.5rem;
-    font-size: 1.1rem;
-  }
-  .section-title {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.5;
-    margin: 0.75rem 0.5rem 0.25rem;
-  }
-  .nav {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .nav button {
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    color: inherit;
-    padding: 0.35rem 0.5rem;
-    border-radius: 5px;
-    cursor: pointer;
-    font: inherit;
-  }
-  .nav button:hover {
-    background: var(--mara-hover);
-  }
-  .nav button.active {
-    background: var(--mara-accent);
-    color: #fff;
-  }
-  .join {
+  .convos {
     display: flex;
-    gap: 0.25rem;
-    margin: 0.25rem 0.25rem 0;
-  }
-  .join input {
+    align-items: center;
+    gap: 0.4rem;
     flex: 1;
     min-width: 0;
+  }
+  .title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+  }
+  .join-wrap {
+    position: relative;
+    flex: none;
+  }
+  .addbtn {
+    background: none;
+    border: 1px solid var(--mara-border);
+    color: inherit;
+    border-radius: 6px;
+    width: 1.8rem;
+    height: 1.8rem;
+    line-height: 1;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+  .addbtn:hover {
+    background: var(--mara-hover);
+  }
+  .join-pop {
+    position: absolute;
+    left: 0;
+    top: 2.2rem;
+    z-index: 20;
+    display: flex;
+    gap: 0.25rem;
+    background: var(--mara-bg-alt);
+    border: 1px solid var(--mara-border);
+    border-radius: 8px;
+    padding: 0.4rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .join-pop input {
     background: var(--mara-input-bg);
     border: 1px solid var(--mara-border);
     border-radius: 5px;
     color: inherit;
-    padding: 0.3rem 0.4rem;
+    padding: 0.35rem 0.45rem;
     font: inherit;
+    width: 9rem;
   }
-  .join button {
-    width: 1.8rem;
+  .join-pop button {
     border: none;
     border-radius: 5px;
     background: var(--mara-accent);
     color: #fff;
+    padding: 0 0.7rem;
     cursor: pointer;
   }
-  .spacer {
-    flex: 1;
+  .tabs button {
+    background: none;
+    border: none;
+    color: inherit;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    white-space: nowrap;
   }
-  .status {
+  .tabs button:hover {
+    background: var(--mara-hover);
+  }
+  .tabs button.active {
+    background: var(--mara-accent);
+    color: #fff;
+  }
+  .tabs button.pm {
+    font-style: italic;
+  }
+  /* Unread: channels go semibold; private messages are stronger (bold + dot). */
+  .tabs button.unread:not(.active) {
+    font-weight: 600;
+  }
+  .tabs button.pm.unread:not(.active) {
+    font-weight: 700;
+    color: var(--mara-link, #5aa9ff);
+  }
+  .tabs button.pm.unread:not(.active)::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mara-accent);
+    margin-right: 0.4rem;
+    vertical-align: middle;
+  }
+  .tabsep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--mara-border);
+    margin: 0.25rem 0.2rem;
+    flex: none;
+  }
+  .actions {
+    margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    padding: 0.4rem 0.5rem;
-    opacity: 0.85;
+    gap: 0.5rem;
   }
-  .status .dot {
-    width: 8px;
-    height: 8px;
+  .dot {
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: var(--mara-danger);
+    flex: none;
   }
-  .status[data-state='active'] .dot {
+  .dot[data-state='active'] {
     background: var(--mara-ok);
   }
-  .status[data-state='reconnecting'] .dot,
-  .status[data-state='connecting'] .dot,
-  .status[data-state='authenticating'] .dot {
+  .dot[data-state='reconnecting'],
+  .dot[data-state='connecting'],
+  .dot[data-state='authenticating'] {
     background: #d9a72a;
   }
-  .disconnect {
+  .menu-wrap {
+    position: relative;
+  }
+  .iconbtn {
     background: none;
     border: 1px solid var(--mara-border);
     color: inherit;
-    border-radius: 5px;
-    padding: 0.35rem;
+    border-radius: 6px;
+    width: 2rem;
+    height: 2rem;
     cursor: pointer;
-    margin-top: 0.25rem;
+    font-size: 1.1rem;
+    line-height: 1;
   }
-  .main {
+  .iconbtn:hover {
+    background: var(--mara-hover);
+  }
+  .menu {
+    position: absolute;
+    right: 0;
+    top: 2.4rem;
+    z-index: 20;
+    width: 220px;
+    background: var(--mara-bg-alt);
+    border: 1px solid var(--mara-border);
+    border-radius: 8px;
+    padding: 0.4rem;
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    gap: 0.15rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--mara-border);
-  }
-  .head h1 {
-    font-size: 1rem;
-    margin: 0;
-  }
-  .leave {
+  .item {
+    text-align: left;
     background: none;
-    border: 1px solid var(--mara-border);
+    border: none;
     color: inherit;
-    border-radius: 5px;
-    padding: 0.25rem 0.6rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 6px;
     cursor: pointer;
+    font: inherit;
+  }
+  .item:hover {
+    background: var(--mara-hover);
+  }
+  .item.danger {
+    color: var(--mara-danger);
+  }
+  .sep {
+    height: 1px;
+    background: var(--mara-border);
+    margin: 0.25rem 0;
+  }
+  .who {
+    font-size: 0.75rem;
+    opacity: 0.55;
+    padding: 0.3rem 0.5rem 0.1rem;
   }
   .body {
     flex: 1;
-    display: grid;
-    grid-template-columns: 1fr 180px;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
   }
-  .body :global(.mara-chatview) {
-    border-right: 0;
+  .convo {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .convo.with-users {
+    grid-template-columns: 1fr 180px;
   }
   .placeholder {
     flex: 1;
     display: grid;
     place-content: center;
     opacity: 0.5;
+    text-align: center;
+    padding: 1rem;
   }
   @media (max-width: 640px) {
-    .app {
+    .convo.with-users {
       grid-template-columns: 1fr;
     }
-    .sidebar {
-      display: none;
-    }
-    .body {
-      grid-template-columns: 1fr;
-    }
-    .body :global(.mara-userlist) {
+    .convo.with-users :global(.mara-userlist) {
       display: none;
     }
   }

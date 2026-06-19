@@ -36,6 +36,9 @@ export class MaraClient {
   readonly connection: Readable<ConnectionState>;
   readonly self: Readable<SelfState | null>;
   readonly users: Readable<Map<Token, UserInfo>>;
+  /** Every user ever seen this session (never pruned) — for naming/colouring
+   * historical messages and PM tabs even after the author disconnects. */
+  readonly directory: Readable<Map<Token, UserInfo>>;
   readonly channels: Readable<Map<Token, ChannelState>>;
   readonly channelMessages: Readable<Map<Token, ChatLine[]>>;
   readonly privateMessages: Readable<Map<Token, ChatLine[]>>;
@@ -43,6 +46,7 @@ export class MaraClient {
   private readonly _connection = writable<ConnectionState>('idle');
   private readonly _self = writable<SelfState | null>(null);
   private readonly _users = writable<Map<Token, UserInfo>>(new Map());
+  private readonly _directory = writable<Map<Token, UserInfo>>(new Map());
   private readonly _channels = writable<Map<Token, ChannelState>>(new Map());
   private readonly _channelMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
@@ -72,6 +76,7 @@ export class MaraClient {
     this.connection = { subscribe: this._connection.subscribe };
     this.self = { subscribe: this._self.subscribe };
     this.users = { subscribe: this._users.subscribe };
+    this.directory = { subscribe: this._directory.subscribe };
     this.channels = { subscribe: this._channels.subscribe };
     this.channelMessages = { subscribe: this._channelMessages.subscribe };
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
@@ -295,10 +300,17 @@ export class MaraClient {
         this.events.emit('userConnect', msg.user);
         return;
 
-      case 'userDisconnect':
+      case 'userDisconnect': {
+        // Note the disconnect in each channel the user was in (capture the name
+        // before removing them, then drop them from every channel/roster).
+        const name = this.nameOf(msg.token);
+        for (const [channelToken, channel] of get(this._channels)) {
+          if (channel.members.has(msg.token)) this.systemLine(channelToken, `${name} disconnected`);
+        }
         this.removeUser(msg.token);
         this.events.emit('userDisconnect', { token: msg.token });
         return;
+      }
 
       case 'userUpdate': {
         const existing = get(this._users).get(msg.token);
@@ -323,7 +335,26 @@ export class MaraClient {
           members: new Set(msg.users.map((u) => u.token)),
         };
         this.intendedChannels.add(msg.channel);
-        this._channels.update((map) => new Map(map).set(channel.token, channel));
+
+        // The server may reassign a channel a new token (e.g. after a restart).
+        // Replace any stale entry for the same name so it can't pile up in the
+        // sidebar, carrying its message history over to the new token.
+        let staleToken: Token | undefined;
+        for (const [tok, ch] of get(this._channels)) {
+          if (tok !== channel.token && ch.name === channel.name) {
+            staleToken = tok;
+            break;
+          }
+        }
+        this._channels.update((map) => {
+          const next = new Map(map);
+          if (staleToken !== undefined) next.delete(staleToken);
+          return next.set(channel.token, channel);
+        });
+        if (staleToken !== undefined) {
+          this.migrateLog(this._channelMessages, staleToken, channel.token);
+          this.events.emit('channelLeft', { channelToken: staleToken });
+        }
         this.ensureLog(this._channelMessages, channel.token);
         this.events.emit('channelJoined', channel);
         return;
@@ -432,6 +463,8 @@ export class MaraClient {
 
   private upsertUser(user: UserInfo): void {
     this._users.update((map) => new Map(map).set(user.token, user));
+    // The directory keeps a permanent record so names/colours survive a leave.
+    this._directory.update((map) => new Map(map).set(user.token, user));
   }
 
   private removeUser(token: Token): void {
@@ -476,6 +509,18 @@ export class MaraClient {
 
   private ensureLog(store: Writable<Map<Token, ChatLine[]>>, key: Token): void {
     store.update((map) => (map.has(key) ? map : new Map(map).set(key, [])));
+  }
+
+  /** Move a conversation's history from one key to another (token reassignment). */
+  private migrateLog(store: Writable<Map<Token, ChatLine[]>>, from: Token, to: Token): void {
+    store.update((map) => {
+      if (!map.has(from)) return map;
+      const next = new Map(map);
+      const merged = [...(next.get(from) ?? []), ...(next.get(to) ?? [])];
+      next.set(to, merged.slice(-this.historyLimit));
+      next.delete(from);
+      return next;
+    });
   }
 
   private systemLine(channelToken: Token, text: string): void {

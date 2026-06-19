@@ -4,23 +4,12 @@
   "version": "3.0.0",
   "identifier": "com.mara.chat",
   "build": {
-    "frontendDist": "../../web/dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm --filter @mara/web dev",
-    "beforeBuildCommand": "pnpm --filter @mara/web build"
+    "frontendDist": "../bootstrap"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Mara 3",
-        "width": 980,
-        "height": 720,
-        "minWidth": 480,
-        "minHeight": 400
-      }
-    ],
+    "withGlobalTauri": true,
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'"
+      "csp": null
     }
   },
   "bundle": {

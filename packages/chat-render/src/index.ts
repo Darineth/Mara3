@@ -2,6 +2,7 @@
 export {
   escapeHtml,
   applyEmoticons,
+  applyMarkdown,
   linkify,
   renderText,
   DEFAULT_EMOTICONS,

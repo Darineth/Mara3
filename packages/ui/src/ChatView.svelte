@@ -37,9 +37,21 @@
     lines.length; // track new lines
     if (pinnedToBottom && viewport) viewport.scrollTop = viewport.scrollHeight;
   });
+
+  // Click/tap a spoiler to toggle it (reveal, then re-hide). Attached imperatively
+  // so the log container doesn't need a declarative interactive handler.
+  $effect(() => {
+    const el = viewport;
+    if (!el) return;
+    const toggle = (event: Event) => {
+      (event.target as HTMLElement)?.closest('.mara-spoiler')?.classList.toggle('revealed');
+    };
+    el.addEventListener('click', toggle);
+    return () => el.removeEventListener('click', toggle);
+  });
 </script>
 
-<div class="mara-chatview" bind:this={viewport} onscroll={onScroll}>
+<div class="mara-chatview" role="log" bind:this={viewport} onscroll={onScroll}>
   {#each lines as line (line.id)}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
     {@html renderLine(toModel(line), { showTimestamps })}
@@ -82,5 +94,32 @@
   }
   .mara-chatview :global(a) {
     color: var(--mara-link, #5aa9ff);
+  }
+
+  /* Discord-style markdown */
+  .mara-chatview :global(.mara-code),
+  .mara-chatview :global(.mara-codeblock) {
+    font-family: var(--mara-mono, ui-monospace, monospace);
+    font-size: 0.85em;
+    background: rgba(127, 127, 127, 0.18);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+  }
+  .mara-chatview :global(.mara-codeblock) {
+    display: block;
+    padding: 0.5em 0.7em;
+    margin: 0.2em 0;
+    white-space: pre-wrap;
+  }
+  .mara-chatview :global(.mara-spoiler) {
+    background: var(--mara-fg, #e6e6e6);
+    color: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0 0.2em;
+  }
+  .mara-chatview :global(.mara-spoiler.revealed) {
+    background: rgba(127, 127, 127, 0.18);
+    color: inherit;
   }
 </style>

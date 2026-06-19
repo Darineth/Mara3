@@ -16,10 +16,10 @@ let url: string;
 
 beforeEach(async () => {
   server = await startServer(
-    { ...loadConfig(), host: '127.0.0.1', port: 0 },
+    { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '' },
     createLogger('silent'),
   );
-  url = `ws://127.0.0.1:${server.port}`;
+  url = `ws://127.0.0.1:${server.port}/ws`;
 });
 
 afterEach(async () => {

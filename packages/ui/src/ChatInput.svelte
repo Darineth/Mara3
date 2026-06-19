@@ -1,20 +1,41 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+
   let {
     onsend,
     maxLength = 1000,
     placeholder = 'Type a message…',
     disabled = false,
+    macros = [],
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
     placeholder?: string;
     disabled?: boolean;
+    /** Quick-text macros indexed 0–11 for F1–F12. */
+    macros?: string[];
   } = $props();
 
   let text = $state('');
   let history = $state<string[]>([]);
   let historyIndex = $state(-1); // -1 = editing a fresh line
   let textarea = $state<HTMLTextAreaElement | null>(null);
+
+  async function insertAtCursor(snippet: string) {
+    const ta = textarea;
+    if (!ta) {
+      text += snippet;
+      return;
+    }
+    const start = ta.selectionStart ?? text.length;
+    const end = ta.selectionEnd ?? text.length;
+    text = text.slice(0, start) + snippet + text.slice(end);
+    await tick();
+    const pos = start + snippet.length;
+    ta.setSelectionRange(pos, pos);
+    ta.focus();
+    autosize();
+  }
 
   function autosize() {
     if (!textarea) return;
@@ -41,6 +62,17 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
+    // F1–F12 insert the matching macro (only when one is set, so e.g. F5 still
+    // refreshes the page when its slot is empty).
+    const fkey = /^F([1-9]|1[0-2])$/.exec(event.key);
+    if (fkey) {
+      const snippet = macros[Number(fkey[1]) - 1];
+      if (snippet) {
+        event.preventDefault();
+        void insertAtCursor(snippet);
+      }
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit();

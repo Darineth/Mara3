@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --import tsx --watch src/main.ts",
+    "serve": "node --import tsx src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
@@ -22,6 +23,7 @@
   "dependencies": {
     "@mara/protocol": "workspace:*",
     "pino": "^9.5.0",
+    "sirv": "^3.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

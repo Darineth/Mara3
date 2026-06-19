@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { MaraClient } from '@mara/client-core';
   import { createPipeline, shrugPlugin } from '@mara/plugin-api';
-  import { loadSettings, saveSettings, type MaraSettings } from './lib/settings.js';
+  import { loadSettings, saveSettings, serverUrl, type MaraSettings } from './lib/settings.js';
   import ChatApp from './ChatApp.svelte';
 
   // Build-time plugin registry (CSP-safe for web/mobile). Add plugins here.
@@ -11,13 +12,12 @@
   let client = $state<MaraClient | null>(null);
   let error = $state('');
 
-  function connect(event: SubmitEvent) {
-    event.preventDefault();
+  function connect() {
     error = '';
     saveSettings(settings);
 
     const c = new MaraClient({
-      url: settings.serverUrl,
+      url: serverUrl(),
       name: settings.name.trim() || 'guest',
       style: {
         font: {
@@ -46,22 +46,30 @@
     c.connect();
   }
 
+  function onSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    connect();
+  }
+
   function disconnect() {
     client?.disconnect();
     client = null;
   }
+
+  // Auto-connect on page load when we already have a display name (returning
+  // user). First-time visitors fill the form once; after that it's automatic.
+  // The client's own reconnect/backoff then keeps the session alive.
+  onMount(() => {
+    if (settings.name.trim()) connect();
+  });
 </script>
 
 {#if client}
-  <ChatApp {client} showTimestamps={settings.showTimestamps} onDisconnect={disconnect} />
+  <ChatApp {client} {settings} onDisconnect={disconnect} persist={() => saveSettings(settings)} />
 {:else}
   <div class="connect">
-    <form onsubmit={connect}>
+    <form onsubmit={onSubmit}>
       <h1>Mara 3</h1>
-      <label>
-        Server
-        <input bind:value={settings.serverUrl} placeholder="ws://localhost:5050" required />
-      </label>
       <label>
         Display name
         <input bind:value={settings.name} placeholder="your name" required />
