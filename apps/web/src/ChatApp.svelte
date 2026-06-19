@@ -362,7 +362,7 @@
         onsend={handleSend}
         disabled={$connection !== 'active'}
         macros={settings.macros}
-        upload={uploadImage}
+        upload={(file) => uploadImage(file, client.sessionToken)}
       />
     {/if}
   </main>

@@ -1,9 +1,18 @@
 /**
  * Text → safe HTML pipeline (ports Mara 2's `MTextProcessors` / `MHtmlEscaper`).
  *
- * Order is deliberate: escape first (so user input can never inject HTML), then
- * lift code spans and URLs out into placeholders so formatting can't run inside
- * them, then apply Discord-style markdown, then restore the placeholders.
+ * Order is deliberate:
+ *  1. Lift code spans and URLs out of the RAW text into placeholders, escaping
+ *     each one's contents as it is stashed (URLs must be matched pre-escape so a
+ *     trailing `&` isn't split into a stranded `&amp;` `;`).
+ *  2. HTML-escape everything that remains.
+ *  3. Apply Discord-style markdown to the escaped text.
+ *  4. Restore the placeholders in a SINGLE pass.
+ *
+ * The single-pass restore is load-bearing for safety: stashed HTML is already
+ * escaped/trusted, and must never be re-scanned — a stashed tag carries its own
+ * quotes (e.g. `class="…"`), so a recursive restore could let those break out of
+ * an attribute. Do not make the restore recursive.
  */
 
 /** Optional emoticon set: code → replacement. Off by default; opt in via options. */

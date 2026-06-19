@@ -233,4 +233,15 @@ describe('private messages, presence, ping', () => {
     expect(msg.text).toContain('alice');
     a.close();
   });
+
+  it('rejects an oversized pluginData payload instead of broadcasting it', async () => {
+    const a = await TestClient.connect(url);
+    await login(a, 'alice');
+    a.send({ type: 'pluginData', data: { blob: 'x'.repeat(20_000) } });
+    const res = await a.waitFor('response');
+    expect(res.ref).toBe('pluginData');
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(413);
+    a.close();
+  });
 });

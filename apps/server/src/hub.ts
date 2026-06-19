@@ -13,6 +13,13 @@ import { ServerState, type Session } from './state.js';
 import { makeResumeToken } from './tokens.js';
 
 /**
+ * Cap on a (serialized) opaque pluginData payload. The schema can't bound
+ * `z.unknown()`, and this data is fanned out to every recipient, so a small
+ * explicit limit keeps one client from amplifying a large blob to everyone.
+ */
+const MAX_PLUGIN_DATA_CHARS = 16 * 1024;
+
+/**
  * The message-handling core. One instance owns all shared state and processes
  * every client message synchronously on Node's event loop, so state mutations
  * never interleave — the modern equivalent of Mara 2's single-thread Qt server.
@@ -312,6 +319,16 @@ export class Hub {
     session: Session,
     msg: Extract<ClientMessage, { type: 'pluginData' }>,
   ): void {
+    if (JSON.stringify(msg.data ?? null).length > MAX_PLUGIN_DATA_CHARS) {
+      session.connection.send({
+        type: 'response',
+        ref: 'pluginData',
+        ok: false,
+        code: 413,
+        message: 'pluginData too large',
+      });
+      return;
+    }
     if (msg.toUserToken !== undefined) {
       this.state.sessions
         .get(msg.toUserToken)

@@ -117,15 +117,33 @@ function readCappedBody(req: IncomingMessage, cap: number): Promise<Buffer | nul
   });
 }
 
-/** Handle `POST /upload`: validate, evict-to-fit, store, return `{ url }`. */
+/** Pull a bearer token out of the Authorization header, if present. */
+function bearerToken(req: IncomingMessage): string | undefined {
+  const auth = req.headers['authorization'];
+  return auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
+}
+
+/**
+ * Handle `POST /upload`: authenticate, validate, evict-to-fit, store, return
+ * `{ url }`. `authorize` gates the write to a live WS session (the per-session
+ * resume token presented as `Authorization: Bearer …`), so anonymous clients
+ * can't store files or churn the cache.
+ */
 export async function handleUpload(
   req: IncomingMessage,
   res: ServerResponse,
   cfg: ServerConfig,
   log: Logger,
+  authorize: (token: string | undefined) => boolean,
 ): Promise<void> {
   if (req.method !== 'POST') {
     send(res, 405, 'Method not allowed');
+    return;
+  }
+  // Reject before reading the body so an unauthorized client can't make us
+  // buffer a large upload.
+  if (!authorize(bearerToken(req))) {
+    send(res, 401, 'Unauthorized');
     return;
   }
   const contentType = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();

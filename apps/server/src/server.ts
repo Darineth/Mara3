@@ -7,6 +7,14 @@ import { Hub } from './hub.js';
 import type { Logger } from './logger.js';
 import { handleUpload, serveUpload, UPLOAD_ENDPOINT, UPLOAD_ROUTE } from './uploads.js';
 
+/**
+ * Hard cap on a single inbound WebSocket frame. The largest legitimate message
+ * (a max-length chat plus JSON overhead, or a capped pluginData blob) is well
+ * under this; it exists to stop a client from forcing us to buffer ws's 100 MiB
+ * default per frame.
+ */
+const MAX_FRAME_BYTES = 256 * 1024;
+
 export interface MaraServer {
   readonly hub: Hub;
   /** Actual bound port (useful when configured with port 0). */
@@ -47,7 +55,9 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
         return;
       }
       if (req.url === UPLOAD_ENDPOINT) {
-        void handleUpload(req, res, cfg, log);
+        void handleUpload(req, res, cfg, log, (token) =>
+          token !== undefined && hub.state.sessionByResumeToken(token) !== undefined,
+        );
         return;
       }
       if (req.url?.startsWith(UPLOAD_ROUTE)) {
@@ -68,7 +78,11 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
     });
 
     // Share the HTTP server; only upgrades on wsPath become WebSocket connections.
-    const wss = new WebSocketServer({ server: httpServer, path: cfg.wsPath });
+    const wss = new WebSocketServer({
+      server: httpServer,
+      path: cfg.wsPath,
+      maxPayload: MAX_FRAME_BYTES,
+    });
     let counter = 0;
 
     wss.on('connection', (ws) => {

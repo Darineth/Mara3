@@ -22,10 +22,14 @@ export function isUploadableImage(file: File): boolean {
  * (localhost vs machine name vs proxy). A baked-in absolute URL would force the
  * uploader's hostname onto everyone else and break cross-machine viewing.
  */
-export async function uploadImage(file: File): Promise<string> {
+export async function uploadImage(file: File, token: string | null): Promise<string> {
   const res = await fetch('/upload', {
     method: 'POST',
-    headers: { 'content-type': file.type },
+    headers: {
+      'content-type': file.type,
+      // Authenticate the write against our live WS session.
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: file,
   });
   if (!res.ok) {

@@ -99,6 +99,26 @@ describe('renderText — safety + links', () => {
     const html = renderText('path/uploads/x.png');
     expect(html).not.toContain('<img');
   });
+
+  it('never emits a real tag from user angle brackets', () => {
+    const html = renderText('<img src=x onerror=alert(1)>');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+  });
+
+  it('neutralizes an attribute-breakout attempt embedded in a URL', () => {
+    const html = renderText('see http://x.com" onmouseover="alert(1) end');
+    expect(html).not.toContain('" onmouseover="'); // quote did not break out of href
+    expect(html).toContain('&quot;'); // it was escaped instead
+  });
+
+  it('does not re-scan restored placeholders (single-pass restore invariant)', () => {
+    // A code span adjacent to a URL: the stashed <code> tag carries its own
+    // quotes. A recursive restore could inject those into the anchor's href;
+    // a single pass must not, so no real <code> tag ends up inside an attribute.
+    const html = renderText('http://x.com`y`');
+    expect(html).not.toContain('href="http://x.com<code');
+  });
 });
 
 describe('renderText — Discord markdown', () => {

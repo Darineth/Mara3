@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { WebSocket } from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
@@ -9,14 +10,38 @@ import { startServer, type MaraServer } from './server.js';
 let server: MaraServer;
 let dir: string;
 let base: string;
+let token: string; // a valid per-session upload token
+let ws: WebSocket | undefined;
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Run the WS handshake far enough to obtain a session resume token. */
+function login(port: number): Promise<{ token: string; ws: WebSocket }> {
+  return new Promise((resolve, reject) => {
+    const sock = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    sock.on('error', reject);
+    sock.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'serverHello') {
+        sock.send(JSON.stringify({ type: 'clientVersion', maraVersion: 0, clientVersion: 0, appVersion: 1 }));
+      } else if (msg.type === 'response' && msg.ref === 'clientVersion') {
+        sock.send(
+          JSON.stringify({ type: 'login', name: 'tester', style: { font: { family: 'Verdana', pointSize: 10 }, color: '#cccccc' } }),
+        );
+      } else if (msg.type === 'loginAccepted') {
+        resolve({ token: msg.resumeToken, ws: sock });
+      }
+    });
+  });
+}
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mara-upl-'));
 });
 
 afterEach(async () => {
+  ws?.close();
+  ws = undefined;
   await server?.close();
   await rm(dir, { recursive: true, force: true });
 });
@@ -36,10 +61,15 @@ async function start(overrides: Partial<ReturnType<typeof loadConfig>> = {}) {
     createLogger('silent'),
   );
   base = `http://127.0.0.1:${server.port}`;
+  ({ token, ws } = await login(server.port));
 }
 
-function upload(bytes: Uint8Array, type = 'image/png') {
-  return fetch(`${base}/upload`, { method: 'POST', headers: { 'content-type': type }, body: bytes });
+function upload(bytes: Uint8Array, type = 'image/png', auth = token) {
+  return fetch(`${base}/upload`, {
+    method: 'POST',
+    headers: { 'content-type': type, ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
+    body: bytes,
+  });
 }
 
 describe('upload endpoint', () => {
@@ -55,6 +85,12 @@ describe('upload endpoint', () => {
     expect(fetched.headers.get('content-type')).toBe('image/png');
     expect(fetched.headers.get('x-content-type-options')).toBe('nosniff');
     expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
+  });
+
+  it('rejects uploads without a valid session token', async () => {
+    await start();
+    expect((await upload(new Uint8Array([1, 2, 3, 4]), 'image/png', '')).status).toBe(401);
+    expect((await upload(new Uint8Array([1, 2, 3, 4]), 'image/png', 'bogustoken')).status).toBe(401);
   });
 
   it('rejects non-image and oversize uploads', async () => {

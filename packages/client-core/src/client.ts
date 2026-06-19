@@ -112,6 +112,14 @@ export class MaraClient {
     return get(this._connection);
   }
 
+  /**
+   * Per-session bearer token for authenticated HTTP calls to the server (e.g.
+   * image uploads). Null until login completes; rotates on each (re)login.
+   */
+  get sessionToken(): string | null {
+    return this.resumeToken;
+  }
+
   // -- senders --------------------------------------------------------------
 
   joinChannel(name: string): void {
