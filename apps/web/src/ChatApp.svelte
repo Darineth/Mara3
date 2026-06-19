@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
@@ -35,6 +36,11 @@
   // Active view: either a channel token or a private-message peer token.
   let activeChannel = $state<Token | null>(null);
   let activePm = $state<Token | null>(null);
+  // Open PM conversations, in tab order. This is the source of truth for which
+  // PM tabs exist — so opening a conversation shows a real tab immediately,
+  // before any message is sent. Seeded from any history present at mount.
+  // svelte-ignore state_referenced_locally
+  let pmTabs = $state<Token[]>([...get(privateMessages).keys()] as Token[]);
   let joinName = $state('');
   // Conversations with unread messages (reassigned, not mutated, for reactivity).
   let unreadChannels = $state(new Set<Token>());
@@ -78,6 +84,7 @@
         }
       }),
       client.events.on('privateMessage', (pm) => {
+        addPmTab(pm.from);
         if (activePm === null && activeChannel === null) activePm = pm.from;
         markPmUnread(pm.from);
       }),
@@ -131,7 +138,7 @@
   });
 
   const channelList = $derived([...$channels.values()] as ChannelState[]);
-  const pmPeers = $derived([...$privateMessages.keys()] as Token[]);
+  const pmPeers = $derived(pmTabs);
   // Channels are a light-touch feature: only show the switcher when there's more
   // than one conversation (e.g. you've joined another channel or opened a DM).
   const showTabs = $derived(channelList.length + pmPeers.length > 1);
@@ -163,7 +170,12 @@
     unreadChannels = clearUnread(unreadChannels, token);
   }
 
+  function addPmTab(token: Token) {
+    if (!pmTabs.includes(token)) pmTabs = [...pmTabs, token];
+  }
+
   function selectPm(token: Token) {
+    addPmTab(token);
     activePm = token;
     activeChannel = null;
     unreadPms = clearUnread(unreadPms, token);
@@ -171,6 +183,21 @@
 
   function openPm(user: UserInfo) {
     selectPm(user.token);
+  }
+
+  function closePm(token: Token) {
+    const wasActive = activePm === token;
+    pmTabs = pmTabs.filter((t) => t !== token);
+    unreadPms = clearUnread(unreadPms, token);
+    if (!wasActive) return;
+    // Fall back to another open PM, else a channel, else the empty placeholder.
+    activePm = null;
+    const nextPm = pmTabs[pmTabs.length - 1];
+    if (nextPm !== undefined) selectPm(nextPm);
+    else {
+      const ch = [...$channels.keys()][0];
+      if (ch !== undefined) openChannel(ch);
+    }
   }
 
   function join() {
@@ -232,12 +259,19 @@
             <span class="tabsep" aria-hidden="true"></span>
           {/if}
           {#each pmPeers as peer (peer)}
-            <button
-              class="pm"
+            <span
+              class="pmtab"
               class:active={activeChannel === null && activePm === peer}
               class:unread={unreadPms.has(peer)}
-              onclick={() => selectPm(peer)}>@{nameOf(peer)}</button
             >
+              <button class="tab-main" onclick={() => selectPm(peer)}>@{nameOf(peer)}</button>
+              <button
+                class="tab-x"
+                onclick={() => closePm(peer)}
+                aria-label="Close conversation with {nameOf(peer)}"
+                title="Close conversation">×</button
+              >
+            </span>
           {/each}
         </nav>
       {:else}
@@ -446,18 +480,45 @@
     background: var(--mara-accent);
     color: #fff;
   }
-  .tabs button.pm {
-    font-style: italic;
-  }
-  /* Unread: channels go semibold; private messages are stronger (bold + dot). */
+  /* Unread channels go semibold. */
   .tabs button.unread:not(.active) {
     font-weight: 600;
   }
-  .tabs button.pm.unread:not(.active) {
+  /* PM tabs are a pill wrapping a label button and a close (×) button. */
+  .tabs .pmtab {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 6px;
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .tabs .pmtab:hover {
+    background: var(--mara-hover);
+  }
+  .tabs .pmtab.active {
+    background: var(--mara-accent);
+    color: #fff;
+  }
+  .tabs .pmtab > button:hover {
+    background: none; /* hover highlight is on the pill, not the inner buttons */
+  }
+  .tabs .pmtab .tab-main {
+    padding: 0.3rem 0.15rem 0.3rem 0.6rem;
+  }
+  .tabs .pmtab .tab-x {
+    padding: 0 0.5rem 0 0.25rem;
+    opacity: 0.55;
+    line-height: 1;
+  }
+  .tabs .pmtab .tab-x:hover {
+    opacity: 1;
+  }
+  /* Unread PMs are stronger than channels: bold + a leading dot. */
+  .tabs .pmtab.unread:not(.active) .tab-main {
     font-weight: 700;
     color: var(--mara-link, #5aa9ff);
   }
-  .tabs button.pm.unread:not(.active)::before {
+  .tabs .pmtab.unread:not(.active) .tab-main::before {
     content: '';
     display: inline-block;
     width: 7px;
