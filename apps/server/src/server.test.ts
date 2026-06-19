@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
+import { PROTOCOL_VERSION } from '@mara/protocol';
 import { startServer, type MaraServer } from './server.js';
 import { login, TestClient } from './harness.js';
 
@@ -61,25 +62,22 @@ describe('http', () => {
 });
 
 describe('handshake', () => {
-  it('greets, accepts version + login, and assigns a token + MOTD', async () => {
+  it('accepts login (client speaks first) and welcomes with a token + MOTD', async () => {
     const client = await TestClient.connect(url);
-    const hello = await client.waitFor('serverHello');
-    expect(hello.serverName).toBe('Mara 3 Server');
+    client.send({ type: 'login', protocol: PROTOCOL_VERSION, name: 'alice', color: '#ffffff' });
+    const welcome = await client.waitFor('welcome');
+    expect(welcome.self.name).toBe('alice');
+    expect(welcome.self.token).toBeGreaterThan(0);
+    expect(welcome.sessionToken).toBeTruthy();
+    expect(welcome.motd).toBe('hello world');
+    client.close();
+  });
 
-    client.send({ type: 'clientVersion', maraVersion: 3, clientVersion: 1, appVersion: 1 });
-    await client.waitFor('response');
-    client.send({
-      type: 'login',
-      name: 'alice',
-      style: {
-        font: { family: 'X', pointSize: 10, bold: false, italic: false, underline: false },
-        color: '#ffffff',
-      },
-    });
-    const accepted = await client.waitFor('loginAccepted');
-    expect(accepted.name).toBe('alice');
-    expect(accepted.token).toBeGreaterThan(0);
-    expect(accepted.motd).toBe('hello world');
+  it('denies a protocol-version mismatch', async () => {
+    const client = await TestClient.connect(url);
+    client.send({ type: 'login', protocol: PROTOCOL_VERSION + 1, name: 'alice', color: '#ffffff' });
+    const denied = await client.waitFor('loginDenied');
+    expect(denied.reason).toMatch(/protocol/i);
     client.close();
   });
 
@@ -95,10 +93,9 @@ describe('handshake', () => {
 
   it('rejects a message before login', async () => {
     const client = await TestClient.connect(url);
-    await client.waitFor('serverHello');
     client.send({ type: 'chat', channelToken: 1, text: 'hi' });
     const err = await client.waitFor('error');
-    expect(err.code).toBe(401);
+    expect(err.message).toMatch(/not logged in/i);
     client.close();
   });
 });
@@ -173,26 +170,23 @@ describe('channels and chat', () => {
     const a = await TestClient.connect(url);
     await login(a, 'alice');
     a.send({ type: 'chat', channelToken: 999999, text: 'nope' });
-    const res = await a.waitFor('response');
-    expect(res.ok).toBe(false);
-    expect(res.code).toBe(403);
+    const err = await a.waitFor('error');
+    expect(err.message).toMatch(/not in that channel/i);
     a.close();
   });
 });
 
 describe('private messages, presence, ping', () => {
-  it('routes a private message to the target and acks the sender', async () => {
+  it('routes a private message to the target', async () => {
     const a = await TestClient.connect(url);
     const alice = await login(a, 'alice');
     const b = await TestClient.connect(url);
     const bob = await login(b, 'bob');
 
-    a.send({ type: 'privateMessage', toUserToken: bob.token, text: 'secret' });
+    a.send({ type: 'privateMessage', to: bob.token, text: 'secret' });
     const received = await b.waitFor('privateMessage');
     expect(received.from).toBe(alice.token);
     expect(received.text).toBe('secret');
-    const ack = await a.waitFor('response');
-    expect(ack.ok).toBe(true);
 
     a.close();
     b.close();
@@ -201,10 +195,9 @@ describe('private messages, presence, ping', () => {
   it('replies to ping with pong carrying the same id', async () => {
     const a = await TestClient.connect(url);
     await login(a, 'alice');
-    a.send({ type: 'ping', pingId: 7, sentAt: 1000 });
+    a.send({ type: 'ping', id: 7 });
     const pong = await a.waitFor('pong');
-    expect(pong.pingId).toBe(7);
-    expect(pong.sentAt).toBe(1000);
+    expect(pong.id).toBe(7);
     a.close();
   });
 
@@ -223,25 +216,5 @@ describe('private messages, presence, ping', () => {
     const gone = await b.waitFor('userDisconnect');
     expect(gone.token).toBe(alice.token);
     b.close();
-  });
-
-  it('answers the "who" server command', async () => {
-    const a = await TestClient.connect(url);
-    await login(a, 'alice');
-    a.send({ type: 'serverCommand', command: 'who', args: '' });
-    const msg = await a.waitFor('serverMessage');
-    expect(msg.text).toContain('alice');
-    a.close();
-  });
-
-  it('rejects an oversized pluginData payload instead of broadcasting it', async () => {
-    const a = await TestClient.connect(url);
-    await login(a, 'alice');
-    a.send({ type: 'pluginData', data: { blob: 'x'.repeat(20_000) } });
-    const res = await a.waitFor('response');
-    expect(res.ref).toBe('pluginData');
-    expect(res.ok).toBe(false);
-    expect(res.code).toBe(413);
-    a.close();
   });
 });

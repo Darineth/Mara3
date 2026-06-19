@@ -1,6 +1,6 @@
 import { get, writable, type Readable, type Writable } from 'svelte/store';
 import {
-  MARA_VERSION,
+  PROTOCOL_VERSION,
   safeParseServerMessage,
   type ClientMessage,
   type ServerMessage,
@@ -19,7 +19,7 @@ import type {
   WebSocketLike,
 } from './types.js';
 
-/** Identity of the logged-in user; null until `loginAccepted`. */
+/** Identity of the logged-in user; null until `welcome`. */
 interface SelfState {
   token: Token;
   name: string;
@@ -53,14 +53,14 @@ export class MaraClient {
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
 
   private socket: WebSocketLike | null = null;
-  /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied/kicked). */
+  /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
   private intentionalClose = false;
   /** Consecutive failed connect attempts; drives backoff and the "was this a reconnect" check. */
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  /** Server-issued resume/session token; replayed on the next login to resume the session. */
-  private resumeToken: string | null = null;
+  /** Per-session secret from `welcome`; the HTTP bearer for uploads (see `sessionToken`). */
+  private _sessionToken: string | null = null;
   /** Monotonic counter for ChatLine ids (stable list keys across re-renders). */
   private lineSeq = 0;
   private pingSeq = 0;
@@ -71,7 +71,6 @@ export class MaraClient {
 
   private readonly pipeline: TextPipeline | undefined;
   private readonly now: () => number;
-  private readonly appVersion: number;
   private readonly autoReconnect: boolean;
   private readonly reconnectBaseDelayMs: number;
   private readonly reconnectMaxDelayMs: number;
@@ -89,7 +88,6 @@ export class MaraClient {
 
     this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
-    this.appVersion = opts.appVersion ?? 1;
     this.autoReconnect = opts.autoReconnect ?? true;
     this.reconnectBaseDelayMs = opts.reconnectBaseDelayMs ?? 500;
     this.reconnectMaxDelayMs = opts.reconnectMaxDelayMs ?? 10_000;
@@ -108,8 +106,8 @@ export class MaraClient {
     // Mark intentional first so the resulting onClose won't schedule a reconnect.
     this.intentionalClose = true;
     this.clearTimers();
-    // Only send a graceful disconnect if we actually have a live, logged-in session.
-    if (get(this._connection) === 'active') this.send({ type: 'disconnect', reason: '' });
+    // No explicit "disconnect" message: closing the socket is enough — the
+    // server's close handler broadcasts our departure.
     this.socket?.close(1000, 'client disconnect');
     this.socket = null;
     this.setStatus('closed');
@@ -125,7 +123,7 @@ export class MaraClient {
    * image uploads). Null until login completes; rotates on each (re)login.
    */
   get sessionToken(): string | null {
-    return this.resumeToken;
+    return this._sessionToken;
   }
 
   // -- senders --------------------------------------------------------------
@@ -157,31 +155,18 @@ export class MaraClient {
 
   /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
   sendPrivateMessage(toUserToken: Token, text: string): void {
-    this.send({ type: 'privateMessage', toUserToken, text });
+    this.send({ type: 'privateMessage', to: toUserToken, text });
     // The server only echoes PMs to the recipient, so record our own outgoing line.
     const me = get(this._self);
     if (me)
       this.pushLine(this._privateMessages, toUserToken, { kind: 'chat', from: me.token, text });
   }
 
-  updateUser(name: string, style: UserInfo['style']): void {
-    this.send({ type: 'userUpdate', name, style });
-  }
-
-  queryUser(token: Token): void {
-    this.send({ type: 'queryUser', token });
-  }
-
-  sendServerCommand(command: string, args = ''): void {
-    this.send({ type: 'serverCommand', command, args });
-  }
-
-  /** Sends a heartbeat ping; the matching pong (by pingId) yields RTT. */
+  /** Sends a heartbeat ping; the matching pong (by id) yields RTT. */
   ping(): void {
-    const pingId = ++this.pingSeq;
-    const sentAt = this.now();
-    this.pendingPings.set(pingId, sentAt);
-    this.send({ type: 'ping', pingId, sentAt });
+    const id = ++this.pingSeq;
+    this.pendingPings.set(id, this.now());
+    this.send({ type: 'ping', id });
   }
 
   private send(message: ClientMessage): void {
@@ -195,11 +180,19 @@ export class MaraClient {
     this.setStatus(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
     const ws = new Ctor(this.opts.url);
     this.socket = ws;
-    // Socket open only means the transport is up; the app-level handshake (and
-    // thus 'active') doesn't begin until the server sends serverHello.
-    ws.onopen = () => this.setStatus('authenticating');
+    // The client speaks first: as soon as the transport is up, send `login` and
+    // enter 'authenticating' until the server replies `welcome`/`loginDenied`.
+    ws.onopen = () => {
+      this.setStatus('authenticating');
+      this.send({
+        type: 'login',
+        protocol: PROTOCOL_VERSION,
+        name: this.opts.name,
+        color: this.opts.color,
+      });
+    };
     ws.onmessage = (ev) => this.onRaw(String(ev.data));
-    ws.onerror = () => this.events.emit('error', { code: 0, message: 'socket error' });
+    ws.onerror = () => this.events.emit('error', { message: 'socket error' });
     ws.onclose = () => this.onClose();
   }
 
@@ -263,62 +256,31 @@ export class MaraClient {
     // as an error event (code 400) instead of throwing deeper in a handler.
     const parsed = safeParseServerMessage(raw);
     if (!parsed.success) {
-      this.events.emit('error', { code: 400, message: parsed.error.message });
+      this.events.emit('error', { message: parsed.error.message });
       return;
     }
     try {
       this.handle(parsed.data);
     } catch (err) {
       // A handler bug (e.g. a misbehaving plugin) must not kill the socket.
-      this.events.emit('error', {
-        code: 500,
-        message: err instanceof Error ? err.message : String(err),
-      });
+      this.events.emit('error', { message: err instanceof Error ? err.message : String(err) });
     }
   }
 
   private handle(msg: ServerMessage): void {
     switch (msg.type) {
-      // Handshake flow: serverHello → clientVersion → (response ok) → login →
-      // loginAccepted/loginDenied. The server speaks first with serverHello.
-      case 'serverHello':
-        // Reply with our protocol/app versions; the server gates login on these.
-        this.send({
-          type: 'clientVersion',
-          maraVersion: MARA_VERSION,
-          clientVersion: MARA_VERSION,
-          appVersion: this.appVersion,
-        });
-        return;
-
-      case 'response':
-        // Version check passed → send login. Include resumeToken if we have one
-        // (set by a prior loginAccepted) so the server can resume the session
-        // after a reconnect; omit it entirely on a fresh login.
-        if (msg.ref === 'clientVersion' && msg.ok) {
-          this.send({
-            type: 'login',
-            name: this.opts.name,
-            ...(this.resumeToken ? { resumeToken: this.resumeToken } : {}),
-            style: this.opts.style,
-          });
-        } else if (!msg.ok) {
-          this.events.emit('error', { code: msg.code, message: msg.message });
-        }
-        return;
-
-      case 'loginAccepted': {
+      case 'welcome': {
         // Capture reconnect-ness before resetting attempts, so we know whether
         // to re-join channels below.
         const wasReconnect = this.reconnectAttempts > 0;
-        // Rotate the session token: the server issues a fresh one each login,
-        // also used as the HTTP bearer (see `sessionToken`).
-        this.resumeToken = msg.resumeToken;
+        this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this.reconnectAttempts = 0;
-        this._self.set({ token: msg.token, name: msg.name });
+        this._self.set({ token: msg.self.token, name: msg.self.name });
+        // Seed our own roster/directory entry (colour, away) from `self`.
+        this.upsertUser(msg.self);
         this.setStatus('active');
         this.startHeartbeat();
-        this.events.emit('connected', { token: msg.token, name: msg.name });
+        this.events.emit('connected', { token: msg.self.token, name: msg.self.name });
         // On a reconnect the server doesn't restore our channel membership, so
         // re-join everything we intended to be in. channelJoined then reconciles
         // any reassigned tokens (see below).
@@ -330,10 +292,10 @@ export class MaraClient {
 
       case 'loginDenied':
         // Terminal: mark intentional so onClose won't auto-reconnect into the
-        // same rejection (e.g. bad name, version too old).
+        // same rejection (e.g. protocol mismatch).
         this.setStatus('denied');
         this.intentionalClose = true;
-        this.events.emit('loginDenied', { reason: msg.reason, updateRequired: msg.updateRequired });
+        this.events.emit('loginDenied', { reason: msg.reason });
         this.socket?.close(1000, 'denied');
         return;
 
@@ -351,23 +313,6 @@ export class MaraClient {
         }
         this.removeUser(msg.token);
         this.events.emit('userDisconnect', { token: msg.token });
-        return;
-      }
-
-      case 'userUpdate': {
-        const existing = get(this._users).get(msg.token);
-        const updated: UserInfo = {
-          token: msg.token,
-          name: msg.name,
-          style: msg.style,
-          // userUpdate carries name/style only; preserve any existing away text.
-          away: existing?.away ?? '',
-        };
-        this.upsertUser(updated);
-        // Keep `self.name` in sync when the update is about us (drives the UI).
-        const me = get(this._self);
-        if (me && me.token === msg.token) this._self.set({ token: me.token, name: msg.name });
-        this.events.emit('userUpdate', updated);
         return;
       }
 
@@ -466,37 +411,17 @@ export class MaraClient {
         this.events.emit('privateMessage', { from: msg.from, text: msg.text });
         return;
 
-      case 'userInfo':
-        this.upsertUser(msg.user);
-        return;
-
-      case 'serverMessage':
-        this.events.emit('serverMessage', { text: msg.text });
-        return;
-
       case 'pong': {
-        // Match against the recorded sentAt to derive RTT; unknown/duplicate
+        // Match against the recorded send time to derive RTT; unknown/duplicate
         // pongs (no pending entry) report rtt 0 rather than throwing.
-        const sentAt = this.pendingPings.get(msg.pingId);
-        this.pendingPings.delete(msg.pingId);
-        this.events.emit('pong', { pingId: msg.pingId, rtt: sentAt ? this.now() - sentAt : 0 });
+        const sentAt = this.pendingPings.get(msg.id);
+        this.pendingPings.delete(msg.id);
+        this.events.emit('pong', { id: msg.id, rtt: sentAt ? this.now() - sentAt : 0 });
         return;
       }
 
-      case 'kicked':
-        // Terminal like loginDenied: suppress auto-reconnect.
-        this.intentionalClose = true;
-        this.setStatus('closed');
-        this.events.emit('kicked', { reason: msg.reason });
-        this.socket?.close(1000, 'kicked');
-        return;
-
       case 'error':
-        this.events.emit('error', { code: msg.code, message: msg.message });
-        return;
-
-      case 'pluginData':
-        // Reserved for the plugin pipeline (Phase 6).
+        this.events.emit('error', { message: msg.message });
         return;
     }
   }

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from '@mara/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
@@ -15,33 +16,24 @@ let ws: WebSocket | undefined;
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Run the WS handshake far enough to obtain a session resume token. */
+/** Log in (client speaks first) and resolve the session secret used as the upload bearer. */
 function login(port: number): Promise<{ token: string; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const sock = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     sock.on('error', reject);
+    sock.on('open', () => {
+      sock.send(
+        JSON.stringify({
+          type: 'login',
+          protocol: PROTOCOL_VERSION,
+          name: 'tester',
+          color: '#cccccc',
+        }),
+      );
+    });
     sock.on('message', (data) => {
       const msg = JSON.parse(data.toString());
-      if (msg.type === 'serverHello') {
-        sock.send(
-          JSON.stringify({
-            type: 'clientVersion',
-            maraVersion: 0,
-            clientVersion: 0,
-            appVersion: 1,
-          }),
-        );
-      } else if (msg.type === 'response' && msg.ref === 'clientVersion') {
-        sock.send(
-          JSON.stringify({
-            type: 'login',
-            name: 'tester',
-            style: { font: { family: 'Verdana', pointSize: 10 }, color: '#cccccc' },
-          }),
-        );
-      } else if (msg.type === 'loginAccepted') {
-        resolve({ token: msg.resumeToken, ws: sock });
-      }
+      if (msg.type === 'welcome') resolve({ token: msg.sessionToken, ws: sock });
     });
   });
 }

@@ -4,11 +4,11 @@ import { WebSocket } from 'ws';
 import {
   encode,
   parseServerMessage,
+  PROTOCOL_VERSION,
   type ClientMessage,
   type ServerMessage,
   type ServerMessageOf,
   type ServerMessageType,
-  type UserStyle,
 } from '@mara/protocol';
 
 /**
@@ -82,21 +82,13 @@ export class TestClient {
   }
 }
 
-const defaultStyle: UserStyle = {
-  font: { family: 'Verdana', pointSize: 10, bold: false, italic: false, underline: false },
-  color: '#cccccc',
-};
-
-/** Run the version + login handshake; resolve the assigned user token + name. */
+/** Log in (the client speaks first); resolve the assigned token, name + secret. */
 export async function login(
   client: TestClient,
   name: string,
-  style: UserStyle = defaultStyle,
-): Promise<{ token: number; name: string }> {
-  await client.waitFor('serverHello');
-  client.send({ type: 'clientVersion', maraVersion: 3, clientVersion: 1, appVersion: 1 });
-  await client.waitFor('response');
-  client.send({ type: 'login', name, style });
-  const accepted = await client.waitFor('loginAccepted');
-  return { token: accepted.token, name: accepted.name };
+  color = '#cccccc',
+): Promise<{ token: number; name: string; sessionToken: string }> {
+  client.send({ type: 'login', protocol: PROTOCOL_VERSION, name, color });
+  const welcome = await client.waitFor('welcome');
+  return { token: welcome.self.token, name: welcome.self.name, sessionToken: welcome.sessionToken };
 }

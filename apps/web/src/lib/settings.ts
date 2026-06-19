@@ -5,8 +5,6 @@ export const MACRO_COUNT = 12;
 export interface MaraSettings {
   name: string;
   color: string;
-  fontFamily: string;
-  fontSize: number;
   showTimestamps: boolean;
   /** Quick-text macros, indexed 0–11 for F1–F12. */
   macros: string[];
@@ -41,8 +39,6 @@ export function serverUrl(): string {
 export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
-  fontFamily: 'Verdana',
-  fontSize: 10,
   showTimestamps: true,
   macros: normalizeMacros([]),
 };

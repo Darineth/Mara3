@@ -3,13 +3,13 @@
  * UI-facing view models (channels / chat lines), constructor options, the
  * event payload map, and the minimal cross-platform WebSocket interface.
  */
-import type { Token, UserInfo, UserStyle } from '@mara/protocol';
+import type { Color, Token, UserInfo } from '@mara/protocol';
 import type { TextPipeline } from '@mara/plugin-api';
 
 /**
  * High-level connection lifecycle the UI binds to. Distinct from the raw
- * WebSocket readyState: `authenticating` covers the post-open handshake
- * (serverHello → clientVersion → login), `denied` is a terminal auth failure
+ * WebSocket readyState: `authenticating` covers the post-open login round-trip
+ * (client sends `login`, awaits `welcome`), `denied` is a terminal auth failure
  * (no auto-reconnect), and `reconnecting` is an automatic retry after a drop.
  */
 export type ConnectionState =
@@ -44,8 +44,8 @@ export interface ChatLine {
 export interface ClientOptions {
   url: string;
   name: string;
-  style: UserStyle;
-  appVersion?: number;
+  /** The user's display colour (`#rrggbb`); the only per-user styling. */
+  color: Color;
   /** Inject a WebSocket implementation (browser uses the global by default). */
   webSocket?: WebSocketCtor;
   autoReconnect?: boolean;
@@ -66,11 +66,10 @@ export interface ClientOptions {
 export interface ClientEvents {
   statusChanged: ConnectionState;
   connected: { token: Token; name: string };
-  loginDenied: { reason: string; updateRequired: boolean };
-  error: { code: number; message: string };
+  loginDenied: { reason: string };
+  error: { message: string };
   userConnect: UserInfo;
   userDisconnect: { token: Token };
-  userUpdate: UserInfo;
   channelJoined: ChannelState;
   channelLeft: { channelToken: Token };
   userJoinedChannel: { token: Token; channelToken: Token };
@@ -79,9 +78,7 @@ export interface ClientEvents {
   emote: { from: Token; channelToken: Token; text: string };
   away: { token: Token; text: string };
   privateMessage: { from: Token; text: string };
-  serverMessage: { text: string };
-  pong: { pingId: number; rtt: number };
-  kicked: { reason: string };
+  pong: { id: number; rtt: number };
 }
 
 // -- minimal cross-platform WebSocket shape ---------------------------------

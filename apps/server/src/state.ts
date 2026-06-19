@@ -6,7 +6,8 @@ import { nextToken } from './tokens.js';
 /** A logged-in user and the connection currently backing them. */
 export interface Session {
   info: UserInfo;
-  resumeToken: string;
+  /** Per-session secret (the HTTP bearer credential for uploads). */
+  sessionToken: string;
   connection: Connection;
   channels: Set<Token>;
 }
@@ -26,10 +27,10 @@ export interface Channel {
 export class ServerState {
   readonly sessions = new Map<Token, Session>();
   readonly channelsByToken = new Map<Token, Channel>();
-  // Secondary indexes kept in lockstep with the primaries above so name/resume
+  // Secondary indexes kept in lockstep with the primaries above so name/session
   // lookups stay O(1); every add/remove must update both sides.
   private readonly channelTokenByName = new Map<string, Token>();
-  private readonly resumeTokens = new Map<string, Token>();
+  private readonly sessionTokens = new Map<string, Token>();
 
   /** Mint a user token unique among live sessions (collision-checked against the map). */
   allocUserToken(): Token {
@@ -43,7 +44,7 @@ export class ServerState {
 
   addSession(session: Session): void {
     this.sessions.set(session.info.token, session);
-    this.resumeTokens.set(session.resumeToken, session.info.token);
+    this.sessionTokens.set(session.sessionToken, session.info.token);
   }
 
   /** Drop a session and detach it from every channel it belonged to. */
@@ -56,13 +57,13 @@ export class ServerState {
       this.channelsByToken.get(channelToken)?.members.delete(token);
     }
     this.sessions.delete(token);
-    this.resumeTokens.delete(session.resumeToken);
+    this.sessionTokens.delete(session.sessionToken);
     return session;
   }
 
-  /** Resolve a session from its resume token (also the upload bearer credential). */
-  sessionByResumeToken(resumeToken: string): Session | undefined {
-    const token = this.resumeTokens.get(resumeToken);
+  /** Resolve a session from its per-session secret (the upload bearer credential). */
+  sessionBySessionToken(sessionToken: string): Session | undefined {
+    const token = this.sessionTokens.get(sessionToken);
     return token === undefined ? undefined : this.sessions.get(token);
   }
 

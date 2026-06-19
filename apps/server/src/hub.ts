@@ -1,5 +1,5 @@
 import {
-  MARA_VERSION,
+  PROTOCOL_VERSION,
   safeParseClientMessage,
   type ClientMessage,
   type ServerMessage,
@@ -10,14 +10,7 @@ import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
-import { makeResumeToken } from './tokens.js';
-
-/**
- * Cap on a (serialized) opaque pluginData payload. The schema can't bound
- * `z.unknown()`, and this data is fanned out to every recipient, so a small
- * explicit limit keeps one client from amplifying a large blob to everyone.
- */
-const MAX_PLUGIN_DATA_CHARS = 16 * 1024;
+import { makeSessionToken } from './tokens.js';
 
 /**
  * The message-handling core. One instance owns all shared state and processes
@@ -30,38 +23,36 @@ export class Hub {
   constructor(
     private readonly cfg: ServerConfig,
     private readonly log: Logger,
-    // Clock is injectable so tests can assert deterministic pong serverTime.
-    private readonly now: () => number = Date.now,
   ) {}
 
   onConnect(conn: Connection): void {
+    // The client speaks first (`login`); nothing to send on connect.
     this.log.debug({ conn: conn.id }, 'connected');
-    conn.send({ type: 'serverHello', maraVersion: MARA_VERSION, serverName: this.cfg.serverName });
   }
 
   onMessage(conn: Connection, raw: string): void {
     const parsed = safeParseClientMessage(raw);
     if (!parsed.success) {
-      conn.send({ type: 'error', code: 400, message: parsed.error.message });
+      conn.send({ type: 'error', message: parsed.error.message });
       return;
     }
     try {
       this.dispatch(conn, parsed.data);
     } catch (err) {
       this.log.error({ err, conn: conn.id }, 'handler threw');
-      conn.send({ type: 'error', code: 500, message: 'internal error' });
+      conn.send({ type: 'error', message: 'internal error' });
     }
   }
 
   onClose(conn: Connection): void {
     // Only logged-in connections have presence to tear down; a socket that dropped
-    // during the handshake (userToken still null) leaves no state to clean up.
+    // before login (userToken still null) leaves no state to clean up.
     if (conn.userToken !== null) {
       const session = this.state.removeSession(conn.userToken);
       if (session) {
         this.log.info({ user: session.info.name }, 'disconnected');
         this.broadcastAll(
-          { type: 'userDisconnect', token: session.info.token, reason: '' },
+          { type: 'userDisconnect', token: session.info.token },
           session.info.token,
         );
       }
@@ -72,16 +63,13 @@ export class Hub {
   // -- dispatch -------------------------------------------------------------
 
   private dispatch(conn: Connection, msg: ClientMessage): void {
-    // Handshake messages are dispatched first, before the active-required gate:
-    // they are precisely the messages that advance awaitingVersion → awaitingLogin
-    // → active, so they must be reachable while the connection is not yet active.
-    // Each handler enforces its own expected state.
-    if (msg.type === 'clientVersion') return this.handleVersion(conn, msg);
+    // `login` is the only message valid before the connection is active — it is
+    // what makes it active. Its handler enforces the awaitingLogin state.
     if (msg.type === 'login') return this.handleLogin(conn, msg);
 
     // Everything else requires a logged-in session.
     if (conn.state !== 'active' || conn.userToken === null) {
-      conn.send({ type: 'error', code: 401, message: 'not logged in' });
+      conn.send({ type: 'error', message: 'not logged in' });
       return;
     }
     const session = this.state.sessions.get(conn.userToken);
@@ -100,57 +88,38 @@ export class Hub {
         return this.handleAway(session, msg);
       case 'privateMessage':
         return this.handlePrivateMessage(session, msg);
-      case 'userUpdate':
-        return this.handleUserUpdate(session, msg);
       case 'ping':
-        return this.handlePing(session, msg);
-      case 'serverCommand':
-        return this.handleServerCommand(session, msg);
-      case 'queryUser':
-        return this.handleQueryUser(session, msg);
-      case 'pluginData':
-        return this.handlePluginData(session, msg);
-      case 'disconnect':
-        return conn.close(1000, 'client disconnect');
+        return session.connection.send({ type: 'pong', id: msg.id });
     }
   }
 
-  // -- handshake ------------------------------------------------------------
-
-  private handleVersion(
-    conn: Connection,
-    msg: Extract<ClientMessage, { type: 'clientVersion' }>,
-  ): void {
-    // Ignore a duplicate clientVersion once past the handshake's first step.
-    if (conn.state !== 'awaitingVersion') return;
-    if (msg.appVersion < this.cfg.minAppVersion) {
-      // 4001: app-defined WS close code (4000-4999 range) meaning "must update".
-      conn.send({ type: 'loginDenied', reason: 'client out of date', updateRequired: true });
-      conn.close(4001, 'update required');
-      return;
-    }
-    conn.state = 'awaitingLogin';
-    conn.send({ type: 'response', ref: 'clientVersion', ok: true, code: 0, message: '' });
-  }
+  // -- login ----------------------------------------------------------------
 
   private handleLogin(conn: Connection, msg: Extract<ClientMessage, { type: 'login' }>): void {
     if (conn.state !== 'awaitingLogin') {
-      conn.send({ type: 'error', code: 409, message: 'unexpected login' });
+      conn.send({ type: 'error', message: 'already logged in' });
       return;
     }
+    if (msg.protocol !== PROTOCOL_VERSION) {
+      conn.send({ type: 'loginDenied', reason: 'protocol version mismatch — please update' });
+      // 4001: app-defined WS close code (4000–4999) meaning "must update".
+      conn.close(4001, 'protocol mismatch');
+      return;
+    }
+
     const name = this.uniqueName(msg.name);
     const token = this.state.allocUserToken();
-    const resumeToken = makeResumeToken();
-    const info: UserInfo = { token, name, style: msg.style, away: '' };
-    const session: Session = { info, resumeToken, connection: conn, channels: new Set() };
+    const sessionToken = makeSessionToken();
+    const info: UserInfo = { token, name, color: msg.color, away: '' };
+    const session: Session = { info, sessionToken, connection: conn, channels: new Set() };
     this.state.addSession(session);
 
     conn.userToken = token;
     conn.state = 'active';
     this.log.info({ user: name, token }, 'logged in');
 
-    conn.send({ type: 'loginAccepted', token, name, resumeToken, motd: this.cfg.motd });
-    this.broadcastAll({ type: 'userConnect', user: info, reconnect: false }, token);
+    conn.send({ type: 'welcome', self: info, sessionToken, motd: this.cfg.motd });
+    this.broadcastAll({ type: 'userConnect', user: info }, token);
 
     // Drop everyone into the shared default channel automatically.
     if (this.cfg.defaultChannel) this.joinChannelByName(session, this.cfg.defaultChannel);
@@ -216,13 +185,7 @@ export class Hub {
     kind: 'chat' | 'emote',
   ): void {
     if (!session.channels.has(channelToken)) {
-      session.connection.send({
-        type: 'response',
-        ref: kind,
-        ok: false,
-        code: 403,
-        message: 'not in channel',
-      });
+      session.connection.send({ type: 'error', message: 'not in that channel' });
       return;
     }
     this.broadcastChannel(channelToken, {
@@ -242,139 +205,36 @@ export class Hub {
     session: Session,
     msg: Extract<ClientMessage, { type: 'privateMessage' }>,
   ): void {
-    const target = this.state.sessions.get(msg.toUserToken);
+    const target = this.state.sessions.get(msg.to);
     if (!target) {
-      session.connection.send({
-        type: 'response',
-        ref: 'privateMessage',
-        ok: false,
-        code: 404,
-        message: 'user offline',
-      });
+      session.connection.send({ type: 'error', message: 'user is offline' });
       return;
     }
+    // Delivered to the recipient only; the sender records its own line locally.
     target.connection.send({ type: 'privateMessage', from: session.info.token, text: msg.text });
-    session.connection.send({
-      type: 'response',
-      ref: 'privateMessage',
-      ok: true,
-      code: 0,
-      message: '',
-    });
-  }
-
-  private handleUserUpdate(
-    session: Session,
-    msg: Extract<ClientMessage, { type: 'userUpdate' }>,
-  ): void {
-    session.info.name = this.uniqueName(msg.name, session.info.token);
-    session.info.style = msg.style;
-    this.broadcastAll({
-      type: 'userUpdate',
-      token: session.info.token,
-      name: session.info.name,
-      style: session.info.style,
-    });
-  }
-
-  private handlePing(session: Session, msg: Extract<ClientMessage, { type: 'ping' }>): void {
-    session.connection.send({
-      type: 'pong',
-      pingId: msg.pingId,
-      sentAt: msg.sentAt,
-      serverTime: this.now(),
-    });
-  }
-
-  private handleServerCommand(
-    session: Session,
-    msg: Extract<ClientMessage, { type: 'serverCommand' }>,
-  ): void {
-    if (msg.command === 'who') {
-      const names = [...this.state.sessions.values()].map((s) => s.info.name).join(', ');
-      session.connection.send({
-        type: 'serverMessage',
-        text: `Online (${this.state.sessions.size}): ${names}`,
-      });
-      return;
-    }
-    session.connection.send({
-      type: 'response',
-      ref: 'serverCommand',
-      ok: false,
-      code: 404,
-      message: `unknown command: ${msg.command}`,
-    });
-  }
-
-  private handleQueryUser(
-    session: Session,
-    msg: Extract<ClientMessage, { type: 'queryUser' }>,
-  ): void {
-    const target = this.state.sessions.get(msg.token);
-    if (target) {
-      session.connection.send({ type: 'userInfo', user: target.info });
-    } else {
-      session.connection.send({
-        type: 'response',
-        ref: 'queryUser',
-        ok: false,
-        code: 404,
-        message: 'unknown user',
-      });
-    }
-  }
-
-  private handlePluginData(
-    session: Session,
-    msg: Extract<ClientMessage, { type: 'pluginData' }>,
-  ): void {
-    if (JSON.stringify(msg.data ?? null).length > MAX_PLUGIN_DATA_CHARS) {
-      session.connection.send({
-        type: 'response',
-        ref: 'pluginData',
-        ok: false,
-        code: 413,
-        message: 'pluginData too large',
-      });
-      return;
-    }
-    if (msg.toUserToken !== undefined) {
-      this.state.sessions
-        .get(msg.toUserToken)
-        ?.connection.send({ type: 'pluginData', from: session.info.token, data: msg.data });
-      return;
-    }
-    this.broadcastAll(
-      { type: 'pluginData', from: session.info.token, data: msg.data },
-      session.info.token,
-    );
   }
 
   // -- helpers --------------------------------------------------------------
 
-  // Resolve a free display name, suffixing "2", "3"… on clash. `ignore` is the
-  // caller's own token so a userUpdate keeping the same name doesn't clash itself.
-  private uniqueName(requested: string, ignore?: Token): string {
-    let name = requested.trim() || 'guest';
+  // Resolve a free display name, suffixing "2", "3"… on a case-insensitive clash.
+  private uniqueName(requested: string): string {
+    const base = requested.trim() || 'guest';
+    let name = base;
     let suffix = 2;
-    while (this.nameClashes(name, ignore)) {
-      name = `${requested}${suffix++}`;
-    }
+    while (this.nameClashes(name)) name = `${base}${suffix++}`;
     return name;
   }
 
-  // Case-insensitive name collision check across live sessions, excluding `ignore`.
-  private nameClashes(name: string, ignore?: Token): boolean {
+  private nameClashes(name: string): boolean {
     const lower = name.toLowerCase();
     for (const session of this.state.sessions.values()) {
-      if (session.info.token !== ignore && session.info.name.toLowerCase() === lower) return true;
+      if (session.info.name.toLowerCase() === lower) return true;
     }
     return false;
   }
 
   // Fan out to every session; `exceptToken` omits the originator so a sender
-  // doesn't receive an echo of their own event (connect, away, pluginData, …).
+  // doesn't receive an echo of their own event (connect, away, …).
   private broadcastAll(message: ServerMessage, exceptToken?: Token): void {
     for (const session of this.state.sessions.values()) {
       if (session.info.token !== exceptToken) session.connection.send(message);

@@ -26,24 +26,12 @@
     const c = new MaraClient({
       url: serverUrl(),
       name: settings.name.trim() || 'guest',
-      style: {
-        font: {
-          family: settings.fontFamily,
-          pointSize: settings.fontSize,
-          bold: false,
-          italic: false,
-          underline: false,
-        },
-        color: settings.color,
-      },
+      color: settings.color,
       plugins,
     });
     c.events.on('loginDenied', (d) => {
-      error = d.updateRequired ? 'Client update required.' : d.reason;
+      error = d.reason;
       client = null;
-    });
-    c.events.on('kicked', (d) => {
-      error = `Kicked: ${d.reason}`;
     });
     c.events.on('error', (e) => {
       // Only surface errors before we're fully connected; once active, transient
@@ -83,20 +71,10 @@
         Display name
         <input bind:value={settings.name} placeholder="your name" required />
       </label>
-      <div class="row">
-        <label class="color">
-          Color
-          <input type="color" bind:value={settings.color} />
-        </label>
-        <label class="grow">
-          Font
-          <input bind:value={settings.fontFamily} />
-        </label>
-        <label class="size">
-          Size
-          <input type="number" min="6" max="32" bind:value={settings.fontSize} />
-        </label>
-      </div>
+      <label class="color">
+        Color
+        <input type="color" bind:value={settings.color} />
+      </label>
       <label class="check">
         <input type="checkbox" bind:checked={settings.showTimestamps} />
         Show timestamps
@@ -143,17 +121,6 @@
     border: 1px solid var(--mara-border);
     background: var(--mara-input-bg);
     color: inherit;
-  }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
-  }
-  .row .grow {
-    flex: 1;
-  }
-  .row .size {
-    width: 4.5rem;
   }
   .color input[type='color'] {
     padding: 0;

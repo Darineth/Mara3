@@ -6,10 +6,7 @@ import { createPipeline, shrugPlugin, type MaraPlugin } from '@mara/plugin-api';
 import { MaraClient } from './client.js';
 import type { ClientEvents, ClientOptions, WebSocketCtor } from './types.js';
 
-const style: ClientOptions['style'] = {
-  font: { family: 'Verdana', pointSize: 10, bold: false, italic: false, underline: false },
-  color: '#cccccc',
-};
+const color: ClientOptions['color'] = '#cccccc';
 
 let server: MaraServer;
 let url: string;
@@ -30,7 +27,7 @@ function makeClient(name: string, opts: Partial<ClientOptions> = {}): MaraClient
   return new MaraClient({
     url,
     name,
-    style,
+    color,
     webSocket: WebSocket as unknown as WebSocketCtor,
     autoReconnect: false,
     heartbeatIntervalMs: 0,

@@ -5,15 +5,11 @@
  * exactly one place and is validated identically on both ends.
  */
 
-/** Bumped on any breaking change to the message set. Negotiated at handshake. */
-export const PROTOCOL_VERSION = 1;
-
 /**
- * The Mara product generation (this is Mara 3), carried in the `clientVersion`
- * handshake. Tracked separately from PROTOCOL_VERSION: the product can rev
- * without a wire-breaking change, and vice versa.
+ * Wire-protocol version. The client sends it in `login`; the server denies a
+ * mismatch. Bump on any breaking change to the message set.
  */
-export const MARA_VERSION = 3;
+export const PROTOCOL_VERSION = 1;
 
 export * from './primitives.js';
 export * from './messages.js';

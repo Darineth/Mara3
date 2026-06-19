@@ -26,7 +26,7 @@
       <li>
         <button
           type="button"
-          style="color:{user.style.color}"
+          style="color:{user.color}"
           class:away={user.away !== ''}
           onclick={() => onselect?.(user)}
           title={user.away ? `Away: ${user.away}` : user.name}

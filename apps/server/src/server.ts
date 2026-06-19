@@ -58,13 +58,13 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       }
       if (req.url === UPLOAD_ENDPOINT) {
         // Authorize uploads against a live session: the bearer token must match a
-        // current resume token. GETs on UPLOAD_ROUTE stay open (capability URLs).
+        // current session secret. GETs on UPLOAD_ROUTE stay open (capability URLs).
         void handleUpload(
           req,
           res,
           cfg,
           log,
-          (token) => token !== undefined && hub.state.sessionByResumeToken(token) !== undefined,
+          (token) => token !== undefined && hub.state.sessionBySessionToken(token) !== undefined,
         );
         return;
       }

@@ -37,7 +37,7 @@
     return {
       kind: line.kind,
       authorName: user?.name ?? (line.from !== null ? `#${line.from}` : ''),
-      authorColor: user?.style.color ?? '#888888',
+      authorColor: user?.color ?? '#888888',
       text: line.text,
       timestamp: new Date(line.at).toLocaleTimeString(),
     };

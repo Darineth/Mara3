@@ -15,4 +15,4 @@ export type {
 } from './types.js';
 
 // Re-export protocol types most consumers need alongside the client.
-export type { Token, UserInfo, UserStyle, Font, Color } from '@mara/protocol';
+export type { Token, UserInfo, Color } from '@mara/protocol';
