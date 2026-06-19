@@ -31,6 +31,14 @@ const HTML_ESCAPES: Record<string, string> = {
 };
 
 const URL_RE = /https?:\/\/[^\s<]+[^\s<.,!?;:)]/g;
+const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]\S*)?$/i;
+
+function anchor(url: string): string {
+  return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+}
+function imageTag(url: string): string {
+  return `<a href="${url}" target="_blank" rel="noopener noreferrer"><img class="mara-img" src="${url}" alt="" loading="lazy" /></a>`;
+}
 // A null character: cannot appear in normal escaped chat text, so it is a safe
 // placeholder marker. Built at runtime to keep control chars out of the source.
 const SENTINEL = String.fromCharCode(0);
@@ -83,6 +91,8 @@ export interface RenderTextOptions {
   emoticons?: Record<string, string>;
   /** Set false to skip URL linkification. */
   links?: boolean;
+  /** Set false to render image URLs as plain links instead of inline images. */
+  images?: boolean;
   /** Set false to skip markdown formatting. */
   markdown?: boolean;
 }
@@ -109,9 +119,10 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   );
 
   // Protect URLs so markdown characters in them aren't treated as formatting.
+  // Image URLs render inline as a clickable thumbnail.
   if (options.links !== false) {
     s = s.replace(URL_RE, (url) =>
-      stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`),
+      stash(options.images !== false && IMAGE_RE.test(url) ? imageTag(url) : anchor(url)),
     );
   }
 

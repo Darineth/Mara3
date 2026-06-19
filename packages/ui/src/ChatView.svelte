@@ -95,6 +95,17 @@
   .mara-chatview :global(a) {
     color: var(--mara-link, #5aa9ff);
   }
+  .mara-chatview :global(.mara-img) {
+    display: block;
+    max-width: min(320px, 100%);
+    max-height: 240px;
+    width: auto;
+    height: auto;
+    border-radius: 6px;
+    margin: 0.25rem 0;
+    object-fit: contain;
+    background: rgba(127, 127, 127, 0.12);
+  }
 
   /* Discord-style markdown */
   .mara-chatview :global(.mara-code),

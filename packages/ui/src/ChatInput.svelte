@@ -7,6 +7,7 @@
     placeholder = 'Type a message…',
     disabled = false,
     macros = [],
+    upload,
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -14,12 +15,64 @@
     disabled?: boolean;
     /** Quick-text macros indexed 0–11 for F1–F12. */
     macros?: string[];
+    /** Upload an image and resolve its hosted URL; enables drag-drop & paste. */
+    upload?: (file: File) => Promise<string>;
   } = $props();
 
   let text = $state('');
   let history = $state<string[]>([]);
   let historyIndex = $state(-1); // -1 = editing a fresh line
   let textarea = $state<HTMLTextAreaElement | null>(null);
+  let uploading = $state(0); // count of in-flight uploads
+  let dragOver = $state(false);
+  let uploadError = $state('');
+
+  /** Upload dropped/pasted image files and drop their URLs into the message. */
+  async function uploadFiles(files: File[]) {
+    if (!upload) return;
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) return;
+    uploadError = '';
+    for (const file of images) {
+      uploading += 1;
+      try {
+        const url = await upload(file);
+        const sep = text === '' || /\s$/.test(text) ? '' : ' ';
+        await insertAtCursor(sep + url + ' ');
+      } catch (err) {
+        uploadError = err instanceof Error ? err.message : 'Upload failed';
+      } finally {
+        uploading -= 1;
+      }
+    }
+  }
+
+  function onDrop(event: DragEvent) {
+    if (!upload) return;
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (files.some((f) => f.type.startsWith('image/'))) {
+      event.preventDefault();
+      dragOver = false;
+      void uploadFiles(files);
+    }
+  }
+
+  function onDragOver(event: DragEvent) {
+    if (!upload || !event.dataTransfer) return;
+    if ([...event.dataTransfer.items].some((i) => i.kind === 'file')) {
+      event.preventDefault();
+      dragOver = true;
+    }
+  }
+
+  function onPaste(event: ClipboardEvent) {
+    if (!upload) return;
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.some((f) => f.type.startsWith('image/'))) {
+      event.preventDefault();
+      void uploadFiles(files);
+    }
+  }
 
   async function insertAtCursor(snippet: string) {
     const ta = textarea;
@@ -86,27 +139,53 @@
   }
 </script>
 
-<div class="mara-input">
+<div
+  class="mara-input"
+  class:dragover={dragOver}
+  ondrop={onDrop}
+  ondragover={onDragOver}
+  ondragleave={() => (dragOver = false)}
+  role="group"
+>
+  {#if uploadError}
+    <div class="mara-upload-error" role="alert">{uploadError}</div>
+  {/if}
   <textarea
     bind:this={textarea}
     bind:value={text}
-    {placeholder}
+    placeholder={uploading > 0 ? 'Uploading image…' : placeholder}
     {disabled}
     maxlength={maxLength}
     rows="1"
     onkeydown={onKeydown}
     oninput={autosize}
+    onpaste={onPaste}
   ></textarea>
-  <button type="button" onclick={submit} disabled={disabled || text.trim() === ''}>Send</button>
+  <button
+    type="button"
+    onclick={submit}
+    disabled={disabled || text.trim() === '' || uploading > 0}>Send</button
+  >
 </div>
 
 <style>
   .mara-input {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem;
     border-top: 1px solid var(--mara-border, #333);
     align-items: flex-end;
+  }
+  .mara-input.dragover {
+    outline: 2px dashed var(--mara-accent, #3b82f6);
+    outline-offset: -4px;
+    border-radius: 6px;
+  }
+  .mara-upload-error {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: var(--mara-error, #f87171);
   }
   textarea {
     flex: 1;

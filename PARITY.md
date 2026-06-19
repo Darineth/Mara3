@@ -39,6 +39,8 @@ plugin data, response/error. ✅
 | Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                      |
 | Emoticons                            | ◻      | implemented but off by default (opt-in via render option)      |
 | URL linkification                    | ✅     | safe anchors, HTML-escaped                                     |
+| Inline images (by URL)               | ✅     | image URLs render as a clickable thumbnail                     |
+| Image upload (drag-drop / paste)     | ✅     | hosted by the server; rolling cache, per-file + total size cap |
 | Chat input history (↑/↓)             | ✅     | + autosize, max length                                         |
 | Auto-scroll with freeze-on-scroll-up | ✅     |                                                                |
 | Macros (F1–F12)                      | ✅     | editor dialog; F-keys insert into the message box              |
@@ -62,8 +64,9 @@ plugin data, response/error. ✅
 
 ## Known gaps / follow-ups
 
-- File transfers — send/receive files between users.
-- Image hosting — upload + inline-render images in chat.
+- File transfers — send/receive arbitrary (non-image) files between users.
+  Images now upload via drag-drop/paste to `/upload` (hosted, size-capped,
+  rolling cache); generalising this to any file type is the remaining piece.
 - Remember joined channels across sessions (rejoin them automatically on login).
 - Consider server-side message storage — at least recent history, so messages
   survive reconnects/restarts and new joiners see backlog. (Currently messages

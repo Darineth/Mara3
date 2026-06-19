@@ -5,6 +5,7 @@ import { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
 import { Hub } from './hub.js';
 import type { Logger } from './logger.js';
+import { handleUpload, serveUpload, UPLOAD_ENDPOINT, UPLOAD_ROUTE } from './uploads.js';
 
 export interface MaraServer {
   readonly hub: Hub;
@@ -43,6 +44,14 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       if (req.url === '/health' || req.url === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end('ok');
+        return;
+      }
+      if (req.url === UPLOAD_ENDPOINT) {
+        void handleUpload(req, res, cfg, log);
+        return;
+      }
+      if (req.url?.startsWith(UPLOAD_ROUTE)) {
+        void serveUpload(req, res, cfg);
         return;
       }
       if (serveStatic) {

@@ -44,6 +44,30 @@ describe('renderText — safety + links', () => {
   it('applies emoticons only when opted in', () => {
     expect(renderText('love <3', { emoticons: DEFAULT_EMOTICONS })).toBe('love ❤️');
   });
+
+  it('renders image URLs inline as a clickable thumbnail', () => {
+    const html = renderText('look https://example.com/cat.png cute');
+    expect(html).toContain('<img class="mara-img" src="https://example.com/cat.png"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('<a href="https://example.com/cat.png"');
+  });
+
+  it('treats image URLs with a query string as images', () => {
+    const html = renderText('https://cdn.example.com/a.jpg?w=200');
+    expect(html).toContain('<img class="mara-img" src="https://cdn.example.com/a.jpg?w=200"');
+  });
+
+  it('leaves non-image URLs as plain links', () => {
+    const html = renderText('https://example.com/page');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('<a href="https://example.com/page"');
+  });
+
+  it('renders image URLs as links when images are disabled', () => {
+    const html = renderText('https://example.com/cat.png', { images: false });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('<a href="https://example.com/cat.png"');
+  });
 });
 
 describe('renderText — Discord markdown', () => {

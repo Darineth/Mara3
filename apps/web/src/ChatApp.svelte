@@ -4,6 +4,7 @@
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import { isDesktop, nativeLog } from './lib/native.js';
   import type { MaraSettings } from './lib/settings.js';
+  import { uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
 
   let {
@@ -323,7 +324,12 @@
           />
         {/if}
       </div>
-      <ChatInput onsend={handleSend} disabled={$connection !== 'active'} macros={settings.macros} />
+      <ChatInput
+        onsend={handleSend}
+        disabled={$connection !== 'active'}
+        macros={settings.macros}
+        upload={uploadImage}
+      />
     {/if}
   </main>
 </div>
