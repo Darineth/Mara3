@@ -16,47 +16,88 @@ Flat, discriminated on `type`:
 
 Messages are split by direction into two unions. Each side validates only what it
 can legitimately receive, which also lets a `chat` the client _sends_ (no author)
-and a `chat` the server _broadcasts_ (with an author `from`) differ cleanly.
+and a `chat` the server _broadcasts_ (with an author `from`) reuse the same `type`
+with direction-appropriate shapes.
 
 ## Primitives
 
-| Type        | JSON                                             | Replaces (Mara 2)            |
-| ----------- | ------------------------------------------------ | ---------------------------- |
-| `Token`     | uint32 number (0 … 4294967295)                   | `quint32` user/channel token |
-| `Color`     | `"#rrggbb"`                                      | serialized `QColor`          |
-| `Font`      | `{ family, pointSize, bold, italic, underline }` | serialized `QFont`           |
-| `UserStyle` | `{ font, color }`                                | `MTextStyle`                 |
-| `UserInfo`  | `{ token, name, style, away }`                   | `MUser`                      |
+| Type       | JSON                           | Notes                                      |
+| ---------- | ------------------------------ | ------------------------------------------ |
+| `Token`    | positive integer               | server-assigned user/channel id (non-zero) |
+| `Color`    | `"#rrggbb"`                    | the only per-user styling                  |
+| `UserInfo` | `{ token, name, color, away }` | `away` is the away note; `""` = present    |
 
 ## Client → Server
 
-`clientVersion` · `login` · `joinChannel` · `leaveChannel` · `chat` · `emote` ·
-`away` · `privateMessage` · `userUpdate` · `ping` · `serverCommand` · `queryUser` ·
-`disconnect` · `pluginData`
+| Message          | Fields                  | Purpose                                  |
+| ---------------- | ----------------------- | ---------------------------------------- |
+| `login`          | `protocol, name, color` | First frame on a new socket (see below). |
+| `joinChannel`    | `channel`               | Join (or create) a channel by name.      |
+| `leaveChannel`   | `channelToken`          | Leave a channel.                         |
+| `chat`           | `channelToken, text`    | Send to a channel.                       |
+| `emote`          | `channelToken, text`    | `/me`-style action to a channel.         |
+| `privateMessage` | `to, text`              | Direct message to a user token.          |
+| `away`           | `text`                  | Set away note; `""` clears it.           |
+| `ping`           | `id`                    | Heartbeat; echoed in `pong`.             |
 
 ## Server → Client
 
-`serverHello` · `response` · `loginAccepted` · `loginDenied` · `userConnect` ·
-`userDisconnect` · `userUpdate` · `channelJoined` · `channelLeft` ·
-`userJoinedChannel` · `userLeftChannel` · `chat` · `emote` · `away` ·
-`privateMessage` · `pong` · `kicked` · `serverMessage` · `userInfo` · `pluginData` ·
-`error`
+| Message             | Fields                         | Purpose                                       |
+| ------------------- | ------------------------------ | --------------------------------------------- |
+| `welcome`           | `self, sessionToken, motd`     | Login accepted; `self` is your `UserInfo`.    |
+| `loginDenied`       | `reason`                       | Login rejected (terminal; no auto-reconnect). |
+| `userConnect`       | `user`                         | Someone logged in.                            |
+| `userDisconnect`    | `token`                        | Someone disconnected.                         |
+| `channelJoined`     | `channelToken, channel, users` | You joined; carries the current roster.       |
+| `channelLeft`       | `channelToken`                 | You left a channel.                           |
+| `userJoinedChannel` | `token, channelToken`          | Someone joined a channel you're in.           |
+| `userLeftChannel`   | `token, channelToken`          | Someone left a channel you're in.             |
+| `chat`              | `from, channelToken, text`     | A channel message.                            |
+| `emote`             | `from, channelToken, text`     | A channel action.                             |
+| `away`              | `token, text`                  | A user's away status changed.                 |
+| `privateMessage`    | `from, text`                   | A direct message to you.                      |
+| `pong`              | `id`                           | Reply to `ping`.                              |
+| `error`             | `message`                      | A request failed, or a frame was invalid.     |
 
 ## Handshake
 
-1. Server → `serverHello { maraVersion, serverName }` on connect.
-2. Client → `clientVersion { maraVersion, clientVersion, appVersion }`.
-3. Client → `login { name, resumeToken?, style }`.
-4. Server → `loginAccepted { token, name, resumeToken, motd }` **or**
-   `loginDenied { reason, updateRequired }`.
-5. Steady state: join/leave channels, chat/emote/away, private messages, ping/pong.
+The client speaks first — there is no separate version/hello round-trip.
+
+1. Client opens the socket and sends `login { protocol, name, color }`.
+2. Server replies `welcome { self, sessionToken, motd }` **or**
+   `loginDenied { reason }` (and closes).
+3. Steady state: join/leave channels, chat/emote/away, private messages, ping/pong.
+
+`self.token` is the public id others see; `sessionToken` is a per-session secret
+(the bearer credential for authenticated HTTP calls such as image upload — it is
+never broadcast). The server de-duplicates display names, so `self.name` may differ
+from the requested name.
+
+## Identity & presence
+
+There are no accounts: identity is the chosen `name`. Presence is per-channel —
+clients learn who is present from each `channelJoined` roster and the
+`userJoinedChannel`/`userLeftChannel`/`userDisconnect` notices. There is no global
+user list.
 
 ## Keepalive
 
-App-level `ping`/`pong` carries `pingId` + timestamps for latency display; WebSocket
-ping/pong frames handle liveness at the transport layer.
+App-level `ping { id }` / `pong { id }` gives liveness and a round-trip-time
+measurement; WebSocket ping/pong frames cover liveness at the transport layer.
+
+## Errors
+
+Request failures (not in that channel, recipient offline, malformed frame, …) come
+back as `error { message }`. A failed `login` is the exception — it returns the
+terminal `loginDenied { reason }`.
 
 ## Versioning
 
-`PROTOCOL_VERSION` (currently `1`) bumps on any breaking change and is negotiated
-during the handshake via the `clientVersion` exchange.
+`PROTOCOL_VERSION` (currently `1`) bumps on any breaking change to the message set.
+The client sends it in `login`; the server denies a mismatch with `loginDenied`.
+
+## Limits
+
+Chat/PM text is capped at 8192 characters (a server abuse guard). A single inbound
+WebSocket frame is capped at 256 KB. See [SECURITY-TODO.md](SECURITY-TODO.md) for
+the broader threat model and open items.
