@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { openLightbox, closeLightboxFor } from './lightbox.js';
 
   let {
     onsend,
@@ -19,32 +20,57 @@
     upload?: (file: File) => Promise<string>;
   } = $props();
 
+  /** A pending image attachment shown as a tile above the input. */
+  interface Attachment {
+    id: number;
+    name: string;
+    /** Object URL for an instant local preview while the upload is in flight. */
+    preview: string;
+    /** Hosted URL once the upload resolves; undefined while uploading. */
+    url?: string;
+  }
+
   let text = $state('');
   let history = $state<string[]>([]);
   let historyIndex = $state(-1); // -1 = editing a fresh line
   let textarea = $state<HTMLTextAreaElement | null>(null);
-  let uploading = $state(0); // count of in-flight uploads
+  let attachments = $state<Attachment[]>([]);
   let dragOver = $state(false);
   let uploadError = $state('');
+  let nextAttachId = 0;
 
-  /** Upload dropped/pasted image files and drop their URLs into the message. */
+  const uploading = $derived(attachments.some((a) => a.url === undefined));
+  const canSend = $derived(
+    !disabled && !uploading && (text.trim() !== '' || attachments.length > 0),
+  );
+
+  /** Upload dropped/pasted image files, each shown as a tile until it resolves. */
   async function uploadFiles(files: File[]) {
     if (!upload) return;
     const images = files.filter((f) => f.type.startsWith('image/'));
     if (images.length === 0) return;
     uploadError = '';
     for (const file of images) {
-      uploading += 1;
+      const id = nextAttachId++;
+      const preview = URL.createObjectURL(file);
+      attachments = [...attachments, { id, name: file.name, preview }];
       try {
         const url = await upload(file);
-        const sep = text === '' || /\s$/.test(text) ? '' : ' ';
-        await insertAtCursor(sep + url + ' ');
+        attachments = attachments.map((a) => (a.id === id ? { ...a, url } : a));
       } catch (err) {
         uploadError = err instanceof Error ? err.message : 'Upload failed';
-      } finally {
-        uploading -= 1;
+        removeAttachment(id);
       }
     }
+  }
+
+  function removeAttachment(id: number) {
+    const gone = attachments.find((a) => a.id === id);
+    if (gone) {
+      closeLightboxFor([gone.preview, gone.url].filter((s): s is string => !!s));
+      URL.revokeObjectURL(gone.preview);
+    }
+    attachments = attachments.filter((a) => a.id !== id);
   }
 
   function onDrop(event: DragEvent) {
@@ -97,12 +123,19 @@
   }
 
   function submit() {
-    const value = text.trim();
-    if (!value || disabled) return;
+    if (!canSend) return;
+    const typed = text.trim();
+    const urls = attachments.map((a) => a.url).filter((u): u is string => !!u);
+    // Image URLs go on their own lines so the renderer turns each into an inline
+    // image; the typed text (if any) leads.
+    const value = [typed, ...urls].filter((p) => p !== '').join('\n');
+    if (value === '') return;
     onsend(value);
-    history = [...history, value].slice(-100);
+    if (typed) history = [...history, typed].slice(-100); // recall text only, not URLs
     historyIndex = -1;
     text = '';
+    for (const a of attachments) URL.revokeObjectURL(a.preview);
+    attachments = [];
     queueMicrotask(autosize);
   }
 
@@ -150,10 +183,35 @@
   {#if uploadError}
     <div class="mara-upload-error" role="alert">{uploadError}</div>
   {/if}
+  {#if attachments.length > 0}
+    <div class="mara-attachments">
+      {#each attachments as att (att.id)}
+        <div class="mara-tile" class:uploading={att.url === undefined} title={att.name}>
+          <button
+            type="button"
+            class="open"
+            onclick={() => openLightbox(att.url ?? att.preview, att.name)}
+            aria-label="Preview {att.name || 'image'}"
+          >
+            <img src={att.preview} alt={att.name} />
+          </button>
+          {#if att.url === undefined}
+            <span class="spinner" aria-label="Uploading"></span>
+          {/if}
+          <button
+            type="button"
+            class="remove"
+            onclick={() => removeAttachment(att.id)}
+            aria-label="Remove image">×</button
+          >
+        </div>
+      {/each}
+    </div>
+  {/if}
   <textarea
     bind:this={textarea}
     bind:value={text}
-    placeholder={uploading > 0 ? 'Uploading image…' : placeholder}
+    {placeholder}
     {disabled}
     maxlength={maxLength}
     rows="1"
@@ -161,11 +219,7 @@
     oninput={autosize}
     onpaste={onPaste}
   ></textarea>
-  <button
-    type="button"
-    onclick={submit}
-    disabled={disabled || text.trim() === '' || uploading > 0}>Send</button
-  >
+  <button type="button" class="send" onclick={submit} disabled={!canSend}>Send</button>
 </div>
 
 <style>
@@ -187,6 +241,71 @@
     font-size: 0.8rem;
     color: var(--mara-error, #f87171);
   }
+  .mara-attachments {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .mara-tile {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--mara-border, #333);
+    background: rgba(127, 127, 127, 0.12);
+  }
+  .mara-tile .open {
+    all: unset;
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: zoom-in;
+  }
+  .mara-tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .mara-tile.uploading img {
+    opacity: 0.4;
+  }
+  .mara-tile .remove {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    line-height: 1;
+    font-size: 13px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mara-tile .spinner {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: mara-spin 0.7s linear infinite;
+  }
+  @keyframes mara-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   textarea {
     flex: 1;
     resize: none;
@@ -199,7 +318,7 @@
     max-height: 160px;
     overflow-y: auto;
   }
-  button {
+  .send {
     padding: 0.45rem 0.9rem;
     border-radius: 6px;
     border: none;
@@ -207,7 +326,7 @@
     color: #fff;
     cursor: pointer;
   }
-  button:disabled {
+  .send:disabled {
     opacity: 0.5;
     cursor: default;
   }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChatView, ChatInput, UserList } from '@mara/ui';
+  import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import { isDesktop, nativeLog } from './lib/native.js';
@@ -343,6 +343,9 @@
     }}
   />
 {/if}
+
+<!-- Single shared lightbox for chat images and attachment tiles. -->
+<Lightbox />
 
 <style>
   .app {

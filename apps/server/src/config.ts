@@ -1,6 +1,4 @@
 import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Server configuration, resolved from environment with sensible defaults. */
@@ -31,6 +29,15 @@ function defaultWebRoot(): string | null {
   return existsSync(dist) ? dist : null;
 }
 
+/**
+ * Upload cache, nested under the server's own directory so it travels with the
+ * deployment. Resolved relative to this module, so it lands in the server
+ * package root whether running from `src/` (tsx) or the built `dist/`.
+ */
+function defaultUploadDir(): string {
+  return fileURLToPath(new URL('../uploads/', import.meta.url));
+}
+
 const DEFAULTS = {
   host: '0.0.0.0',
   port: 5050,
@@ -39,7 +46,6 @@ const DEFAULTS = {
   minAppVersion: 0,
   wsPath: '/ws',
   defaultChannel: 'Main',
-  uploadDir: join(tmpdir(), 'mara-uploads'),
   maxUploadMb: 10,
   maxCacheMb: 512,
 };
@@ -62,7 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     webRoot: env.MARA_WEB_ROOT?.trim() || defaultWebRoot(),
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,
     defaultChannel: (env.MARA_DEFAULT_CHANNEL ?? DEFAULTS.defaultChannel).trim(),
-    uploadDir: env.MARA_UPLOAD_DIR?.trim() || DEFAULTS.uploadDir,
+    uploadDir: env.MARA_UPLOAD_DIR?.trim() || defaultUploadDir(),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
   };

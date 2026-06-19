@@ -68,6 +68,37 @@ describe('renderText — safety + links', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('<a href="https://example.com/cat.png"');
   });
+
+  it('keeps a trailing ampersand inside the link without stranding a semicolon', () => {
+    const html = renderText('see https://example.com/a?b=1&');
+    expect(html).toContain('<a href="https://example.com/a?b=1&amp;"');
+    expect(html.endsWith('</a>')).toBe(true); // nothing left dangling after the link
+    expect(html).not.toMatch(/;\s*$/);
+  });
+
+  it('keeps a trailing ampersand inside an inline image URL', () => {
+    const html = renderText('https://cdn.example.com/a.png?x=1&');
+    expect(html).toContain('src="https://cdn.example.com/a.png?x=1&amp;"');
+    expect(html).not.toMatch(/;\s*$/); // no stranded semicolon
+  });
+
+  it('wraps inline images in a hideable box with show/hide controls', () => {
+    const html = renderText('https://example.com/cat.png');
+    expect(html).toContain('class="mara-img-box"');
+    expect(html).toContain('class="mara-img-hide"');
+    expect(html).toContain('class="mara-img-show"');
+  });
+
+  it('renders a server-relative upload path as an inline image (no baked-in host)', () => {
+    const html = renderText('here you go /uploads/abc123.png');
+    expect(html).toContain('<img class="mara-img" src="/uploads/abc123.png"');
+    expect(html).toContain('here you go'); // text stays, image lifted below
+  });
+
+  it('does not treat /uploads inside a larger token as a relative image', () => {
+    const html = renderText('path/uploads/x.png');
+    expect(html).not.toContain('<img');
+  });
 });
 
 describe('renderText — Discord markdown', () => {

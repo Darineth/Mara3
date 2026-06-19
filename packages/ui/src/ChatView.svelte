@@ -1,6 +1,7 @@
 <script lang="ts">
   import { renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
+  import { openLightbox } from './lightbox.js';
 
   let {
     lines = [],
@@ -15,6 +16,14 @@
   let viewport = $state<HTMLDivElement | null>(null);
   // Auto-scroll unless the user has scrolled up to read history ("freeze").
   let pinnedToBottom = $state(true);
+  // Inline images the user has collapsed, keyed by URL. Kept here (not in the
+  // DOM) so the choice survives the {@html} re-renders that fire when the roster
+  // or timestamp setting changes. Reassigned on change for reactivity.
+  let hiddenImages = $state(new Set<string>());
+
+  function imgSrcOf(box: Element): string {
+    return box.querySelector('img.mara-img')?.getAttribute('src') ?? '';
+  }
 
   function toModel(line: ChatLine): LineModel {
     const user = line.from !== null ? users.get(line.from) : undefined;
@@ -38,16 +47,56 @@
     if (pinnedToBottom && viewport) viewport.scrollTop = viewport.scrollHeight;
   });
 
-  // Click/tap a spoiler to toggle it (reveal, then re-hide). Attached imperatively
-  // so the log container doesn't need a declarative interactive handler.
+  // Handle clicks inside the log imperatively so the container doesn't need a
+  // declarative interactive handler: spoilers toggle, and inline images open in
+  // the lightbox (plain left-click only — modifier/middle clicks still follow
+  // the wrapping link so "open in new tab" keeps working).
   $effect(() => {
     const el = viewport;
     if (!el) return;
-    const toggle = (event: Event) => {
-      (event.target as HTMLElement)?.closest('.mara-spoiler')?.classList.toggle('revealed');
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // Hide / restore an inline image.
+      const toggle = target?.closest('.mara-img-hide, .mara-img-show');
+      if (toggle) {
+        const box = toggle.closest('.mara-img-box');
+        if (box) {
+          const src = imgSrcOf(box);
+          const next = new Set(hiddenImages);
+          if (toggle.classList.contains('mara-img-show')) next.delete(src);
+          else next.add(src);
+          hiddenImages = next;
+        }
+        return;
+      }
+
+      const spoiler = target?.closest('.mara-spoiler');
+      if (spoiler) {
+        spoiler.classList.toggle('revealed');
+        return;
+      }
+      const img = target?.closest('img.mara-img') as HTMLImageElement | null;
+      if (img && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        event.preventDefault(); // don't navigate the wrapping anchor
+        openLightbox(img.currentSrc || img.src, img.alt);
+      }
     };
-    el.addEventListener('click', toggle);
-    return () => el.removeEventListener('click', toggle);
+    el.addEventListener('click', onClick);
+    return () => el.removeEventListener('click', onClick);
+  });
+
+  // Reconcile collapsed state onto the DOM after each render (the {@html} blocks
+  // are rebuilt on roster/timestamp changes, so DOM classes alone wouldn't stick).
+  $effect(() => {
+    lines.length; // re-run when lines change
+    void users; // ...and when the roster re-renders the lines
+    const set = hiddenImages;
+    const el = viewport;
+    if (!el) return;
+    for (const box of el.querySelectorAll('.mara-img-box')) {
+      box.classList.toggle('collapsed', set.has(imgSrcOf(box)));
+    }
   });
 </script>
 
@@ -105,6 +154,59 @@
     margin: 0.25rem 0;
     object-fit: contain;
     background: rgba(127, 127, 127, 0.12);
+    cursor: zoom-in;
+  }
+  .mara-chatview :global(.mara-imgs) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+  }
+  .mara-chatview :global(.mara-img-box) {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+  }
+  .mara-chatview :global(.mara-img-hide) {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font: inherit;
+    font-size: 0.72rem;
+    line-height: 1;
+    padding: 0.25em 0.5em;
+    border: none;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .mara-chatview :global(.mara-img-box:hover .mara-img-hide),
+  .mara-chatview :global(.mara-img-hide:focus-visible) {
+    opacity: 1;
+  }
+  .mara-chatview :global(.mara-img-show) {
+    display: none;
+    font: inherit;
+    font-size: 0.8rem;
+    align-items: center;
+    gap: 0.3em;
+    margin: 0.25rem 0;
+    padding: 0.3em 0.7em;
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    background: rgba(127, 127, 127, 0.12);
+    color: inherit;
+    cursor: pointer;
+  }
+  .mara-chatview :global(.mara-img-box.collapsed .mara-img-link),
+  .mara-chatview :global(.mara-img-box.collapsed .mara-img-hide) {
+    display: none;
+  }
+  .mara-chatview :global(.mara-img-box.collapsed .mara-img-show) {
+    display: inline-flex;
   }
 
   /* Discord-style markdown */

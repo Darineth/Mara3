@@ -9,6 +9,9 @@ build/
 .turbo/
 *.tsbuildinfo
 
+# Runtime upload cache (server-local image hosting)
+apps/server/uploads/
+
 # Tauri / Rust
 apps/shell/src-tauri/target/
 apps/shell/src-tauri/gen/

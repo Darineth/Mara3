@@ -15,9 +15,12 @@ export function isUploadableImage(file: File): boolean {
 }
 
 /**
- * POST an image file to the server and return its absolute hosted URL. The URL
- * is absolute (origin-prefixed) so that when it is sent in a chat message every
- * client recognises it as an `http(s)` image and renders it inline.
+ * POST an image file to the server and return its hosted path. The path is
+ * left *relative* (e.g. `/uploads/<id>.png`) on purpose: it travels in the chat
+ * message and each client resolves it against the origin it connected to, so
+ * the image loads correctly regardless of how a given client reaches the server
+ * (localhost vs machine name vs proxy). A baked-in absolute URL would force the
+ * uploader's hostname onto everyone else and break cross-machine viewing.
  */
 export async function uploadImage(file: File): Promise<string> {
   const res = await fetch('/upload', {
@@ -30,5 +33,5 @@ export async function uploadImage(file: File): Promise<string> {
     throw new Error(detail || `Upload failed (${res.status})`);
   }
   const { url } = (await res.json()) as { url: string };
-  return new URL(url, window.location.origin).href;
+  return url;
 }
