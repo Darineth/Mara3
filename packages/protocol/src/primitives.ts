@@ -43,10 +43,14 @@ export const userInfoSchema = z.object({
   token: tokenSchema,
   name: z.string().min(1).max(64),
   style: userStyleSchema,
+  // Empty string (the default) means "not away"; no separate flag is carried.
   away: z.string().max(512).default(''),
 });
 export type UserInfo = z.infer<typeof userInfoSchema>;
 
-/** Bounds shared by chat/emote/message text fields. */
+/**
+ * Bounds shared by chat/emote/message text fields. The 8192-char cap is a
+ * server-side abuse/DoS guard, deliberately far above any realistic line.
+ */
 export const chatTextSchema = z.string().max(8192);
 export type ChatText = z.infer<typeof chatTextSchema>;

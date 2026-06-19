@@ -192,7 +192,9 @@ export async function serveUpload(
   res: ServerResponse,
   cfg: ServerConfig,
 ): Promise<void> {
-  const name = decodeURIComponent((req.url ?? '').slice(UPLOAD_ROUTE.length).split(/[?#]/)[0] ?? '');
+  const name = decodeURIComponent(
+    (req.url ?? '').slice(UPLOAD_ROUTE.length).split(/[?#]/)[0] ?? '',
+  );
   if (!SAFE_NAME_RE.test(name)) {
     send(res, 404, 'Not found');
     return;

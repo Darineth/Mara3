@@ -10,6 +10,7 @@ const ACCEPTED = new Set([
   'image/bmp',
 ]);
 
+/** Client-side gate matching the server allow-list, so we reject non-images before POSTing. */
 export function isUploadableImage(file: File): boolean {
   return ACCEPTED.has(file.type);
 }

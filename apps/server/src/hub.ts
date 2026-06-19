@@ -30,6 +30,7 @@ export class Hub {
   constructor(
     private readonly cfg: ServerConfig,
     private readonly log: Logger,
+    // Clock is injectable so tests can assert deterministic pong serverTime.
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -53,6 +54,8 @@ export class Hub {
   }
 
   onClose(conn: Connection): void {
+    // Only logged-in connections have presence to tear down; a socket that dropped
+    // during the handshake (userToken still null) leaves no state to clean up.
     if (conn.userToken !== null) {
       const session = this.state.removeSession(conn.userToken);
       if (session) {
@@ -69,9 +72,14 @@ export class Hub {
   // -- dispatch -------------------------------------------------------------
 
   private dispatch(conn: Connection, msg: ClientMessage): void {
+    // Handshake messages are dispatched first, before the active-required gate:
+    // they are precisely the messages that advance awaitingVersion → awaitingLogin
+    // → active, so they must be reachable while the connection is not yet active.
+    // Each handler enforces its own expected state.
     if (msg.type === 'clientVersion') return this.handleVersion(conn, msg);
     if (msg.type === 'login') return this.handleLogin(conn, msg);
 
+    // Everything else requires a logged-in session.
     if (conn.state !== 'active' || conn.userToken === null) {
       conn.send({ type: 'error', code: 401, message: 'not logged in' });
       return;
@@ -113,8 +121,10 @@ export class Hub {
     conn: Connection,
     msg: Extract<ClientMessage, { type: 'clientVersion' }>,
   ): void {
+    // Ignore a duplicate clientVersion once past the handshake's first step.
     if (conn.state !== 'awaitingVersion') return;
     if (msg.appVersion < this.cfg.minAppVersion) {
+      // 4001: app-defined WS close code (4000-4999 range) meaning "must update".
       conn.send({ type: 'loginDenied', reason: 'client out of date', updateRequired: true });
       conn.close(4001, 'update required');
       return;
@@ -343,6 +353,8 @@ export class Hub {
 
   // -- helpers --------------------------------------------------------------
 
+  // Resolve a free display name, suffixing "2", "3"… on clash. `ignore` is the
+  // caller's own token so a userUpdate keeping the same name doesn't clash itself.
   private uniqueName(requested: string, ignore?: Token): string {
     let name = requested.trim() || 'guest';
     let suffix = 2;
@@ -352,6 +364,7 @@ export class Hub {
     return name;
   }
 
+  // Case-insensitive name collision check across live sessions, excluding `ignore`.
   private nameClashes(name: string, ignore?: Token): boolean {
     const lower = name.toLowerCase();
     for (const session of this.state.sessions.values()) {
@@ -360,6 +373,8 @@ export class Hub {
     return false;
   }
 
+  // Fan out to every session; `exceptToken` omits the originator so a sender
+  // doesn't receive an echo of their own event (connect, away, pluginData, …).
   private broadcastAll(message: ServerMessage, exceptToken?: Token): void {
     for (const session of this.state.sessions.values()) {
       if (session.info.token !== exceptToken) session.connection.send(message);

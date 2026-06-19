@@ -19,6 +19,7 @@ import type {
   WebSocketLike,
 } from './types.js';
 
+/** Identity of the logged-in user; null until `loginAccepted`. */
 interface SelfState {
   token: Token;
   name: string;
@@ -52,13 +53,18 @@ export class MaraClient {
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
 
   private socket: WebSocketLike | null = null;
+  /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied/kicked). */
   private intentionalClose = false;
+  /** Consecutive failed connect attempts; drives backoff and the "was this a reconnect" check. */
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Server-issued resume/session token; replayed on the next login to resume the session. */
   private resumeToken: string | null = null;
+  /** Monotonic counter for ChatLine ids (stable list keys across re-renders). */
   private lineSeq = 0;
   private pingSeq = 0;
+  /** pingId -> sentAt timestamp, so a matching pong can compute RTT. */
   private readonly pendingPings = new Map<number, number>();
   /** Channel names we intend to be in (so we can rejoin after a reconnect). */
   private readonly intendedChannels = new Set<string>();
@@ -99,8 +105,10 @@ export class MaraClient {
   }
 
   disconnect(): void {
+    // Mark intentional first so the resulting onClose won't schedule a reconnect.
     this.intentionalClose = true;
     this.clearTimers();
+    // Only send a graceful disconnect if we actually have a live, logged-in session.
     if (get(this._connection) === 'active') this.send({ type: 'disconnect', reason: '' });
     this.socket?.close(1000, 'client disconnect');
     this.socket = null;
@@ -147,6 +155,7 @@ export class MaraClient {
     this.send({ type: 'away', text });
   }
 
+  /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
   sendPrivateMessage(toUserToken: Token, text: string): void {
     this.send({ type: 'privateMessage', toUserToken, text });
     // The server only echoes PMs to the recipient, so record our own outgoing line.
@@ -167,6 +176,7 @@ export class MaraClient {
     this.send({ type: 'serverCommand', command, args });
   }
 
+  /** Sends a heartbeat ping; the matching pong (by pingId) yields RTT. */
   ping(): void {
     const pingId = ++this.pingSeq;
     const sentAt = this.now();
@@ -185,6 +195,8 @@ export class MaraClient {
     this.setStatus(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
     const ws = new Ctor(this.opts.url);
     this.socket = ws;
+    // Socket open only means the transport is up; the app-level handshake (and
+    // thus 'active') doesn't begin until the server sends serverHello.
     ws.onopen = () => this.setStatus('authenticating');
     ws.onmessage = (ev) => this.onRaw(String(ev.data));
     ws.onerror = () => this.events.emit('error', { code: 0, message: 'socket error' });
@@ -205,6 +217,8 @@ export class MaraClient {
       this.setStatus('closed');
       return;
     }
+    // Auth was rejected: leave status as 'denied' and do not retry (credentials
+    // won't improve on a reconnect; the close here is the server hanging up).
     if (this.status === 'denied') return;
     if (this.autoReconnect) this.scheduleReconnect();
     else this.setStatus('closed');
@@ -212,6 +226,8 @@ export class MaraClient {
 
   private scheduleReconnect(): void {
     this.setStatus('reconnecting');
+    // Exponential backoff: base * 2^attempts, clamped to max. attempts also
+    // doubles as the "did we reconnect?" flag read on loginAccepted (for rejoin).
     const delay = Math.min(
       this.reconnectBaseDelayMs * 2 ** this.reconnectAttempts,
       this.reconnectMaxDelayMs,
@@ -227,6 +243,7 @@ export class MaraClient {
   }
 
   private startHeartbeat(): void {
+    // Idempotent: clear any prior timer first so a re-login can't stack intervals.
     this.stopHeartbeat();
     if (this.heartbeatIntervalMs <= 0) return;
     this.heartbeatTimer = setInterval(() => {
@@ -242,6 +259,8 @@ export class MaraClient {
   // -- inbound --------------------------------------------------------------
 
   private onRaw(raw: string): void {
+    // Zod-validate every frame at the trust boundary; malformed input surfaces
+    // as an error event (code 400) instead of throwing deeper in a handler.
     const parsed = safeParseServerMessage(raw);
     if (!parsed.success) {
       this.events.emit('error', { code: 400, message: parsed.error.message });
@@ -260,7 +279,10 @@ export class MaraClient {
 
   private handle(msg: ServerMessage): void {
     switch (msg.type) {
+      // Handshake flow: serverHello → clientVersion → (response ok) → login →
+      // loginAccepted/loginDenied. The server speaks first with serverHello.
       case 'serverHello':
+        // Reply with our protocol/app versions; the server gates login on these.
         this.send({
           type: 'clientVersion',
           maraVersion: MARA_VERSION,
@@ -270,6 +292,9 @@ export class MaraClient {
         return;
 
       case 'response':
+        // Version check passed → send login. Include resumeToken if we have one
+        // (set by a prior loginAccepted) so the server can resume the session
+        // after a reconnect; omit it entirely on a fresh login.
         if (msg.ref === 'clientVersion' && msg.ok) {
           this.send({
             type: 'login',
@@ -283,13 +308,20 @@ export class MaraClient {
         return;
 
       case 'loginAccepted': {
+        // Capture reconnect-ness before resetting attempts, so we know whether
+        // to re-join channels below.
         const wasReconnect = this.reconnectAttempts > 0;
+        // Rotate the session token: the server issues a fresh one each login,
+        // also used as the HTTP bearer (see `sessionToken`).
         this.resumeToken = msg.resumeToken;
         this.reconnectAttempts = 0;
         this._self.set({ token: msg.token, name: msg.name });
         this.setStatus('active');
         this.startHeartbeat();
         this.events.emit('connected', { token: msg.token, name: msg.name });
+        // On a reconnect the server doesn't restore our channel membership, so
+        // re-join everything we intended to be in. channelJoined then reconciles
+        // any reassigned tokens (see below).
         if (wasReconnect)
           for (const name of this.intendedChannels)
             this.send({ type: 'joinChannel', channel: name });
@@ -297,6 +329,8 @@ export class MaraClient {
       }
 
       case 'loginDenied':
+        // Terminal: mark intentional so onClose won't auto-reconnect into the
+        // same rejection (e.g. bad name, version too old).
         this.setStatus('denied');
         this.intentionalClose = true;
         this.events.emit('loginDenied', { reason: msg.reason, updateRequired: msg.updateRequired });
@@ -326,9 +360,11 @@ export class MaraClient {
           token: msg.token,
           name: msg.name,
           style: msg.style,
+          // userUpdate carries name/style only; preserve any existing away text.
           away: existing?.away ?? '',
         };
         this.upsertUser(updated);
+        // Keep `self.name` in sync when the update is about us (drives the UI).
         const me = get(this._self);
         if (me && me.token === msg.token) this._self.set({ token: me.token, name: msg.name });
         this.events.emit('userUpdate', updated);
@@ -386,6 +422,7 @@ export class MaraClient {
         return;
 
       case 'userLeftChannel':
+        // Emit the system line before removing the member so nameOf still resolves.
         this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} left`);
         this.mutateMembers(msg.channelToken, (m) => m.delete(msg.token));
         this.events.emit('userLeftChannel', { token: msg.token, channelToken: msg.channelToken });
@@ -438,6 +475,8 @@ export class MaraClient {
         return;
 
       case 'pong': {
+        // Match against the recorded sentAt to derive RTT; unknown/duplicate
+        // pongs (no pending entry) report rtt 0 rather than throwing.
         const sentAt = this.pendingPings.get(msg.pingId);
         this.pendingPings.delete(msg.pingId);
         this.events.emit('pong', { pingId: msg.pingId, rtt: sentAt ? this.now() - sentAt : 0 });
@@ -445,6 +484,7 @@ export class MaraClient {
       }
 
       case 'kicked':
+        // Terminal like loginDenied: suppress auto-reconnect.
         this.intentionalClose = true;
         this.setStatus('closed');
         this.events.emit('kicked', { reason: msg.reason });
@@ -464,17 +504,25 @@ export class MaraClient {
   // -- store helpers --------------------------------------------------------
 
   private setStatus(state: ConnectionState): void {
+    // De-dupe: skip the store write and statusChanged emit on no-op transitions.
     if (get(this._connection) === state) return;
     this._connection.set(state);
     this.events.emit('statusChanged', state);
   }
 
+  // Store mutations always build a fresh Map (`new Map(map)`) rather than
+  // mutating in place: Svelte stores fire only on reference change, so a new
+  // identity is what makes subscribers re-render.
   private upsertUser(user: UserInfo): void {
     this._users.update((map) => new Map(map).set(user.token, user));
-    // The directory keeps a permanent record so names/colours survive a leave.
+    // `users` = currently-connected roster (pruned on disconnect). `directory`
+    // keeps a permanent record so names/colours survive a leave — needed to
+    // render historical messages and PM tabs for users no longer online.
     this._directory.update((map) => new Map(map).set(user.token, user));
   }
 
+  // Drops the user from the live roster and every channel's member set; the
+  // directory entry is deliberately left intact (see upsertUser).
   private removeUser(token: Token): void {
     this._users.update((map) => {
       const next = new Map(map);
@@ -494,9 +542,12 @@ export class MaraClient {
     });
   }
 
+  /** Apply a mutation to one channel's member set, cloning both Set and Map for reactivity. */
   private mutateMembers(channelToken: Token, mutate: (members: Set<Token>) => void): void {
     this._channels.update((map) => {
       const channel = map.get(channelToken);
+      // No-op (return the same map) if we don't track the channel — avoids a
+      // spurious store notification.
       if (!channel) return map;
       const members = new Set(channel.members);
       mutate(members);
@@ -504,6 +555,7 @@ export class MaraClient {
     });
   }
 
+  /** Display name for a token, falling back to `#<token>` for unknown users. */
   private nameOf(token: Token): string {
     return get(this._users).get(token)?.name ?? `#${token}`;
   }
@@ -515,11 +567,17 @@ export class MaraClient {
     return this.pipeline.postprocessText(this.pipeline.preprocessText(text, ctx), ctx);
   }
 
+  /** Ensure an (empty) log array exists for a key so the UI can render the tab immediately. */
   private ensureLog(store: Writable<Map<Token, ChatLine[]>>, key: Token): void {
+    // Leave an existing log untouched (same map ref = no notification).
     store.update((map) => (map.has(key) ? map : new Map(map).set(key, [])));
   }
 
-  /** Move a conversation's history from one key to another (token reassignment). */
+  /**
+   * Move a conversation's history from one key to another (token reassignment).
+   * Old lines precede any already received under the new token, then trim to
+   * historyLimit so a long-lived channel can't grow unbounded across rejoins.
+   */
   private migrateLog(store: Writable<Map<Token, ChatLine[]>>, from: Token, to: Token): void {
     store.update((map) => {
       if (!map.has(from)) return map;
@@ -542,8 +600,10 @@ export class MaraClient {
   ): void {
     store.update((map) => {
       const next = new Map(map);
+      // Copy the array (slice) so we never mutate the previously-exposed snapshot.
       const arr = next.get(key)?.slice() ?? [];
       arr.push({ id: ++this.lineSeq, at: this.now(), ...partial });
+      // Cap retained history per conversation, dropping the oldest lines.
       if (arr.length > this.historyLimit) arr.splice(0, arr.length - this.historyLimit);
       next.set(key, arr);
       return next;

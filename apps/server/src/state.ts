@@ -1,3 +1,4 @@
+// In-memory registry of live sessions and channels — the hub's single source of truth.
 import type { Token, UserInfo } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import { nextToken } from './tokens.js';
@@ -25,13 +26,17 @@ export interface Channel {
 export class ServerState {
   readonly sessions = new Map<Token, Session>();
   readonly channelsByToken = new Map<Token, Channel>();
+  // Secondary indexes kept in lockstep with the primaries above so name/resume
+  // lookups stay O(1); every add/remove must update both sides.
   private readonly channelTokenByName = new Map<string, Token>();
   private readonly resumeTokens = new Map<string, Token>();
 
+  /** Mint a user token unique among live sessions (collision-checked against the map). */
   allocUserToken(): Token {
     return nextToken((t) => this.sessions.has(t));
   }
 
+  /** Mint a channel token unique among existing channels. */
   allocChannelToken(): Token {
     return nextToken((t) => this.channelsByToken.has(t));
   }
@@ -41,9 +46,12 @@ export class ServerState {
     this.resumeTokens.set(session.resumeToken, session.info.token);
   }
 
+  /** Drop a session and detach it from every channel it belonged to. */
   removeSession(token: Token): Session | undefined {
     const session = this.sessions.get(token);
     if (!session) return undefined;
+    // Scrub stale membership so broadcasts never target a gone user. Empty
+    // channels are left behind here; pruneChannel handles that on explicit leave.
     for (const channelToken of session.channels) {
       this.channelsByToken.get(channelToken)?.members.delete(token);
     }
@@ -52,6 +60,7 @@ export class ServerState {
     return session;
   }
 
+  /** Resolve a session from its resume token (also the upload bearer credential). */
   sessionByResumeToken(resumeToken: string): Session | undefined {
     const token = this.resumeTokens.get(resumeToken);
     return token === undefined ? undefined : this.sessions.get(token);

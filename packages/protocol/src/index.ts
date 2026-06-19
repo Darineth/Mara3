@@ -8,7 +8,11 @@
 /** Bumped on any breaking change to the message set. Negotiated at handshake. */
 export const PROTOCOL_VERSION = 1;
 
-/** Library/app version constants carried in the `clientVersion` handshake. */
+/**
+ * The Mara product generation (this is Mara 3), carried in the `clientVersion`
+ * handshake. Tracked separately from PROTOCOL_VERSION: the product can rev
+ * without a wire-breaking change, and vice versa.
+ */
 export const MARA_VERSION = 3;
 
 export * from './primitives.js';

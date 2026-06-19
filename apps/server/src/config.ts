@@ -38,6 +38,8 @@ function defaultUploadDir(): string {
   return fileURLToPath(new URL('../uploads/', import.meta.url));
 }
 
+// Bare defaults; size limits are kept in MB here and converted to bytes at load
+// (env vars are also expressed in MB, so the unit lives in one place).
 const DEFAULTS = {
   host: '0.0.0.0',
   port: 5050,
@@ -50,13 +52,17 @@ const DEFAULTS = {
   maxCacheMb: 512,
 };
 
+// Parse a numeric env var, falling back on missing/blank/non-finite input
+// (rather than letting a typo collapse to NaN and propagate).
 function num(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Resolve the full server config from `env`, applying defaults for anything unset. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  // MB env var → bytes; clamp negatives to 0 so a bad value can't widen a limit.
   const mb = (v: string | undefined, fallback: number) =>
     Math.max(0, num(v, fallback)) * 1024 * 1024;
   return {

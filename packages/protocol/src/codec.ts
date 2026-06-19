@@ -1,3 +1,8 @@
+/**
+ * Wire codec: encode messages to WebSocket text frames and decode/validate
+ * incoming ones. Each direction comes in throwing (`parse*`) and non-throwing
+ * (`safeParse*`) variants so callers pick error-handling style per call site.
+ */
 import { z } from 'zod';
 import {
   clientMessageSchema,
@@ -18,6 +23,7 @@ export class ProtocolError extends Error {
   }
 }
 
+/** Discriminated result of a non-throwing `safeParse*` call (mirrors Zod's). */
 export type ParseResult<T> = { success: true; data: T } | { success: false; error: ProtocolError };
 
 /** Serialize a message to a WebSocket text frame. */
@@ -34,6 +40,8 @@ function parseJson(raw: string): unknown {
 }
 
 function decode<S extends z.ZodTypeAny>(schema: S, raw: string | unknown): z.output<S> {
+  // Accept either a raw frame string or an already-parsed value, so callers
+  // that received pre-deserialized JSON skip a redundant parse round-trip.
   const json = typeof raw === 'string' ? parseJson(raw) : raw;
   const result = schema.safeParse(json);
   if (!result.success) {

@@ -48,6 +48,8 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
         })
       : null;
 
+    // Route precedence: health and the upload API are matched before the static
+    // handler so the SPA fallback (single:true) can't swallow them.
     const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/health' || req.url === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain' });
@@ -55,8 +57,14 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
         return;
       }
       if (req.url === UPLOAD_ENDPOINT) {
-        void handleUpload(req, res, cfg, log, (token) =>
-          token !== undefined && hub.state.sessionByResumeToken(token) !== undefined,
+        // Authorize uploads against a live session: the bearer token must match a
+        // current resume token. GETs on UPLOAD_ROUTE stay open (capability URLs).
+        void handleUpload(
+          req,
+          res,
+          cfg,
+          log,
+          (token) => token !== undefined && hub.state.sessionByResumeToken(token) !== undefined,
         );
         return;
       }
@@ -116,6 +124,8 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
           new Promise<void>((res, rej) => {
             if (closed) return res();
             closed = true;
+            // terminate(), not close(): drop sockets immediately so a slow/idle
+            // client can't hold the process open past shutdown.
             for (const client of wss.clients) client.terminate();
             wss.close();
             httpServer.close((err) => (err ? rej(err) : res()));

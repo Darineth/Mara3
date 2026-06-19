@@ -1,3 +1,6 @@
+<!-- Message composer: autosizing textarea with sent-line history recall, F-key
+     macros, and image attachments (drag-drop / paste) that upload in the
+     background and are appended to the message as URLs on send. -->
 <script lang="ts">
   import { tick } from 'svelte';
   import { openLightbox, closeLightboxFor } from './lightbox.js';
@@ -39,7 +42,11 @@
   let uploadError = $state('');
   let nextAttachId = 0;
 
+  // An attachment with no resolved `url` yet is still uploading; block send until
+  // all resolve so we never emit a message referencing a not-yet-hosted image.
   const uploading = $derived(attachments.some((a) => a.url === undefined));
+  // Allow send when there's something to send (text or attachments) and nothing
+  // blocks it; gates both the button and the Enter handler.
   const canSend = $derived(
     !disabled && !uploading && (text.trim() !== '' || attachments.length > 0),
   );
@@ -64,6 +71,8 @@
     }
   }
 
+  // Revoke the preview object URL on removal to avoid leaking it, and drop the
+  // lightbox if it happens to be showing this image.
   function removeAttachment(id: number) {
     const gone = attachments.find((a) => a.id === id);
     if (gone) {
@@ -116,6 +125,8 @@
     autosize();
   }
 
+  // Grow the textarea to fit its content, capped at 160px (matches the CSS
+  // max-height, beyond which it scrolls). Reset to 'auto' first so it can shrink.
   function autosize() {
     if (!textarea) return;
     textarea.style.height = 'auto';
@@ -139,6 +150,8 @@
     queueMicrotask(autosize);
   }
 
+  // Walk sent-text history. -1 means "fresh line"; the first ArrowUp jumps to the
+  // newest entry, then up/down step through and clamp at the ends.
   function recall(direction: -1 | 1) {
     if (history.length === 0) return;
     if (historyIndex === -1 && direction === -1) historyIndex = history.length - 1;
@@ -162,6 +175,8 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit();
+      // Only start/continue history recall when the line is empty or already
+      // recalling, so ArrowUp still moves the caret while editing real text.
     } else if (event.key === 'ArrowUp' && (text === '' || historyIndex !== -1)) {
       event.preventDefault();
       recall(-1);
@@ -183,6 +198,8 @@
   {#if uploadError}
     <div class="mara-upload-error" role="alert">{uploadError}</div>
   {/if}
+  <!-- Attachment tiles: local `preview` stays the thumbnail throughout (no
+       re-fetch of the hosted URL); a spinner overlays until the upload resolves. -->
   {#if attachments.length > 0}
     <div class="mara-attachments">
       {#each attachments as att (att.id)}

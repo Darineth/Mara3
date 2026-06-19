@@ -75,6 +75,11 @@ function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Substitute emoticon codes with their replacements. Runs on RAW text (before
+ * escaping) so codes containing `<`/`>` etc. match literally. Codes are tried
+ * longest-first so e.g. `:-)` wins over `:)`.
+ */
 export function applyEmoticons(
   input: string,
   map: Record<string, string> = DEFAULT_EMOTICONS,

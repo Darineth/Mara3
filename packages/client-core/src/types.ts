@@ -1,7 +1,17 @@
+/**
+ * @mara/client-core — public types for the client: connection lifecycle,
+ * UI-facing view models (channels / chat lines), constructor options, the
+ * event payload map, and the minimal cross-platform WebSocket interface.
+ */
 import type { Token, UserInfo, UserStyle } from '@mara/protocol';
 import type { TextPipeline } from '@mara/plugin-api';
 
-/** High-level connection lifecycle the UI binds to. */
+/**
+ * High-level connection lifecycle the UI binds to. Distinct from the raw
+ * WebSocket readyState: `authenticating` covers the post-open handshake
+ * (serverHello → clientVersion → login), `denied` is a terminal auth failure
+ * (no auto-reconnect), and `reconnecting` is an automatic retry after a drop.
+ */
 export type ConnectionState =
   | 'idle'
   | 'connecting'
@@ -20,11 +30,13 @@ export interface ChannelState {
 
 /** One rendered line in a conversation (channel or private). */
 export interface ChatLine {
+  /** Client-assigned monotonic sequence; stable key for list rendering (not a server id). */
   id: number;
   kind: 'chat' | 'emote' | 'system';
   /** Author token, or null for system lines. */
   from: Token | null;
   text: string;
+  /** Receipt timestamp (ms) from the client's clock, not the server's. */
   at: number;
 }
 
@@ -37,13 +49,16 @@ export interface ClientOptions {
   /** Inject a WebSocket implementation (browser uses the global by default). */
   webSocket?: WebSocketCtor;
   autoReconnect?: boolean;
+  /** Base for exponential backoff (delay = base * 2^attempt), capped by max. */
   reconnectBaseDelayMs?: number;
   reconnectMaxDelayMs?: number;
+  /** Heartbeat ping cadence while active; <= 0 disables heartbeats. */
   heartbeatIntervalMs?: number;
   /** Max retained lines per conversation. */
   historyLimit?: number;
   /** Plugin pipeline applied to outgoing and incoming chat/emote text. */
   plugins?: TextPipeline;
+  /** Clock injection point (defaults to Date.now); lets tests drive timestamps/RTT. */
   now?: () => number;
 }
 
@@ -71,6 +86,11 @@ export interface ClientEvents {
 
 // -- minimal cross-platform WebSocket shape ---------------------------------
 
+/**
+ * The subset of the WebSocket API the client relies on. Lets the same code run
+ * against the browser global and Node's `ws` (injected in tests) without a hard
+ * dependency on either's full type.
+ */
 export interface WebSocketLike {
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -80,4 +100,5 @@ export interface WebSocketLike {
   onmessage: ((ev: { data: unknown }) => void) | null;
 }
 
+/** Constructor for a {@link WebSocketLike}; matches both the DOM `WebSocket` and `ws`. */
 export type WebSocketCtor = new (url: string) => WebSocketLike;

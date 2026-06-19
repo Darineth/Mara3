@@ -1,3 +1,9 @@
+<!--
+  Main chat surface once connected: channel/PM tabs, message view, user list,
+  input, and the overflow menu. Reads reactive client stores and translates UI
+  actions back into MaraClient calls. Mounted only while a session exists, and
+  remounted (fresh state) whenever the client instance changes.
+-->
 <script lang="ts">
   import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
@@ -33,7 +39,10 @@
   // svelte-ignore state_referenced_locally
   const { connection, self, users, directory, channels, channelMessages, privateMessages } = client;
 
-  // Active view: either a channel token or a private-message peer token.
+  // Active view: a channel token, a private-message peer token, or neither
+  // (placeholder). Mutually exclusive — at most one is non-null at a time;
+  // every selector below nulls the other to preserve that invariant, which the
+  // title/baseLines deriveds rely on to pick which conversation to show.
   let activeChannel = $state<Token | null>(null);
   let activePm = $state<Token | null>(null);
   // Open PM conversations, in tab order. This is the source of truth for which
@@ -47,13 +56,16 @@
   let unreadPms = $state(new Set<Token>());
 
   function markChannelUnread(token: Token) {
-    if (activeChannel === token && activePm === null) return; // already looking at it
+    // "Looking at it" requires the channel active AND no PM in front of it.
+    if (activeChannel === token && activePm === null) return;
     if (!unreadChannels.has(token)) unreadChannels = new Set(unreadChannels).add(token);
   }
   function markPmUnread(token: Token) {
     if (activePm === token) return;
     if (!unreadPms.has(token)) unreadPms = new Set(unreadPms).add(token);
   }
+  // Copy-on-write: return a new Set so $state sees a fresh reference and
+  // re-renders; return the original unchanged when there's nothing to clear.
   function clearUnread(set: Set<Token>, token: Token): Set<Token> {
     if (!set.has(token)) return set;
     const next = new Set(set);
@@ -67,12 +79,19 @@
   const noticeState: NoticeState = { dropAnnounced: false };
 
   function pushSystem(text: string) {
+    // Negative, decreasing ids keep system lines distinct from server message ids
+    // (which are non-negative) and stably ordered among themselves. Cap at the
+    // last 50 so a long flaky session doesn't grow this unbounded.
     const line: ChatLine = { id: --sysSeq, kind: 'system', from: null, text, at: Date.now() };
     connectionLines = [...connectionLines, line].slice(-50);
   }
 
+  // Subscribe to client events for the life of the component. Each `.on` returns
+  // an unsubscribe fn; the cleanup runs them all so handlers don't leak or fire
+  // against a stale closure if the effect re-runs.
   $effect(() => {
     const offs = [
+      // Joining a channel switches focus to it (and out of any PM view).
       client.events.on('channelJoined', (ch) => {
         activeChannel = ch.token;
         activePm = null;
@@ -85,6 +104,8 @@
       }),
       client.events.on('privateMessage', (pm) => {
         addPmTab(pm.from);
+        // Only auto-focus an incoming PM when nothing is open yet; otherwise just
+        // flag it unread so we don't yank the user out of their current view.
         if (activePm === null && activeChannel === null) activePm = pm.from;
         markPmUnread(pm.from);
       }),
@@ -215,10 +236,13 @@
 
   function handleSend(text: string) {
     if (activePm !== null) {
+      // PMs are literal text — slash commands only apply to channel input.
       client.sendPrivateMessage(activePm, text);
       return;
     }
     if (activeChannel === null) return;
+    // Slash commands; slice offsets skip the command + trailing space ('/me ' = 4,
+    // '/away ' = 6). Bare '/away' (no arg) clears away status.
     if (text.startsWith('/me ')) client.sendEmote(activeChannel, text.slice(4));
     else if (text.startsWith('/away ')) client.sendAway(text.slice(6));
     else if (text === '/away') client.sendAway('');

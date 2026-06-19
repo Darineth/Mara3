@@ -1,6 +1,9 @@
+<!-- Full-screen image preview driven by the shared `lightbox` store. Mount once
+     near the app root; clicking the backdrop or pressing Escape dismisses it. -->
 <script lang="ts">
   import { lightbox, closeLightbox } from './lightbox.js';
 
+  // Escape closes, but only when something is open so the handler is otherwise inert.
   function onWindowKey(event: KeyboardEvent) {
     if (event.key === 'Escape' && $lightbox) closeLightbox();
   }

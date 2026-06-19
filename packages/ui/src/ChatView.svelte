@@ -1,3 +1,6 @@
+<!-- Scrolling chat log. Renders each line via chat-render's sanitized {@html}
+     output, then layers interactivity (spoiler reveal, image hide/lightbox) on
+     top imperatively since the markup isn't ours to bind handlers onto. -->
 <script lang="ts">
   import { renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
@@ -21,10 +24,14 @@
   // or timestamp setting changes. Reassigned on change for reactivity.
   let hiddenImages = $state(new Set<string>());
 
+  // The img src is the stable identity used to key collapsed state across re-renders.
   function imgSrcOf(box: Element): string {
     return box.querySelector('img.mara-img')?.getAttribute('src') ?? '';
   }
 
+  // Resolve a transport ChatLine against the live roster into chat-render's view
+  // model. Falls back to `#<token>` when the author isn't in the roster (e.g.
+  // they left) so history stays attributable.
   function toModel(line: ChatLine): LineModel {
     const user = line.from !== null ? users.get(line.from) : undefined;
     return {
@@ -36,10 +43,12 @@
     };
   }
 
+  // Re-pin once the user scrolls back within 40px of the bottom; beyond that we
+  // assume they're reading history and stop auto-scrolling.
   function onScroll() {
     if (!viewport) return;
     const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    pinnedToBottom = distance < 40;
+    pinnedToBottom = distance < 40; // px slack to absorb sub-pixel/layout jitter
   }
 
   $effect(() => {

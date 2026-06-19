@@ -63,12 +63,16 @@ const clientPrivateMessage = z.object({
   text: chatTextSchema,
 });
 
+// Client states its desired name/style; the server stamps the authoritative
+// `token` when it re-broadcasts as `serverUserUpdate` (same `type` literal).
 const clientUserUpdate = z.object({
   type: z.literal('userUpdate'),
   name: z.string().min(1).max(64),
   style: userStyleSchema,
 });
 
+// `sentAt` is the client's own clock at send; echoed back in `pong` alongside
+// the server's `serverTime` so the client can compute RTT and clock skew.
 const clientPing = z.object({
   type: z.literal('ping'),
   pingId: z.number().int().nonnegative(),
@@ -91,6 +95,9 @@ const clientDisconnect = z.object({
   reason: z.string().max(512).default(''),
 });
 
+// Escape hatch for plugin-to-plugin traffic the core protocol need not
+// understand: addressed to a channel or a single user, with an opaque payload
+// the server relays verbatim (see `serverPluginData` for the inbound mirror).
 const clientPluginData = z.object({
   type: z.literal('pluginData'),
   channel: z.string().max(64).optional(),
@@ -99,6 +106,7 @@ const clientPluginData = z.object({
   data: z.unknown(),
 });
 
+/** Validator for every client→server frame; what the server accepts inbound. */
 export const clientMessageSchema = z.discriminatedUnion('type', [
   clientVersion,
   login,
@@ -115,7 +123,9 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   clientDisconnect,
   clientPluginData,
 ]);
+/** Any validated client→server message. */
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
+/** The discriminator literals of every client→server message. */
 export type ClientMessageType = ClientMessage['type'];
 
 // ---------------------------------------------------------------------------
@@ -168,6 +178,9 @@ const userDisconnect = z.object({
   reason: z.string().max(512).default(''),
 });
 
+// Broadcast counterpart of `clientUserUpdate`: shares the `userUpdate` literal
+// but adds `token` so peers know *which* user changed. The direction-split
+// unions keep these two shapes from colliding under one discriminator.
 const serverUserUpdate = z.object({
   type: z.literal('userUpdate'),
   token: tokenSchema,
@@ -226,6 +239,8 @@ const serverPrivateMessage = z.object({
   text: chatTextSchema,
 });
 
+// Echoes the client's `pingId`/`sentAt` for correlation and RTT; `serverTime`
+// lets the client estimate clock offset against the server.
 const pong = z.object({
   type: z.literal('pong'),
   pingId: z.number().int().nonnegative(),
@@ -261,6 +276,7 @@ const errorMessage = z.object({
   message: z.string().max(1024),
 });
 
+/** Validator for every server→client frame; what a client accepts inbound. */
 export const serverMessageSchema = z.discriminatedUnion('type', [
   serverHello,
   response,
@@ -284,7 +300,9 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   serverPluginData,
   errorMessage,
 ]);
+/** Any validated server→client message. */
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
+/** The discriminator literals of every server→client message. */
 export type ServerMessageType = ServerMessage['type'];
 
 // ---------------------------------------------------------------------------

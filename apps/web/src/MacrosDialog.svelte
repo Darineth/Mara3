@@ -1,3 +1,8 @@
+<!--
+  Modal editor for the F1–F12 quick-text macros. Edits the `macros` array in
+  place (bound inputs below); the parent persists on close, so there is no
+  explicit save action here.
+-->
 <script lang="ts">
   import { MACRO_COUNT } from './lib/settings.js';
 

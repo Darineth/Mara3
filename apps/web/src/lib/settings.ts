@@ -37,6 +37,7 @@ export function serverUrl(): string {
   return 'ws://localhost:5050/ws';
 }
 
+/** Baseline used for first-time visitors and as the merge base for stored settings. */
 export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
@@ -46,7 +47,14 @@ export const defaultSettings: MaraSettings = {
   macros: normalizeMacros([]),
 };
 
+/**
+ * Read persisted settings, merged over {@link defaultSettings} so fields added
+ * since the user last saved get sane values. Any failure (missing key, bad JSON,
+ * no localStorage) falls back to a fresh copy rather than throwing — settings
+ * must never block startup.
+ */
 export function loadSettings(): MaraSettings {
+  // Fresh copies clone `macros` so callers never share the default array.
   const fresh = (): MaraSettings => ({ ...defaultSettings, macros: normalizeMacros([]) });
   if (typeof localStorage === 'undefined') return fresh();
   try {
@@ -59,6 +67,7 @@ export function loadSettings(): MaraSettings {
   }
 }
 
+/** Persist settings; swallows quota/privacy-mode errors so a failed write is never fatal. */
 export function saveSettings(settings: MaraSettings): void {
   if (typeof localStorage === 'undefined') return;
   try {

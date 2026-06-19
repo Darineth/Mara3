@@ -8,6 +8,7 @@
  * desktop can additionally `import()` plugins dynamically.)
  */
 
+/** Per-invocation metadata passed to every hook so transforms can be context-aware. */
 export interface PluginContext {
   direction: 'incoming' | 'outgoing';
   channelToken?: number;
@@ -26,7 +27,13 @@ export interface MaraPlugin {
   preprocessOutgoing?(text: string, ctx: PluginContext): string;
 }
 
-/** Chained text transforms the client applies at send/receive boundaries. */
+/**
+ * Chained text transforms the client applies at send/receive boundaries.
+ * On receive the client runs `preprocessText` (early pass, e.g. decode/parse)
+ * then `postprocessText` (late pass, e.g. render-time substitution); on send it
+ * runs `preprocessOutgoing`. `ctx` is partial here — `createPipeline` fills in
+ * the `direction` before handing it to each plugin.
+ */
 export interface TextPipeline {
   readonly plugins: readonly MaraPlugin[];
   preprocessText(text: string, ctx?: Partial<PluginContext>): string;
@@ -40,6 +47,9 @@ function fold(
   text: string,
   ctx: PluginContext,
 ): string {
+  // Left-to-right fold: each plugin sees the previous one's output, so
+  // registration order is the transform order. Plugins without the hook
+  // pass the text through untouched.
   let result = text;
   for (const plugin of plugins) {
     const fn = plugin[hook];
@@ -50,6 +60,9 @@ function fold(
 
 /** Compose plugins (applied in order) into a {@link TextPipeline}. */
 export function createPipeline(plugins: MaraPlugin[]): TextPipeline {
+  // Snapshot so later mutation of the caller's array can't change the pipeline.
+  // Each boundary supplies a default `direction` before spreading the caller's
+  // partial ctx (which normally omits direction, leaving the default in place).
   const list = [...plugins];
   return {
     plugins: list,
@@ -75,9 +88,12 @@ export const shrugPlugin: MaraPlugin = {
 
 /** Masks a configurable word list on both incoming and outgoing text. */
 export function censorPlugin(words: string[]): MaraPlugin {
+  // Escape regex metacharacters in each word (the words are user/config data,
+  // not patterns) and match whole words case-insensitively.
   const patterns = words.map(
     (w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'),
   );
+  // Replace with same-length runs of '*' so message length is preserved.
   const mask = (text: string) =>
     patterns.reduce((acc, re) => acc.replace(re, (m) => '*'.repeat(m.length)), text);
   return {

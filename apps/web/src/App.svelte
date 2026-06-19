@@ -1,3 +1,8 @@
+<!--
+  Root component: the connect form (display name + appearance) until a session
+  exists, then hands off to ChatApp. Owns the single MaraClient instance and the
+  settings that seed it.
+-->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { MaraClient } from '@mara/client-core';
@@ -14,6 +19,8 @@
 
   function connect() {
     error = '';
+    // Persist first so a returning user's name is on disk for onMount auto-connect,
+    // even if the connection itself fails.
     saveSettings(settings);
 
     const c = new MaraClient({
@@ -39,6 +46,8 @@
       error = `Kicked: ${d.reason}`;
     });
     c.events.on('error', (e) => {
+      // Only surface errors before we're fully connected; once active, transient
+      // socket errors are the client's reconnect concern, not the login form's.
       if (client && client.status !== 'active') error = e.message;
     });
 

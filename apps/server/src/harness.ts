@@ -1,3 +1,5 @@
+// Test-support helpers: a tiny promise-based WS client and a login shortcut, used
+// by the server test suites to drive a real socket against an in-process server.
 import { WebSocket } from 'ws';
 import {
   encode,
@@ -20,6 +22,8 @@ export class TestClient {
   private constructor(private readonly ws: WebSocket) {
     ws.on('message', (data) => {
       const msg = parseServerMessage(data.toString());
+      // Hand directly to a pending next() if one is waiting; otherwise buffer.
+      // Assumes a single outstanding waiter (tests await sequentially).
       if (this.waiter) {
         const w = this.waiter;
         this.waiter = null;
@@ -30,6 +34,7 @@ export class TestClient {
     });
   }
 
+  /** Open a socket and resolve once it's connected (rejects on connect error). */
   static connect(url: string): Promise<TestClient> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);

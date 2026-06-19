@@ -1,3 +1,5 @@
+<!-- Roster sidebar: alphabetized user list with away/self markers; emits a
+     selection so the host can DM or insert a mention. -->
 <script lang="ts">
   import type { UserInfo } from '@mara/client-core';
 
@@ -11,12 +13,15 @@
     onselect?: (user: UserInfo) => void;
   } = $props();
 
+  // Sort a copy so the incoming prop array is never mutated in place.
   const sorted = $derived([...users].sort((a, b) => a.name.localeCompare(b.name)));
 </script>
 
 <div class="mara-userlist">
   <div class="mara-userlist-head">Users · {users.length}</div>
   <ul>
+    <!-- `away` is the away message string; "" means present (no marker), any
+         non-empty value dims the entry and adds the 💤 + tooltip. -->
     {#each sorted as user (user.token)}
       <li>
         <button
