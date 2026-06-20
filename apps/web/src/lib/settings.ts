@@ -8,9 +8,24 @@ export interface MaraSettings {
   showTimestamps: boolean;
   /** Quick-text macros, indexed 0–11 for F1–F12. */
   macros: string[];
+  /**
+   * Stable per-client identity secret, generated once and persisted. Sent on
+   * login so the server keeps handing this client the same user token across
+   * reconnects and restarts.
+   */
+  identityKey: string;
 }
 
 const KEY = 'mara3.settings';
+
+/** Generate a fresh identity secret (random; persisted for the life of the install). */
+function newIdentityKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for environments without crypto.randomUUID.
+  return `id-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
 
 /** Coerce stored macros to exactly MACRO_COUNT string entries. */
 function normalizeMacros(value: unknown): string[] {
@@ -35,12 +50,14 @@ export function serverUrl(): string {
   return 'ws://localhost:5050/ws';
 }
 
-/** Baseline used for first-time visitors and as the merge base for stored settings. */
+/** Baseline used for first-time visitors and as the merge base for stored settings.
+ *  `identityKey` is left blank here and minted per-install in {@link loadSettings}. */
 export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
   showTimestamps: true,
   macros: normalizeMacros([]),
+  identityKey: '',
 };
 
 /**
@@ -50,14 +67,24 @@ export const defaultSettings: MaraSettings = {
  * must never block startup.
  */
 export function loadSettings(): MaraSettings {
-  // Fresh copies clone `macros` so callers never share the default array.
-  const fresh = (): MaraSettings => ({ ...defaultSettings, macros: normalizeMacros([]) });
+  // Fresh copies clone `macros` and mint a new identity key.
+  const fresh = (): MaraSettings => ({
+    ...defaultSettings,
+    macros: normalizeMacros([]),
+    identityKey: newIdentityKey(),
+  });
   if (typeof localStorage === 'undefined') return fresh();
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh();
     const saved = JSON.parse(raw) as Partial<MaraSettings>;
-    return { ...defaultSettings, ...saved, macros: normalizeMacros(saved.macros) };
+    return {
+      ...defaultSettings,
+      ...saved,
+      macros: normalizeMacros(saved.macros),
+      // Keep the stored key; mint one for installs from before this field existed.
+      identityKey: saved.identityKey || newIdentityKey(),
+    };
   } catch {
     return fresh();
   }

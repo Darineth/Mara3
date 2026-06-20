@@ -18,7 +18,8 @@ beforeEach(async () => {
     port: 0,
     motd: 'hello world',
     defaultChannel: '',
-    historyFile: '', // in-memory; persistence tested explicitly below
+    historyFile: '',
+    identityFile: '', // in-memory; persistence tested explicitly below
   };
   server = await startServer(cfg, createLogger('silent'));
   url = `ws://127.0.0.1:${server.port}/ws`;
@@ -54,6 +55,7 @@ describe('http', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        identityFile: '',
         webRoot: root,
       },
       createLogger('silent'),
@@ -111,7 +113,14 @@ describe('handshake', () => {
 describe('default channel', () => {
   it('auto-joins every user to the configured default channel on login', async () => {
     const s2 = await startServer(
-      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: 'Main', historyFile: '' },
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: 'Main',
+        historyFile: '',
+        identityFile: '',
+      },
       createLogger('silent'),
     );
     try {
@@ -261,6 +270,7 @@ describe('history persistence', () => {
       port: 0,
       defaultChannel: '',
       historyFile,
+      identityFile: '',
     };
 
     const s1 = await startServer(cfg, createLogger('silent'));
@@ -288,5 +298,134 @@ describe('history persistence', () => {
       await s2.close();
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('identity persistence', () => {
+  it('hands back the same token for an identity key, even across a restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-id-'));
+    const identityFile = join(dir, 'identity.json');
+    const cfg = {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile: '',
+      identityFile,
+    };
+
+    const s1 = await startServer(cfg, createLogger('silent'));
+    const c1 = await TestClient.connect(`ws://127.0.0.1:${s1.port}/ws`);
+    const first = await login(c1, 'alice', '#ffffff', 'alice-secret');
+    c1.close();
+    await s1.close(); // flushes the identity map to disk
+
+    // Fresh server instance, same identity file: the same key → the same token.
+    const s2 = await startServer(cfg, createLogger('silent'));
+    try {
+      const c2 = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      const second = await login(c2, 'alice', '#ffffff', 'alice-secret');
+      expect(second.token).toBe(first.token);
+
+      // A different key gets a different token.
+      const c3 = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      const other = await login(c3, 'bob', '#00ff00', 'bob-secret');
+      expect(other.token).not.toBe(first.token);
+      c2.close();
+      c3.close();
+    } finally {
+      await s2.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('multiplexed windows (same identity)', () => {
+  it('treats a second window with the same identity key as the same user', async () => {
+    // Bob is watching so we can assert presence (no duplicate userConnect).
+    const watcher = await TestClient.connect(url);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(url);
+    const first = await login(w1, 'alice', '#ffffff', 'alice-key');
+    const aliceConnect = await watcher.waitFor('userConnect');
+    expect(aliceConnect.user.token).toBe(first.token);
+
+    // Second window, same identity key: same token, same display name (no "alice2").
+    const w2 = await TestClient.connect(url);
+    const second = await login(w2, 'alice', '#ffffff', 'alice-key');
+    expect(second.token).toBe(first.token);
+    expect(second.name).toBe('alice');
+
+    // The watcher must NOT see a second connect — alice was already present.
+    watcher.send({ type: 'ping', id: 1 });
+    const next = await watcher.next();
+    expect(next.type).toBe('pong');
+
+    w1.close();
+    w2.close();
+    watcher.close();
+  });
+
+  it('syncs a freshly-opened window into the user’s current channels', async () => {
+    const w1 = await TestClient.connect(url);
+    await login(w1, 'alice', '#ffffff', 'alice-key');
+    w1.send({ type: 'joinChannel', channel: 'lobby' });
+    await w1.waitFor('channelJoined');
+
+    // A new window for the same identity is brought up to speed automatically.
+    const w2 = await TestClient.connect(url);
+    await login(w2, 'alice', '#ffffff', 'alice-key');
+    const synced = await w2.waitFor('channelJoined');
+    expect(synced.channel).toBe('lobby');
+
+    w1.close();
+    w2.close();
+  });
+
+  it('delivers channel chat to every window of the user', async () => {
+    const w1 = await TestClient.connect(url);
+    await login(w1, 'alice', '#ffffff', 'alice-key');
+    w1.send({ type: 'joinChannel', channel: 'lobby' });
+    const joined = await w1.waitFor('channelJoined');
+
+    const w2 = await TestClient.connect(url);
+    await login(w2, 'alice', '#ffffff', 'alice-key');
+    await w2.waitFor('channelJoined');
+
+    // A message sent from window 1 echoes to BOTH windows.
+    w1.send({ type: 'chat', channelToken: joined.channelToken, text: 'hello' });
+    const onW1 = await w1.waitFor('chat');
+    const onW2 = await w2.waitFor('chat');
+    expect(onW1.text).toBe('hello');
+    expect(onW2.text).toBe('hello');
+
+    w1.close();
+    w2.close();
+  });
+
+  it('stays present until the last window closes', async () => {
+    const watcher = await TestClient.connect(url);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(url);
+    const alice = await login(w1, 'alice', '#ffffff', 'alice-key');
+    await watcher.waitFor('userConnect');
+    const w2 = await TestClient.connect(url);
+    await login(w2, 'alice', '#ffffff', 'alice-key');
+
+    // Closing the first window must NOT mark alice offline — w2 is still open.
+    w1.close();
+    // Prove no disconnect arrives before alice actually leaves: a round-trip ping
+    // would surface any buffered userDisconnect ahead of the pong.
+    watcher.send({ type: 'ping', id: 2 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    // Closing the last window finally announces the disconnect.
+    w2.close();
+    const gone = await watcher.waitFor('userDisconnect');
+    expect(gone.token).toBe(alice.token);
+
+    watcher.close();
   });
 });

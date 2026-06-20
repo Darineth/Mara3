@@ -12,7 +12,14 @@ let url: string;
 
 beforeEach(async () => {
   server = await startServer(
-    { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '', historyFile: '' },
+    {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile: '',
+      identityFile: '',
+    },
     createLogger('silent'),
   );
   url = `ws://127.0.0.1:${server.port}/ws`;
@@ -245,6 +252,29 @@ describe('private messages + ping', () => {
     b.disconnect();
   });
 
+  it('notes in the PM thread when the other party disconnects', async () => {
+    const a = makeClient('alice');
+    await connected(a);
+    const sawBob = waitEvent(a, 'userConnect');
+    const b = makeClient('bob');
+    const bob = await connected(b);
+    await sawBob;
+
+    // Open a PM thread with bob.
+    const bGot = waitEvent(b, 'privateMessage');
+    a.sendPrivateMessage(bob.token, 'hi');
+    await bGot;
+
+    // When bob disconnects, his PM thread should show he left.
+    const gone = waitEvent(a, 'userDisconnect');
+    b.disconnect();
+    await gone;
+    const lines = get(a.privateMessages).get(bob.token) ?? [];
+    expect(lines.some((l) => l.kind === 'system' && /disconnected/.test(l.text))).toBe(true);
+
+    a.disconnect();
+  });
+
   it('measures round-trip time on pong', async () => {
     const client = makeClient('alice');
     await connected(client);
@@ -283,7 +313,14 @@ describe('reconnect', () => {
     const port = server.port;
     await server.close();
     server = await startServer(
-      { ...loadConfig(), host: '127.0.0.1', port, defaultChannel: '', historyFile: '' },
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+      },
       createLogger('silent'),
     );
 

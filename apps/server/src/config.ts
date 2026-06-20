@@ -30,6 +30,12 @@ export interface ServerConfig {
    * (tests do this to stay isolated).
    */
   historyFile: string;
+  /**
+   * File the client identity → token map is persisted to, so a client keeps its
+   * token across reconnects and restarts. On by default; set `MARA_IDENTITY_FILE`
+   * empty to disable (in-memory only; tests do this).
+   */
+  identityFile: string;
 }
 
 /** Where the web client build lands by default: `apps/web/dist`, relative to here. */
@@ -51,6 +57,11 @@ function defaultUploadDir(): string {
  *  runnable server to opt into persistence; tests leave `historyFile` empty. */
 export function defaultHistoryFile(): string {
   return fileURLToPath(new URL('../data/history.json', import.meta.url));
+}
+
+/** Default identity-map file (see {@link defaultHistoryFile}). */
+export function defaultIdentityFile(): string {
+  return fileURLToPath(new URL('../data/identity.json', import.meta.url));
 }
 
 // Bare defaults; size limits are kept in MB here and converted to bytes at load
@@ -96,5 +107,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
     historyFile: (env.MARA_HISTORY_FILE ?? defaultHistoryFile()).trim(),
+    identityFile: (env.MARA_IDENTITY_FILE ?? defaultIdentityFile()).trim(),
   };
 }

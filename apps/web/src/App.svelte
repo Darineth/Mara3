@@ -27,6 +27,7 @@
       url: serverUrl(),
       name: settings.name.trim() || 'guest',
       color: settings.color,
+      identityKey: settings.identityKey,
       plugins,
     });
     c.events.on('loginDenied', (d) => {

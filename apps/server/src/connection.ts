@@ -16,6 +16,8 @@ export type ConnectionState = 'awaitingLogin' | 'active' | 'closed';
 export class Connection {
   state: ConnectionState = 'awaitingLogin';
   userToken: Token | null = null;
+  /** Per-socket upload bearer secret, minted at login. */
+  sessionToken: string | null = null;
 
   constructor(
     readonly id: string,

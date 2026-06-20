@@ -87,8 +87,15 @@ export async function login(
   client: TestClient,
   name: string,
   color = '#cccccc',
+  identityKey?: string,
 ): Promise<{ token: number; name: string; sessionToken: string }> {
-  client.send({ type: 'login', protocol: PROTOCOL_VERSION, name, color });
+  client.send({
+    type: 'login',
+    protocol: PROTOCOL_VERSION,
+    name,
+    color,
+    ...(identityKey ? { identityKey } : {}),
+  });
   const welcome = await client.waitFor('welcome');
   return { token: welcome.self.token, name: welcome.self.name, sessionToken: welcome.sessionToken };
 }

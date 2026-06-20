@@ -29,16 +29,16 @@ with direction-appropriate shapes.
 
 ## Client → Server
 
-| Message          | Fields                  | Purpose                                  |
-| ---------------- | ----------------------- | ---------------------------------------- |
-| `login`          | `protocol, name, color` | First frame on a new socket (see below). |
-| `joinChannel`    | `channel`               | Join (or create) a channel by name.      |
-| `leaveChannel`   | `channelToken`          | Leave a channel.                         |
-| `chat`           | `channelToken, text`    | Send to a channel.                       |
-| `emote`          | `channelToken, text`    | `/me`-style action to a channel.         |
-| `privateMessage` | `to, text`              | Direct message to a user token.          |
-| `away`           | `text`                  | Set away note; `""` clears it.           |
-| `ping`           | `id`                    | Heartbeat; echoed in `pong`.             |
+| Message          | Fields                                | Purpose                                  |
+| ---------------- | ------------------------------------- | ---------------------------------------- |
+| `login`          | `protocol, name, color, identityKey?` | First frame on a new socket (see below). |
+| `joinChannel`    | `channel`                             | Join (or create) a channel by name.      |
+| `leaveChannel`   | `channelToken`                        | Leave a channel.                         |
+| `chat`           | `channelToken, text`                  | Send to a channel.                       |
+| `emote`          | `channelToken, text`                  | `/me`-style action to a channel.         |
+| `privateMessage` | `to, text`                            | Direct message to a user token.          |
+| `away`           | `text`                                | Set away note; `""` clears it.           |
+| `ping`           | `id`                                  | Heartbeat; echoed in `pong`.             |
 
 ## Server → Client
 
@@ -63,7 +63,7 @@ with direction-appropriate shapes.
 
 The client speaks first — there is no separate version/hello round-trip.
 
-1. Client opens the socket and sends `login { protocol, name, color }`.
+1. Client opens the socket and sends `login { protocol, name, color, identityKey? }`.
 2. Server replies `welcome { self, sessionToken, motd }` **or**
    `loginDenied { reason }` (and closes).
 3. Steady state: join/leave channels, chat/emote/away, private messages, ping/pong.
@@ -75,10 +75,26 @@ from the requested name.
 
 ## Identity & presence
 
-There are no accounts: identity is the chosen `name`. Presence is per-channel —
-clients learn who is present from each `channelJoined` roster and the
-`userJoinedChannel`/`userLeftChannel`/`userDisconnect` notices. There is no global
-user list.
+`identityKey` is a stable secret the client generates once and persists. The
+server maps it (by hash) to a stable user `token`, so a client keeps the **same
+token across reconnects and even server restarts** — which is what lets PMs and
+channel membership survive a drop without per-message reconciliation. The map is
+persisted to disk (`MARA_IDENTITY_FILE`; only the hash is stored, never the raw
+key). Omitting `identityKey` yields a fresh one-off token each login.
+
+Because two browser tabs share the same persisted `identityKey`, opening a second
+window logs in as the **same user** rather than a duplicate: the new socket
+multiplexes onto the live session (it receives a `welcome` and a `channelJoined`
+for each channel the user is already in, to bring it in sync). Channel and PM
+traffic fan out to every open window, and `userDisconnect` is broadcast only once
+the user's **last** window closes. Each window still gets its own `sessionToken`
+(upload bearer). One asymmetry: an _outgoing_ PM is recorded only in the window
+that sent it — a user's other windows see incoming PMs but not their own sent lines.
+
+There are still no accounts — a chosen name is a display label, not proof of
+identity. Presence is per-channel: clients learn who is present from each
+`channelJoined` roster and the `userJoinedChannel`/`userLeftChannel`/
+`userDisconnect` notices. There is no global user list.
 
 ## Message backlog
 

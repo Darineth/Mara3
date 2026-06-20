@@ -9,6 +9,7 @@ import {
 import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
 import { HistoryStore } from './history.js';
+import { IdentityStore } from './identity.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
@@ -19,8 +20,9 @@ import { makeSessionToken } from './tokens.js';
  * never interleave — the modern equivalent of Mara 2's single-thread Qt server.
  */
 export class Hub {
-  readonly state = new ServerState();
+  readonly state: ServerState;
   private readonly history: HistoryStore;
+  private readonly identity: IdentityStore;
 
   constructor(
     private readonly cfg: ServerConfig,
@@ -29,11 +31,14 @@ export class Hub {
     private readonly now: () => number = Date.now,
   ) {
     this.history = new HistoryStore(cfg.historyFile, log);
+    this.identity = new IdentityStore(cfg.identityFile, log);
+    this.state = new ServerState(this.identity);
   }
 
-  /** Persist any pending history synchronously (call on shutdown). */
-  flushHistory(): void {
+  /** Persist any pending history + identities synchronously (call on shutdown). */
+  flush(): void {
     this.history.flush();
+    this.identity.flush();
   }
 
   onConnect(conn: Connection): void {
@@ -56,17 +61,18 @@ export class Hub {
   }
 
   onClose(conn: Connection): void {
-    // Only logged-in connections have presence to tear down; a socket that dropped
-    // before login (userToken still null) leaves no state to clean up.
-    if (conn.userToken !== null) {
-      const session = this.state.removeSession(conn.userToken);
-      if (session) {
-        this.log.info({ user: session.info.name }, 'disconnected');
-        this.broadcastAll(
-          { type: 'userDisconnect', token: session.info.token },
-          session.info.token,
-        );
-      }
+    // Detach this socket. A pre-login drop (userToken null) leaves nothing to do.
+    // For a multiplexed user we only announce a disconnect once their *last*
+    // window closes — other windows keep them present.
+    const result = this.state.removeConnection(conn);
+    if (result?.lastClosed) {
+      this.log.info({ user: result.session.info.name }, 'disconnected');
+      this.broadcastAll(
+        { type: 'userDisconnect', token: result.session.info.token },
+        result.session.info.token,
+      );
+    } else if (result) {
+      this.log.debug({ user: result.session.info.name }, 'window closed (still online elsewhere)');
     }
     conn.state = 'closed';
   }
@@ -92,15 +98,15 @@ export class Hub {
       case 'leaveChannel':
         return this.handleLeaveChannel(session, msg);
       case 'chat':
-        return this.handleChannelText(session, msg.channelToken, msg.text, 'chat');
+        return this.handleChannelText(session, conn, msg.channelToken, msg.text, 'chat');
       case 'emote':
-        return this.handleChannelText(session, msg.channelToken, msg.text, 'emote');
+        return this.handleChannelText(session, conn, msg.channelToken, msg.text, 'emote');
       case 'away':
         return this.handleAway(session, msg);
       case 'privateMessage':
-        return this.handlePrivateMessage(session, msg);
+        return this.handlePrivateMessage(session, conn, msg);
       case 'ping':
-        return session.connection.send({ type: 'pong', id: msg.id });
+        return conn.send({ type: 'pong', id: msg.id });
     }
   }
 
@@ -118,15 +124,31 @@ export class Hub {
       return;
     }
 
-    const name = this.uniqueName(msg.name);
-    const token = this.state.allocUserToken();
+    const token = this.resolveToken(msg.identityKey);
     const sessionToken = makeSessionToken();
-    const info: UserInfo = { token, name, color: msg.color, away: '' };
-    const session: Session = { info, sessionToken, connection: conn, channels: new Set() };
-    this.state.addSession(session);
-
     conn.userToken = token;
+    conn.sessionToken = sessionToken;
     conn.state = 'active';
+
+    // Second window for an identity that is already online: multiplex this socket
+    // onto the live user instead of spawning a duplicate. No new presence is
+    // announced — they were already here — we just bring this window into sync.
+    const live = this.state.sessions.get(token);
+    if (live) {
+      this.state.attachConnection(live, conn);
+      this.log.info({ user: live.info.name, token }, 'additional window');
+      conn.send({ type: 'welcome', self: live.info, sessionToken, motd: this.cfg.motd });
+      for (const channelToken of live.channels) {
+        const channel = this.state.channelsByToken.get(channelToken);
+        if (channel) this.sendChannelSnapshot(conn, channel);
+      }
+      return;
+    }
+
+    const name = this.uniqueName(msg.name);
+    const info: UserInfo = { token, name, color: msg.color, away: '' };
+    const session: Session = { info, connections: new Set([conn]), channels: new Set() };
+    this.state.addSession(session);
     this.log.info({ user: name, token }, 'logged in');
 
     conn.send({ type: 'welcome', self: info, sessionToken, motd: this.cfg.motd });
@@ -151,18 +173,8 @@ export class Hub {
     channel.members.add(session.info.token);
     session.channels.add(channel.token);
 
-    const users: UserInfo[] = [];
-    for (const token of channel.members) {
-      const member = this.state.sessions.get(token);
-      if (member) users.push(member.info);
-    }
-    session.connection.send({
-      type: 'channelJoined',
-      channelToken: channel.token,
-      channel: channel.name,
-      users,
-      history: this.history.get(channel.name),
-    });
+    // Membership is per-user, so every window of this user reflects the join.
+    for (const conn of session.connections) this.sendChannelSnapshot(conn, channel);
     // Only announce a genuinely new membership (idempotent on rejoin/resume).
     if (!alreadyMember) {
       this.broadcastChannel(
@@ -173,6 +185,25 @@ export class Hub {
     }
   }
 
+  /** Send a single channel's roster + backlog to one socket (join or window-sync). */
+  private sendChannelSnapshot(
+    conn: Connection,
+    channel: { token: Token; name: string; members: Set<Token> },
+  ): void {
+    const users: UserInfo[] = [];
+    for (const token of channel.members) {
+      const member = this.state.sessions.get(token);
+      if (member) users.push(member.info);
+    }
+    conn.send({
+      type: 'channelJoined',
+      channelToken: channel.token,
+      channel: channel.name,
+      users,
+      history: this.history.get(channel.name),
+    });
+  }
+
   private handleLeaveChannel(
     session: Session,
     msg: Extract<ClientMessage, { type: 'leaveChannel' }>,
@@ -181,7 +212,8 @@ export class Hub {
     if (!channel || !session.channels.has(channel.token)) return;
     channel.members.delete(session.info.token);
     session.channels.delete(channel.token);
-    session.connection.send({ type: 'channelLeft', channelToken: channel.token });
+    for (const conn of session.connections)
+      conn.send({ type: 'channelLeft', channelToken: channel.token });
     this.broadcastChannel(channel.token, {
       type: 'userLeftChannel',
       token: session.info.token,
@@ -192,13 +224,14 @@ export class Hub {
 
   private handleChannelText(
     session: Session,
+    conn: Connection,
     channelToken: Token,
     text: string,
     kind: 'chat' | 'emote',
   ): void {
     const channel = this.state.channelsByToken.get(channelToken);
     if (!channel || !session.channels.has(channelToken)) {
-      session.connection.send({ type: 'error', message: 'not in that channel' });
+      conn.send({ type: 'error', message: 'not in that channel' });
       return;
     }
     // Server-stamp the message, retain it as capped (persisted) backlog, then
@@ -233,18 +266,37 @@ export class Hub {
 
   private handlePrivateMessage(
     session: Session,
+    conn: Connection,
     msg: Extract<ClientMessage, { type: 'privateMessage' }>,
   ): void {
     const target = this.state.sessions.get(msg.to);
     if (!target) {
-      session.connection.send({ type: 'error', message: 'user is offline' });
+      conn.send({ type: 'error', message: 'user is offline' });
       return;
     }
-    // Delivered to the recipient only; the sender records its own line locally.
-    target.connection.send({ type: 'privateMessage', from: session.info.token, text: msg.text });
+    // Delivered to every window of the recipient; the sender records its own
+    // outgoing line locally (in the window that sent it).
+    this.sendToUser(target, { type: 'privateMessage', from: session.info.token, text: msg.text });
   }
 
   // -- helpers --------------------------------------------------------------
+
+  /**
+   * Map an identity key to a stable user token: reuse the bound token if the
+   * identity is known (whether or not it is currently online — a live one means a
+   * second window that handleLogin multiplexes onto the same user); mint + bind on
+   * first sight; and fall back to a fresh one-off token when no key was given.
+   */
+  private resolveToken(identityKey: string | undefined): Token {
+    if (identityKey) {
+      const known = this.identity.tokenFor(identityKey);
+      if (known !== undefined) return known;
+      const token = this.state.allocUserToken();
+      this.identity.bind(identityKey, token);
+      return token;
+    }
+    return this.state.allocUserToken();
+  }
 
   // Resolve a free display name, suffixing "2", "3"… on a case-insensitive clash.
   private uniqueName(requested: string): string {
@@ -263,11 +315,16 @@ export class Hub {
     return false;
   }
 
+  /** Send to every window of one user. */
+  private sendToUser(session: Session, message: ServerMessage): void {
+    for (const conn of session.connections) conn.send(message);
+  }
+
   // Fan out to every session; `exceptToken` omits the originator so a sender
   // doesn't receive an echo of their own event (connect, away, …).
   private broadcastAll(message: ServerMessage, exceptToken?: Token): void {
     for (const session of this.state.sessions.values()) {
-      if (session.info.token !== exceptToken) session.connection.send(message);
+      if (session.info.token !== exceptToken) this.sendToUser(session, message);
     }
   }
 
@@ -276,7 +333,8 @@ export class Hub {
     if (!channel) return;
     for (const token of channel.members) {
       if (token === exceptToken) continue;
-      this.state.sessions.get(token)?.connection.send(message);
+      const member = this.state.sessions.get(token);
+      if (member) this.sendToUser(member, message);
     }
   }
 }

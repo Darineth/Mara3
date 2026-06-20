@@ -124,8 +124,8 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
           new Promise<void>((res, rej) => {
             if (closed) return res();
             closed = true;
-            // Persist any pending message history before we tear everything down.
-            hub.flushHistory();
+            // Persist any pending message history + identities before teardown.
+            hub.flush();
             // terminate(), not close(): drop sockets immediately so a slow/idle
             // client can't hold the process open past shutdown.
             for (const client of wss.clients) client.terminate();

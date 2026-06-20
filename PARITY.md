@@ -25,32 +25,32 @@ plugin data, response/error. ✅
 
 ## Client features
 
-| Feature                              | Status | Notes                                                             |
-| ------------------------------------ | ------ | ----------------------------------------------------------------- |
-| Connect / disconnect                 | ✅     | persisted profile; auto-connects on load for returning users      |
-| Auto-reconnect + heartbeat           | ✅     | exponential backoff, channel rejoin                               |
-| Channels (join/leave, tabs, roster)  | ✅     | tabs hidden when only in the default channel                      |
-| Channel chat + emote (`/me`)         | ✅     |                                                                   |
-| Private messages                     | ✅     | per-peer conversations                                            |
-| Away status (`/away`)                | ✅     |                                                                   |
-| User list with colors + away         | ✅     | click to open PM; names persist after a user leaves               |
-| Per-user color                       | ✅     | set on the connect screen (per-user fonts dropped in revamp)      |
-| Timestamps (toggle)                  | ✅     | server-stamped, so consistent across clients                      |
-| Message history / backlog            | ✅     | server replays recent channel messages on join; persisted to disk |
-| Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                         |
-| Emoticons                            | ◻      | implemented but off by default (opt-in via render option)         |
-| URL linkification                    | ✅     | safe anchors, HTML-escaped                                        |
-| Inline images (by URL)               | ✅     | image URLs render as a clickable thumbnail                        |
-| Image upload (drag-drop / paste)     | ✅     | hosted by the server; rolling cache, per-file + total size cap    |
-| Chat input history (↑/↓)             | ✅     | + autosize, max length                                            |
-| Auto-scroll with freeze-on-scroll-up | ✅     |                                                                   |
-| Macros (F1–F12)                      | ✅     | editor dialog; F-keys insert into the message box                 |
-| Unread tab indicators                | ✅     | channels semibold; DMs bolder + dot                               |
-| Join/leave/disconnect notices        | ✅     | inline system lines; incl. your own "You joined #x"               |
-| Connection drop/recover notices      | ✅     | inline system lines                                               |
-| Plugins (3 text hooks)               | ✅     | shrug + censor samples                                            |
-| Custom HTML templates                | ◻      | superseded by `@mara/chat-render`                                 |
-| Server admin window                  | ⬜     | server is headless; optional Svelte dashboard is a future item    |
+| Feature                              | Status | Notes                                                                            |
+| ------------------------------------ | ------ | -------------------------------------------------------------------------------- |
+| Connect / disconnect                 | ✅     | persisted identity (same token across reconnect/restart); 2nd window = same user |
+| Auto-reconnect + heartbeat           | ✅     | exponential backoff, channel rejoin                                              |
+| Channels (join/leave, tabs, roster)  | ✅     | tabs hidden when only in the default channel                                     |
+| Channel chat + emote (`/me`)         | ✅     |                                                                                  |
+| Private messages                     | ✅     | per-peer conversations                                                           |
+| Away status (`/away`)                | ✅     |                                                                                  |
+| User list with colors + away         | ✅     | click to open PM; names persist after a user leaves                              |
+| Per-user color                       | ✅     | set on the connect screen (per-user fonts dropped in revamp)                     |
+| Timestamps (toggle)                  | ✅     | server-stamped, so consistent across clients                                     |
+| Message history / backlog            | ✅     | server replays recent channel messages on join; persisted to disk                |
+| Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                                        |
+| Emoticons                            | ◻      | implemented but off by default (opt-in via render option)                        |
+| URL linkification                    | ✅     | safe anchors, HTML-escaped                                                       |
+| Inline images (by URL)               | ✅     | image URLs render as a clickable thumbnail                                       |
+| Image upload (drag-drop / paste)     | ✅     | hosted by the server; rolling cache, per-file + total size cap                   |
+| Chat input history (↑/↓)             | ✅     | + autosize, max length                                                           |
+| Auto-scroll with freeze-on-scroll-up | ✅     |                                                                                  |
+| Macros (F1–F12)                      | ✅     | editor dialog; F-keys insert into the message box                                |
+| Unread tab indicators                | ✅     | channels semibold; DMs bolder + dot                                              |
+| Join/leave/disconnect notices        | ✅     | inline; incl. your own "You joined #x" and peer-left in PMs                      |
+| Connection drop/recover notices      | ✅     | inline system lines                                                              |
+| Plugins (3 text hooks)               | ✅     | shrug + censor samples                                                           |
+| Custom HTML templates                | ◻      | superseded by `@mara/chat-render`                                                |
+| Server admin window                  | ⬜     | server is headless; optional Svelte dashboard is a future item                   |
 
 ✅ done · ◻ intentionally replaced / optional · ⬜ not yet ported
 

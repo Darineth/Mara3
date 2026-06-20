@@ -58,15 +58,17 @@ added.
 - **Fix:** if/when ambient auth is introduced, enforce an `Origin` allowlist on
   upgrade.
 
-### L4 — Identity is a chosen name; resume tokens unused · _Low (by design)_
+### L4 — No real authentication (names are display labels) · _Low (by design)_
 
-Anyone can connect and pick any unused name; a name freed by a leaver can be
-taken by anyone (impersonation). `resumeToken` is generated but never validated
-on login, so there is no real session resume.
+Clients now hold a persistent `identityKey` that the server maps to a stable
+token (so reconnects/restarts preserve identity — see PROTOCOL.md). But it is
+trust-on-first-use: the key is whatever the client sends, there are still no
+accounts, and a chosen **name** isn't verified — anyone can pick any unused name,
+so visual impersonation by name remains possible.
 
-- **Where:** `apps/server/src/hub.ts` (`handleLogin` ignores `msg.resumeToken`)
-- **Fix (if desired):** validate `resumeToken` to rebind a prior identity on
-  reconnect; longer term, optional real authentication.
+- **Where:** `apps/server/src/hub.ts` (`resolveToken` / `uniqueName`)
+- **Fix (if desired):** real authentication (accounts, or signed identity keys)
+  if the deployment needs verified identities.
 
 ### L5 — Display names run through full markdown/linkify in system lines · _Low_
 

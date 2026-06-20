@@ -46,6 +46,12 @@ export interface ClientOptions {
   name: string;
   /** The user's display colour (`#rrggbb`); the only per-user styling. */
   color: Color;
+  /**
+   * Stable, client-persisted identity secret. Sent on every login so the server
+   * hands back the same user token across reconnects and restarts. Omit for a
+   * one-off (non-persistent) identity.
+   */
+  identityKey?: string;
   /** Inject a WebSocket implementation (browser uses the global by default). */
   webSocket?: WebSocketCtor;
   autoReconnect?: boolean;

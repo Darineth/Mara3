@@ -25,6 +25,12 @@ const login = z.object({
   protocol: z.number().int().nonnegative(),
   name: z.string().min(1).max(64),
   color: colorSchema,
+  /**
+   * Stable client-chosen identity secret (persisted by the client). The server
+   * maps it to a stable user token, so reconnecting — even across a server
+   * restart — keeps the same token. Omit it to get a fresh one-off token.
+   */
+  identityKey: z.string().min(1).max(128).optional(),
 });
 
 const joinChannel = z.object({

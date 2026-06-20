@@ -6,10 +6,10 @@ backlog.
 
 ## Bugs
 
-- [ ] Fix private messages breaking when a client disconnects.
-      (PM handling: `handlePrivateMessage` in `apps/server/src/hub.ts`; client
-      side in `packages/client-core/src/client.ts` and the PM tabs in
-      `apps/web/src/ChatApp.svelte`.)
+- [x] Private messages breaking when a client disconnects — a PM peer's token is
+      re-minted on reconnect, so the conversation stranded on the dead token. The
+      client now migrates the thread (and the tab/active view) to the new token
+      by name when the peer reconnects.
 
 ## Features
 

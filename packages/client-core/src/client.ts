@@ -193,6 +193,7 @@ export class MaraClient {
         protocol: PROTOCOL_VERSION,
         name: this.opts.name,
         color: this.opts.color,
+        ...(this.opts.identityKey ? { identityKey: this.opts.identityKey } : {}),
       });
     };
     ws.onmessage = (ev) => this.onRaw(String(ev.data));
@@ -314,6 +315,15 @@ export class MaraClient {
         const name = this.nameOf(msg.token);
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) this.systemLine(channelToken, `${name} disconnected`);
+        }
+        // Also note it in any private conversation with them, so a PM clearly
+        // shows the other party left.
+        if (get(this._privateMessages).has(msg.token)) {
+          this.pushLine(this._privateMessages, msg.token, {
+            kind: 'system',
+            from: null,
+            text: `${name} disconnected`,
+          });
         }
         this.removeUser(msg.token);
         this.events.emit('userDisconnect', { token: msg.token });
