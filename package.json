@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "private": true,
   "description": "Mara 3 — cross-platform chat (TypeScript / Svelte / Tauri 2).",
-  "license": "LGPL-2.1-or-later",
+  "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=20"
