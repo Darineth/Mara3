@@ -87,9 +87,8 @@ The server retains the most recent messages per channel (capped, default 100;
 `{ from, name, color, kind, text, at }`, oldest first — so a joiner (or a client
 that reloaded/reconnected) sees recent scrollback. Each entry snapshots the
 author's name/colour so it renders even if that author is no longer present.
-Backlog is persisted to disk (`MARA_HISTORY_FILE`, on by default for the runnable
-server; set empty to disable), so it survives a restart. Private messages are not
-retained.
+Backlog is persisted to disk (`MARA_HISTORY_FILE`, on by default; set empty to
+disable), so it survives a restart. Private messages are not retained.
 
 ## Keepalive
 

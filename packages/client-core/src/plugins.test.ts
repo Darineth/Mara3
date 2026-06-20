@@ -13,7 +13,7 @@ let url: string;
 
 beforeEach(async () => {
   server = await startServer(
-    { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '' },
+    { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '', historyFile: '' },
     createLogger('silent'),
   );
   url = `ws://127.0.0.1:${server.port}/ws`;

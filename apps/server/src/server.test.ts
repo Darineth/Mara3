@@ -18,6 +18,7 @@ beforeEach(async () => {
     port: 0,
     motd: 'hello world',
     defaultChannel: '',
+    historyFile: '', // in-memory; persistence tested explicitly below
   };
   server = await startServer(cfg, createLogger('silent'));
   url = `ws://127.0.0.1:${server.port}/ws`;
@@ -47,7 +48,14 @@ describe('http', () => {
     writeFileSync(join(root, 'assets', 'app.abcd1234.js'), 'export default 1;');
 
     const s = await startServer(
-      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: '', webRoot: root },
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        webRoot: root,
+      },
       createLogger('silent'),
     );
     try {
@@ -103,7 +111,7 @@ describe('handshake', () => {
 describe('default channel', () => {
   it('auto-joins every user to the configured default channel on login', async () => {
     const s2 = await startServer(
-      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: 'Main' },
+      { ...loadConfig(), host: '127.0.0.1', port: 0, defaultChannel: 'Main', historyFile: '' },
       createLogger('silent'),
     );
     try {

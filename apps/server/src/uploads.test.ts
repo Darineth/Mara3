@@ -56,6 +56,7 @@ async function start(overrides: Partial<ReturnType<typeof loadConfig>> = {}) {
       host: '127.0.0.1',
       port: 0,
       defaultChannel: '',
+      historyFile: '',
       uploadDir: dir,
       maxUploadBytes: 1024,
       maxCacheBytes: 10 * 1024,
