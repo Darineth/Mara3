@@ -35,7 +35,7 @@ plugin data, response/error. ✅
 | Away status (`/away`)                | ✅     |                                                                                  |
 | User list with colors + away         | ✅     | click to open PM; names persist after a user leaves                              |
 | Per-user color                       | ✅     | set on the connect screen (per-user fonts dropped in revamp)                     |
-| Timestamps (toggle)                  | ✅     | server-stamped, so consistent across clients                                     |
+| Timestamps                           | ✅     | always shown; server-stamped, so consistent across clients                       |
 | Message history / backlog            | ✅     | server replays recent channel messages on join; persisted to disk                |
 | Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                                        |
 | Emoticons                            | ◻      | implemented but off by default (opt-in via render option)                        |

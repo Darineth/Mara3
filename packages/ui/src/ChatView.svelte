@@ -9,11 +9,9 @@
   let {
     lines = [],
     users,
-    showTimestamps = true,
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
-    showTimestamps?: boolean;
   } = $props();
 
   let viewport = $state<HTMLDivElement | null>(null);
@@ -112,7 +110,7 @@
 <div class="mara-chatview" role="log" bind:this={viewport} onscroll={onScroll}>
   {#each lines as line (line.id)}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-    {@html renderLine(toModel(line), { showTimestamps })}
+    {@html renderLine(toModel(line))}
   {/each}
   {#if lines.length === 0}
     <div class="mara-empty">No messages yet.</div>

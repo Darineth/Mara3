@@ -76,10 +76,6 @@
         Color
         <input type="color" bind:value={settings.color} />
       </label>
-      <label class="check">
-        <input type="checkbox" bind:checked={settings.showTimestamps} />
-        Show timestamps
-      </label>
       {#if error}<p class="error">{error}</p>{/if}
       <button type="submit">Connect</button>
     </form>
@@ -127,11 +123,6 @@
     padding: 0;
     height: 2.4rem;
     width: 3rem;
-  }
-  .check {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.5rem;
   }
   .error {
     color: var(--mara-danger);

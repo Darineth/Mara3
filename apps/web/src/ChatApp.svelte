@@ -373,7 +373,7 @@
       </div>
     {:else}
       <div class="convo" class:with-users={activeChannel !== null && showUsers}>
-        <ChatView lines={activeLines} users={$directory} showTimestamps={settings.showTimestamps} />
+        <ChatView lines={activeLines} users={$directory} />
         {#if activeChannel !== null && showUsers}
           <UserList
             users={membersOf(activeChannel)}

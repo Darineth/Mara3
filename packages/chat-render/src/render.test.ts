@@ -165,16 +165,13 @@ describe('renderText — Discord markdown', () => {
 
 describe('renderLine', () => {
   it('renders a chat line with author color and escaped text', () => {
-    const html = renderLine(
-      {
-        kind: 'chat',
-        authorName: 'al<i>ce',
-        authorColor: '#ff0000',
-        text: 'hi',
-        timestamp: '12:00',
-      },
-      { showTimestamps: true },
-    );
+    const html = renderLine({
+      kind: 'chat',
+      authorName: 'al<i>ce',
+      authorColor: '#ff0000',
+      text: 'hi',
+      timestamp: '12:00',
+    });
     expect(html).toContain('mara-chat');
     expect(html).toContain('color:#ff0000');
     expect(html).toContain('al&lt;i&gt;ce:');

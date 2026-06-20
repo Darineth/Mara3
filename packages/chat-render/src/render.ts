@@ -16,15 +16,13 @@ export interface LineModel {
   timestamp?: string;
 }
 
-/** Per-line options; extends the text pipeline's options with timestamp control. */
-export interface RenderLineOptions extends RenderTextOptions {
-  showTimestamps?: boolean;
-}
+/** Per-line options; currently just the text pipeline's options. */
+export type RenderLineOptions = RenderTextOptions;
 
-// Leading timestamp span (with trailing space) or empty string. Suppressed when
-// disabled or when the line carries no timestamp.
-function ts(line: LineModel, options: RenderLineOptions): string {
-  if (options.showTimestamps === false || !line.timestamp) return '';
+// Leading timestamp span (with trailing space), or empty when the line carries
+// no timestamp. Timestamps always render when present (no user toggle).
+function ts(line: LineModel): string {
+  if (!line.timestamp) return '';
   return `<span class="mara-ts">${escapeHtml(line.timestamp)}</span> `;
 }
 
@@ -45,18 +43,18 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   switch (line.kind) {
     case 'chat':
       return (
-        `<div class="mara-line mara-chat">${ts(line, options)}` +
+        `<div class="mara-line mara-chat">${ts(line)}` +
         `<span class="mara-author" style="color:${color}">${name}:</span> ` +
         `<span class="mara-text">${renderText(line.text, options)}</span></div>`
       );
     case 'emote':
       return (
-        `<div class="mara-line mara-emote">${ts(line, options)}` +
+        `<div class="mara-line mara-emote">${ts(line)}` +
         `<span class="mara-text" style="color:${color}"><em>${name} ${renderText(line.text, options)}</em></span></div>`
       );
     case 'system':
       return (
-        `<div class="mara-line mara-system">${ts(line, options)}` +
+        `<div class="mara-line mara-system">${ts(line)}` +
         `<span class="mara-text"><em>${renderText(line.text, options)}</em></span></div>`
       );
   }
