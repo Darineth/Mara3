@@ -46,7 +46,7 @@ plugin data, response/error. ✅
 | Auto-scroll with freeze-on-scroll-up | ✅     |                                                                   |
 | Macros (F1–F12)                      | ✅     | editor dialog; F-keys insert into the message box                 |
 | Unread tab indicators                | ✅     | channels semibold; DMs bolder + dot                               |
-| Join/leave/disconnect notices        | ✅     | inline system lines                                               |
+| Join/leave/disconnect notices        | ✅     | inline system lines; incl. your own "You joined #x"               |
 | Connection drop/recover notices      | ✅     | inline system lines                                               |
 | Plugins (3 text hooks)               | ✅     | shrug + censor samples                                            |
 | Custom HTML templates                | ◻      | superseded by `@mara/chat-render`                                 |

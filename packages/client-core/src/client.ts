@@ -69,6 +69,9 @@ export class MaraClient {
   private readonly pendingPings = new Map<number, number>();
   /** Channel names we intend to be in (so we can rejoin after a reconnect). */
   private readonly intendedChannels = new Set<string>();
+  /** Channel names we've already shown a "you joined" line for this session, so
+   *  a reconnect/token-churn rejoin doesn't repeat it. Cleared when we leave. */
+  private readonly joinAnnounced = new Set<string>();
 
   private readonly pipeline: TextPipeline | undefined;
   private readonly now: () => number;
@@ -347,6 +350,14 @@ export class MaraClient {
         }
         this.ensureLog(this._channelMessages, channel.token);
         this.seedHistory(channel.token, msg.history);
+        // Mark where we joined — after any backlog, before live messages — so the
+        // start of our interaction in the channel is clear. Once per session per
+        // channel name (a reconnect/token-churn rejoin keeps the original line via
+        // migrateLog rather than adding a fresh one).
+        if (!this.joinAnnounced.has(channel.name)) {
+          this.joinAnnounced.add(channel.name);
+          this.systemLine(channel.token, `You joined #${channel.name}`);
+        }
         this.events.emit('channelJoined', channel);
         return;
       }
@@ -355,7 +366,10 @@ export class MaraClient {
         this._channels.update((map) => {
           const next = new Map(map);
           const ch = next.get(msg.channelToken);
-          if (ch) this.intendedChannels.delete(ch.name);
+          if (ch) {
+            this.intendedChannels.delete(ch.name);
+            this.joinAnnounced.delete(ch.name); // re-announce on a later rejoin
+          }
           next.delete(msg.channelToken);
           return next;
         });

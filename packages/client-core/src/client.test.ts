@@ -140,6 +140,18 @@ describe('channels + chat', () => {
     a.disconnect();
     b.disconnect();
   });
+
+  it('posts a "you joined" system line when joining a channel', async () => {
+    const a = makeClient('alice');
+    await connected(a);
+    const joined = waitEvent(a, 'channelJoined');
+    a.joinChannel('lobby');
+    const ch = await joined;
+
+    const lines = get(a.channelMessages).get(ch.token) ?? [];
+    expect(lines.some((l) => l.kind === 'system' && l.text === 'You joined #lobby')).toBe(true);
+    a.disconnect();
+  });
 });
 
 describe('presence system messages', () => {
