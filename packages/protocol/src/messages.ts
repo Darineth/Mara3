@@ -110,12 +110,28 @@ const userDisconnect = z.object({
   token: tokenSchema,
 });
 
+/** A past channel message replayed as backlog when joining. */
+export const channelHistoryEntrySchema = z.object({
+  from: tokenSchema,
+  /** Author name + colour snapshot, so backlog still renders for authors no
+   *  longer present (or from a prior session) who aren't in the current roster. */
+  name: z.string().min(1).max(64),
+  color: colorSchema,
+  kind: z.enum(['chat', 'emote']),
+  text: chatTextSchema,
+  /** Server send time (epoch ms), so replayed lines keep their original order/time. */
+  at: z.number().int().nonnegative(),
+});
+export type ChannelHistoryEntry = z.infer<typeof channelHistoryEntrySchema>;
+
 const channelJoined = z.object({
   type: z.literal('channelJoined'),
   channelToken: tokenSchema,
   channel: z.string().min(1).max(64),
   /** Roster at the moment of joining. */
   users: z.array(userInfoSchema),
+  /** Recent messages (oldest first) so the joiner sees backlog. */
+  history: z.array(channelHistoryEntrySchema).default([]),
 });
 
 const channelLeft = z.object({
@@ -140,6 +156,8 @@ const serverChat = z.object({
   from: tokenSchema,
   channelToken: tokenSchema,
   text: chatTextSchema,
+  /** Server send time (epoch ms); clients use it so timestamps are consistent. */
+  at: z.number().int().nonnegative(),
 });
 
 const serverEmote = z.object({
@@ -147,6 +165,7 @@ const serverEmote = z.object({
   from: tokenSchema,
   channelToken: tokenSchema,
   text: chatTextSchema,
+  at: z.number().int().nonnegative(),
 });
 
 const serverAway = z.object({

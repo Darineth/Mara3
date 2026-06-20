@@ -2,6 +2,7 @@ import { get, writable, type Readable, type Writable } from 'svelte/store';
 import {
   PROTOCOL_VERSION,
   safeParseServerMessage,
+  type ChannelHistoryEntry,
   type ClientMessage,
   type ServerMessage,
   type Token,
@@ -345,6 +346,7 @@ export class MaraClient {
           this.events.emit('channelLeft', { channelToken: staleToken });
         }
         this.ensureLog(this._channelMessages, channel.token);
+        this.seedHistory(channel.token, msg.history);
         this.events.emit('channelJoined', channel);
         return;
       }
@@ -379,6 +381,7 @@ export class MaraClient {
           kind: 'chat',
           from: msg.from,
           text,
+          at: msg.at,
         });
         this.events.emit('chat', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -390,6 +393,7 @@ export class MaraClient {
           kind: 'emote',
           from: msg.from,
           text,
+          at: msg.at,
         });
         this.events.emit('emote', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -518,16 +522,60 @@ export class MaraClient {
     this.pushLine(this._channelMessages, channelToken, { kind: 'system', from: null, text });
   }
 
+  /**
+   * Merge a channel's join backlog into its log. Deduped by (from, at, kind,
+   * text) so a reconnect's replayed history doesn't double messages we still
+   * hold, then ordered by server timestamp. System lines (from === null) never
+   * collide with backlog, so local join/leave notices are preserved.
+   */
+  private seedHistory(channelToken: Token, history: ChannelHistoryEntry[]): void {
+    if (history.length === 0) return;
+
+    // Record backlog authors' name/colour so their lines render even if they
+    // aren't in the roster (left, or from a prior session). Fill gaps only —
+    // never clobber a live directory entry with the historical snapshot.
+    this._directory.update((map) => {
+      let next: Map<Token, UserInfo> | null = null;
+      for (const e of history) {
+        if (map.has(e.from) || next?.has(e.from)) continue;
+        next ??= new Map(map);
+        next.set(e.from, { token: e.from, name: e.name, color: e.color, away: '' });
+      }
+      return next ?? map;
+    });
+
+    const key = (from: Token | null, at: number, kind: string, text: string) =>
+      `${from}|${at}|${kind}|${text}`;
+    this._channelMessages.update((map) => {
+      const existing = map.get(channelToken) ?? [];
+      const seen = new Set(existing.map((l) => key(l.from, l.at, l.kind, l.text)));
+      const added: ChatLine[] = [];
+      for (const e of history) {
+        const text = this.applyIncoming(e.text, channelToken, e.from);
+        const k = key(e.from, e.at, e.kind, text);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        added.push({ id: ++this.lineSeq, kind: e.kind, from: e.from, text, at: e.at });
+      }
+      if (added.length === 0) return map;
+      const merged = [...existing, ...added].sort((a, b) => a.at - b.at || a.id - b.id);
+      return new Map(map).set(channelToken, merged.slice(-this.historyLimit));
+    });
+  }
+
   private pushLine(
     store: Writable<Map<Token, ChatLine[]>>,
     key: Token,
-    partial: Omit<ChatLine, 'id' | 'at'>,
+    // `at` is optional: server-sent lines carry the authoritative timestamp;
+    // locally-generated ones (system notices, own PMs) fall back to now().
+    partial: Omit<ChatLine, 'id' | 'at'> & { at?: number },
   ): void {
+    const { at, ...rest } = partial;
     store.update((map) => {
       const next = new Map(map);
       // Copy the array (slice) so we never mutate the previously-exposed snapshot.
       const arr = next.get(key)?.slice() ?? [];
-      arr.push({ id: ++this.lineSeq, at: this.now(), ...partial });
+      arr.push({ id: ++this.lineSeq, at: at ?? this.now(), ...rest });
       // Cap retained history per conversation, dropping the oldest lines.
       if (arr.length > this.historyLimit) arr.splice(0, arr.length - this.historyLimit);
       next.set(key, arr);

@@ -34,8 +34,9 @@ plugin data, response/error. ✅
 | Private messages                     | ✅     | per-peer conversations                                         |
 | Away status (`/away`)                | ✅     |                                                                |
 | User list with colors + away         | ✅     | click to open PM; names persist after a user leaves            |
-| Per-user fonts + colors              | ✅     | set on the connect screen                                      |
-| Timestamps (toggle)                  | ✅     |                                                                |
+| Per-user color                       | ✅     | set on the connect screen (per-user fonts dropped in revamp)   |
+| Timestamps (toggle)                  | ✅     | server-stamped, so consistent across clients                   |
+| Message history / backlog            | ✅     | server replays recent channel messages on join (in-memory)     |
 | Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                      |
 | Emoticons                            | ◻      | implemented but off by default (opt-in via render option)      |
 | URL linkification                    | ✅     | safe anchors, HTML-escaped                                     |
@@ -68,11 +69,11 @@ plugin data, response/error. ✅
   Images now upload via drag-drop/paste to `/upload` (hosted, size-capped,
   rolling cache); generalising this to any file type is the remaining piece.
 - Remember joined channels across sessions (rejoin them automatically on login).
-- Consider server-side message storage — at least recent history, so messages
-  survive reconnects/restarts and new joiners see backlog. (Currently messages
-  are in-memory on each client only.)
-- In-session profile editing (change name / colour / font without reconnecting);
-  today those are set on the connect screen only.
+- Persist message history across server restarts. Recent per-channel backlog is
+  now replayed on join, but it is in-memory only — a restart loses it. (Durable
+  storage, and optionally PM history, remain.)
+- In-session profile editing (change name / colour without reconnecting); today
+  those are set on the connect screen only. (Per-user fonts were dropped.)
 - Server admin UI (currently headless) and macOS/Linux + iOS/Android builds
   (need their respective toolchains/hosts).
 - Updater endpoints in `tauri.conf.json` are placeholders pending a release host.

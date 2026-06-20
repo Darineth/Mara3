@@ -1,5 +1,5 @@
 // In-memory registry of live sessions and channels — the hub's single source of truth.
-import type { Token, UserInfo } from '@mara/protocol';
+import type { ChannelHistoryEntry, Token, UserInfo } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import { nextToken } from './tokens.js';
 
@@ -17,6 +17,8 @@ export interface Channel {
   token: Token;
   name: string;
   members: Set<Token>;
+  /** Recent chat/emote messages (oldest first), capped, replayed as join backlog. */
+  history: ChannelHistoryEntry[];
 }
 
 /**
@@ -74,7 +76,12 @@ export class ServerState {
       const channel = this.channelsByToken.get(existing);
       if (channel) return channel;
     }
-    const channel: Channel = { token: this.allocChannelToken(), name, members: new Set() };
+    const channel: Channel = {
+      token: this.allocChannelToken(),
+      name,
+      members: new Set(),
+      history: [],
+    };
     this.channelsByToken.set(channel.token, channel);
     this.channelTokenByName.set(name, channel.token);
     return channel;

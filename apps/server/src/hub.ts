@@ -23,6 +23,8 @@ export class Hub {
   constructor(
     private readonly cfg: ServerConfig,
     private readonly log: Logger,
+    // Clock is injectable so tests get deterministic message timestamps.
+    private readonly now: () => number = Date.now,
   ) {}
 
   onConnect(conn: Connection): void {
@@ -150,6 +152,7 @@ export class Hub {
       channelToken: channel.token,
       channel: channel.name,
       users,
+      history: channel.history,
     });
     // Only announce a genuinely new membership (idempotent on rejoin/resume).
     if (!alreadyMember) {
@@ -184,15 +187,30 @@ export class Hub {
     text: string,
     kind: 'chat' | 'emote',
   ): void {
-    if (!session.channels.has(channelToken)) {
+    const channel = this.state.channelsByToken.get(channelToken);
+    if (!channel || !session.channels.has(channelToken)) {
       session.connection.send({ type: 'error', message: 'not in that channel' });
       return;
+    }
+    // Server-stamp the message, retain it as capped backlog, then broadcast it.
+    const at = this.now();
+    channel.history.push({
+      from: session.info.token,
+      name: session.info.name,
+      color: session.info.color,
+      kind,
+      text,
+      at,
+    });
+    if (channel.history.length > this.cfg.historyLimit) {
+      channel.history.splice(0, channel.history.length - this.cfg.historyLimit);
     }
     this.broadcastChannel(channelToken, {
       type: kind,
       from: session.info.token,
       channelToken,
       text,
+      at,
     });
   }
 

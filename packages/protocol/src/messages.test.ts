@@ -33,12 +33,20 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
   loginDenied: { type: 'loginDenied', reason: 'name taken' },
   userConnect: { type: 'userConnect', user },
   userDisconnect: { type: 'userDisconnect', token: 678 },
-  channelJoined: { type: 'channelJoined', channelToken: 12345, channel: 'lobby', users: [user] },
+  channelJoined: {
+    type: 'channelJoined',
+    channelToken: 12345,
+    channel: 'lobby',
+    users: [user],
+    history: [
+      { from: 678, name: 'alice', color: '#3366cc', kind: 'chat', text: 'earlier', at: 1700000000 },
+    ],
+  },
   channelLeft: { type: 'channelLeft', channelToken: 12345 },
   userJoinedChannel: { type: 'userJoinedChannel', token: 678, channelToken: 12345 },
   userLeftChannel: { type: 'userLeftChannel', token: 678, channelToken: 12345 },
-  chat: { type: 'chat', from: 678, channelToken: 12345, text: 'hello' },
-  emote: { type: 'emote', from: 678, channelToken: 12345, text: 'waves' },
+  chat: { type: 'chat', from: 678, channelToken: 12345, text: 'hello', at: 1700000001 },
+  emote: { type: 'emote', from: 678, channelToken: 12345, text: 'waves', at: 1700000002 },
   away: { type: 'away', token: 678, text: 'brb' },
   privateMessage: { type: 'privateMessage', from: 678, text: 'psst' },
   pong: { type: 'pong', id: 1 },
@@ -119,5 +127,12 @@ describe('schema defaults', () => {
     );
     if (welcome.type !== 'welcome') throw new Error('unexpected');
     expect(welcome.motd).toBe('');
+
+    // channelJoined.history defaults to [] when omitted.
+    const joined = parseServerMessage(
+      JSON.stringify({ type: 'channelJoined', channelToken: 1, channel: 'x', users: [] }),
+    );
+    if (joined.type !== 'channelJoined') throw new Error('unexpected');
+    expect(joined.history).toEqual([]);
   });
 });

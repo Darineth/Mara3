@@ -115,6 +115,31 @@ describe('channels + chat', () => {
     a.disconnect();
     b.disconnect();
   });
+
+  it('seeds a channel backlog into the log when a later user joins', async () => {
+    const a = makeClient('alice');
+    const me = await connected(a);
+    const aJoined = waitEvent(a, 'channelJoined');
+    a.joinChannel('lobby');
+    const channel = await aJoined;
+    a.sendChat(channel.token, 'earlier message');
+    await waitEvent(a, 'chat');
+
+    // bob joins after the message was sent; he only learns it via backlog.
+    const b = makeClient('bob');
+    await connected(b);
+    const bJoined = waitEvent(b, 'channelJoined');
+    b.joinChannel('lobby');
+    const chB = await bJoined;
+
+    const lines = get(b.channelMessages).get(chB.token) ?? [];
+    const backlog = lines.find((l) => l.kind === 'chat' && l.text === 'earlier message');
+    expect(backlog).toBeDefined();
+    expect(backlog?.from).toBe(me.token);
+
+    a.disconnect();
+    b.disconnect();
+  });
 });
 
 describe('presence system messages', () => {

@@ -21,6 +21,8 @@ export interface ServerConfig {
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
   maxCacheBytes: number;
+  /** Recent messages retained per channel and replayed as backlog on join. */
+  historyLimit: number;
 }
 
 /** Where the web client build lands by default: `apps/web/dist`, relative to here. */
@@ -50,6 +52,7 @@ const DEFAULTS = {
   defaultChannel: 'Main',
   maxUploadMb: 10,
   maxCacheMb: 512,
+  historyLimit: 100,
 };
 
 // Parse a numeric env var, falling back on missing/blank/non-finite input
@@ -77,5 +80,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || defaultUploadDir(),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
+    historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
   };
 }

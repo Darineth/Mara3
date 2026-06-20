@@ -166,6 +166,30 @@ describe('channels and chat', () => {
     b.close();
   });
 
+  it('replays recent channel messages as backlog to a new joiner', async () => {
+    const a = await TestClient.connect(url);
+    const alice = await login(a, 'alice');
+    a.send({ type: 'joinChannel', channel: 'lobby' });
+    const aj = await a.waitFor('channelJoined');
+    a.send({ type: 'chat', channelToken: aj.channelToken, text: 'first' });
+    await a.waitFor('chat');
+    a.send({ type: 'emote', channelToken: aj.channelToken, text: 'waves' });
+    await a.waitFor('emote');
+
+    const b = await TestClient.connect(url);
+    await login(b, 'bob');
+    b.send({ type: 'joinChannel', channel: 'lobby' });
+    const bj = await b.waitFor('channelJoined');
+    expect(bj.history.map((h) => h.text)).toEqual(['first', 'waves']);
+    expect(bj.history.map((h) => h.kind)).toEqual(['chat', 'emote']);
+    expect(bj.history.every((h) => h.from === alice.token)).toBe(true);
+    expect(bj.history.every((h) => h.name === 'alice')).toBe(true);
+    expect(bj.history.every((h) => typeof h.at === 'number')).toBe(true);
+
+    a.close();
+    b.close();
+  });
+
   it('refuses chat to a channel the user has not joined', async () => {
     const a = await TestClient.connect(url);
     await login(a, 'alice');
