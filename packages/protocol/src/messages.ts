@@ -92,6 +92,19 @@ export type ClientMessageType = ClientMessage['type'];
 // Server → Client
 // ---------------------------------------------------------------------------
 
+/** Server/build identity, sent in `welcome` so a client can show versions and
+ *  detect when it is itself running a stale web build (see `webBuild`). */
+export const serverInfoSchema = z.object({
+  /** The server package version (semver). */
+  version: z.string().max(64),
+  /** Wire protocol version the server speaks (matches PROTOCOL_VERSION). */
+  protocol: z.number().int().nonnegative(),
+  /** Build id of the web assets the server is serving; absent in dev/headless.
+   *  A client compares it to its own build id to detect a stale (un-refreshed) page. */
+  webBuild: z.string().max(128).optional(),
+});
+export type ServerInfo = z.infer<typeof serverInfoSchema>;
+
 const welcome = z.object({
   type: z.literal('welcome'),
   /** The logged-in user's own info (token, the possibly-deduped name, colour). */
@@ -99,6 +112,8 @@ const welcome = z.object({
   /** Per-session secret for authenticated HTTP calls (e.g. image upload). */
   sessionToken: z.string().max(128),
   motd: z.string().max(8192).default(''),
+  /** Server + build identity. Optional so a newer client tolerates an older server. */
+  server: serverInfoSchema.optional(),
 });
 
 const loginDenied = z.object({

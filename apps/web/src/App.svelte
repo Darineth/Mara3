@@ -8,6 +8,7 @@
   import { MaraClient } from '@mara/client-core';
   import { createPipeline, shrugPlugin } from '@mara/plugin-api';
   import { loadSettings, saveSettings, serverUrl, type MaraSettings } from './lib/settings.js';
+  import { clientBuild, shortBuild } from './lib/version.js';
   import ChatApp from './ChatApp.svelte';
 
   // Build-time plugin registry (CSP-safe for web/mobile). Add plugins here.
@@ -58,6 +59,9 @@
   // user). First-time visitors fill the form once; after that it's automatic.
   // The client's own reconnect/backoff then keeps the session alive.
   onMount(() => {
+    // Log the build to the console so a stale page is identifiable even without
+    // opening the in-app menu (e.g. when debugging a client that didn't refresh).
+    console.info(`Mara 3 web client ${clientBuild.version} · build ${clientBuild.buildId}`);
     if (settings.name.trim()) connect();
   });
 </script>
@@ -78,6 +82,7 @@
       </label>
       {#if error}<p class="error">{error}</p>{/if}
       <button type="submit">Connect</button>
+      <p class="build">v{clientBuild.version} · build {shortBuild(clientBuild.buildId)}</p>
     </form>
   </div>
 {/if}
@@ -137,5 +142,11 @@
     color: #fff;
     font-weight: 600;
     cursor: pointer;
+  }
+  .build {
+    margin: 0;
+    text-align: center;
+    font-size: 0.7rem;
+    opacity: 0.4;
   }
 </style>

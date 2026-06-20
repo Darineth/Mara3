@@ -2,6 +2,7 @@ import {
   PROTOCOL_VERSION,
   safeParseClientMessage,
   type ClientMessage,
+  type ServerInfo,
   type ServerMessage,
   type Token,
   type UserInfo,
@@ -13,6 +14,7 @@ import { IdentityStore } from './identity.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
+import { getServerInfo } from './version.js';
 
 /**
  * The message-handling core. One instance owns all shared state and processes
@@ -23,6 +25,8 @@ export class Hub {
   readonly state: ServerState;
   private readonly history: HistoryStore;
   private readonly identity: IdentityStore;
+  /** Our version + the web build we serve; echoed in every `welcome`. */
+  readonly serverInfo: ServerInfo;
 
   constructor(
     private readonly cfg: ServerConfig,
@@ -33,6 +37,7 @@ export class Hub {
     this.history = new HistoryStore(cfg.historyFile, log);
     this.identity = new IdentityStore(cfg.identityFile, log);
     this.state = new ServerState(this.identity);
+    this.serverInfo = getServerInfo(cfg.webRoot);
   }
 
   /** Persist any pending history + identities synchronously (call on shutdown). */
@@ -137,7 +142,13 @@ export class Hub {
     if (live) {
       this.state.attachConnection(live, conn);
       this.log.info({ user: live.info.name, token }, 'additional window');
-      conn.send({ type: 'welcome', self: live.info, sessionToken, motd: this.cfg.motd });
+      conn.send({
+        type: 'welcome',
+        self: live.info,
+        sessionToken,
+        motd: this.cfg.motd,
+        server: this.serverInfo,
+      });
       for (const channelToken of live.channels) {
         const channel = this.state.channelsByToken.get(channelToken);
         if (channel) this.sendChannelSnapshot(conn, channel);
@@ -151,7 +162,13 @@ export class Hub {
     this.state.addSession(session);
     this.log.info({ user: name, token }, 'logged in');
 
-    conn.send({ type: 'welcome', self: info, sessionToken, motd: this.cfg.motd });
+    conn.send({
+      type: 'welcome',
+      self: info,
+      sessionToken,
+      motd: this.cfg.motd,
+      server: this.serverInfo,
+    });
     this.broadcastAll({ type: 'userConnect', user: info }, token);
 
     // Drop everyone into the shared default channel automatically.

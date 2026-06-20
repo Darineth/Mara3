@@ -4,6 +4,7 @@ import {
   safeParseServerMessage,
   type ChannelHistoryEntry,
   type ClientMessage,
+  type ServerInfo,
   type ServerMessage,
   type Token,
   type UserInfo,
@@ -44,6 +45,9 @@ export class MaraClient {
   readonly channels: Readable<Map<Token, ChannelState>>;
   readonly channelMessages: Readable<Map<Token, ChatLine[]>>;
   readonly privateMessages: Readable<Map<Token, ChatLine[]>>;
+  /** The server's reported version + served web build, from `welcome` (null until
+   *  login, or if the server is too old to send it). */
+  readonly serverInfo: Readable<ServerInfo | null>;
 
   private readonly _connection = writable<ConnectionState>('idle');
   private readonly _self = writable<SelfState | null>(null);
@@ -52,6 +56,7 @@ export class MaraClient {
   private readonly _channels = writable<Map<Token, ChannelState>>(new Map());
   private readonly _channelMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
+  private readonly _serverInfo = writable<ServerInfo | null>(null);
 
   private socket: WebSocketLike | null = null;
   /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
@@ -89,6 +94,7 @@ export class MaraClient {
     this.channels = { subscribe: this._channels.subscribe };
     this.channelMessages = { subscribe: this._channelMessages.subscribe };
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
+    this.serverInfo = { subscribe: this._serverInfo.subscribe };
 
     this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
@@ -279,6 +285,7 @@ export class MaraClient {
         // to re-join channels below.
         const wasReconnect = this.reconnectAttempts > 0;
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
+        this._serverInfo.set(msg.server ?? null);
         this.reconnectAttempts = 0;
         this._self.set({ token: msg.self.token, name: msg.self.name });
         // Seed our own roster/directory entry (colour, away) from `self`.

@@ -11,6 +11,7 @@
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import { isDesktop, nativeLog } from './lib/native.js';
   import type { MaraSettings } from './lib/settings.js';
+  import { clientBuild, shortBuild } from './lib/version.js';
   import { uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
 
@@ -37,7 +38,22 @@
   // The parent remounts ChatApp when `client` changes (keyed by {#if client}),
   // so capturing the (stable) stores once is correct.
   // svelte-ignore state_referenced_locally
-  const { connection, self, users, directory, channels, channelMessages, privateMessages } = client;
+  const {
+    connection,
+    self,
+    users,
+    directory,
+    channels,
+    channelMessages,
+    privateMessages,
+    serverInfo,
+  } = client;
+
+  // The page is stale when the server reports serving a different web build than
+  // the one this bundle was compiled as — i.e. the browser is running cached old
+  // code and should be reloaded. Silent when the server doesn't report a build
+  // (dev, or an older server).
+  const stale = $derived(!!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId);
 
   // Active view: a channel token, a private-message peer token, or neither
   // (placeholder). Mutually exclusive — at most one is non-null at a time;
@@ -327,6 +343,15 @@
     </div>
 
     <div class="actions">
+      {#if stale}
+        <button
+          class="stale"
+          title={`This page is running an old build (${shortBuild(clientBuild.buildId)}). The server has a newer one — click to reload.`}
+          onclick={() => location.reload()}
+        >
+          ⚠ Outdated — reload
+        </button>
+      {/if}
       <span
         class="dot"
         data-state={$connection}
@@ -355,6 +380,14 @@
             <div class="who" data-state={$connection}>
               {$connection}{#if $self}
                 · {$self.name}{/if}
+            </div>
+            <div class="versions">
+              <span class:warn={stale}
+                >client {clientBuild.version} · {shortBuild(clientBuild.buildId)}</span
+              >
+              {#if $serverInfo}
+                <span>server {$serverInfo.version} · proto {$serverInfo.protocol}</span>
+              {/if}
             </div>
           </div>
         {/if}
@@ -637,6 +670,32 @@
     font-size: 0.75rem;
     opacity: 0.55;
     padding: 0.3rem 0.5rem 0.1rem;
+  }
+  .versions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.7rem;
+    opacity: 0.5;
+    padding: 0 0.5rem 0.3rem;
+  }
+  .versions .warn {
+    color: var(--mara-danger);
+    opacity: 1;
+  }
+  .stale {
+    border: 1px solid var(--mara-danger);
+    color: var(--mara-danger);
+    background: transparent;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.55rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .stale:hover {
+    background: var(--mara-danger);
+    color: #fff;
   }
   .body {
     flex: 1;

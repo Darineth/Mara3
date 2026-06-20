@@ -80,6 +80,9 @@ describe('handshake', () => {
     expect(welcome.self.token).toBeGreaterThan(0);
     expect(welcome.sessionToken).toBeTruthy();
     expect(welcome.motd).toBe('hello world');
+    // Version/build identity for the client to display + stale-check.
+    expect(welcome.server?.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(welcome.server?.protocol).toBe(PROTOCOL_VERSION);
     client.close();
   });
 

@@ -174,6 +174,23 @@ Flags: `node scripts/package.mjs --skip-tests --skip-desktop`. The server bundle
 is created with `pnpm deploy --prod` and ships its own Node runtime, so the
 target machine needs nothing pre-installed.
 
+## Versioning & build identity
+
+Every component carries a version so a misbehaving or un-refreshed deployment is
+identifiable:
+
+- The **web client** is stamped at build time with `{ version, buildId }` (its
+  package version plus a per-build timestamp), injected into the bundle and also
+  written to `dist/version.json`. It logs the build to the console on load and
+  shows it on the connect screen and in the ⋯ menu.
+- The **server** reads its own package version and the `version.json` of the web
+  build it serves, logs both on startup, and reports `{ version, protocol, webBuild }`
+  to every client in the `welcome` message (see [PROTOCOL.md](PROTOCOL.md)).
+- The client compares the server's `webBuild` against its own `buildId`; a
+  mismatch means the page is running **stale cached code**, so it shows an
+  "Outdated — reload" prompt. This is the common "the client didn't refresh after
+  a deploy" case made visible. `protocol` is the wire version (`PROTOCOL_VERSION`).
+
 ## At a glance
 
 | Component         | Path                 | Runtime                 | Build command               | Output                        |

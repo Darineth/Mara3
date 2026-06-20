@@ -108,6 +108,9 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       const port = typeof address === 'object' && address ? address.port : cfg.port;
       log.info(
         {
+          version: hub.serverInfo.version,
+          protocol: hub.serverInfo.protocol,
+          webBuild: hub.serverInfo.webBuild ?? '(none)',
           host: cfg.host,
           port,
           wsPath: cfg.wsPath,
