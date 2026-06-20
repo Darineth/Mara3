@@ -1,7 +1,8 @@
 # Mara 3 — TODO
 
-Working list of things to do. See [PARITY.md](PARITY.md) for the Mara 2 → 3
-feature checklist and [SECURITY-TODO.md](SECURITY-TODO.md) for the security
+Working list of things to do. See [ROADMAP.md](ROADMAP.md) for the forward-looking
+feature plan (and explicit non-goals), [PARITY.md](PARITY.md) for the Mara 2 → 3
+feature checklist, and [SECURITY-TODO.md](SECURITY-TODO.md) for the security
 backlog.
 
 ## Bugs
