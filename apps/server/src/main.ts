@@ -1,9 +1,12 @@
 // Process entrypoint: load config, start the server, and shut down cleanly on signals.
-import { loadConfig } from './config.js';
+import { defaultHistoryFile, loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { startServer } from './server.js';
 
-const config = loadConfig();
+// The runnable server persists message history by default (tests and embedded
+// uses leave historyFile empty for in-memory-only). MARA_HISTORY_FILE overrides.
+const base = loadConfig();
+const config = { ...base, historyFile: base.historyFile || defaultHistoryFile() };
 const log = createLogger();
 const server = await startServer(config, log);
 

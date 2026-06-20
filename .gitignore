@@ -12,6 +12,9 @@ build/
 # Runtime upload cache (server-local image hosting)
 apps/server/uploads/
 
+# Persisted message history (server-local)
+apps/server/data/
+
 # Tauri / Rust
 apps/shell/src-tauri/target/
 apps/shell/src-tauri/gen/

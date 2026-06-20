@@ -23,6 +23,12 @@ export interface ServerConfig {
   maxCacheBytes: number;
   /** Recent messages retained per channel and replayed as backlog on join. */
   historyLimit: number;
+  /**
+   * File the per-channel message history is persisted to (so backlog survives a
+   * restart). Empty string disables persistence — history stays in-memory only.
+   * `loadConfig` leaves it empty by default; the runnable server opts in.
+   */
+  historyFile: string;
 }
 
 /** Where the web client build lands by default: `apps/web/dist`, relative to here. */
@@ -38,6 +44,12 @@ function defaultWebRoot(): string | null {
  */
 function defaultUploadDir(): string {
   return fileURLToPath(new URL('../uploads/', import.meta.url));
+}
+
+/** Default history file, nested under the server dir (like uploads). For the
+ *  runnable server to opt into persistence; tests leave `historyFile` empty. */
+export function defaultHistoryFile(): string {
+  return fileURLToPath(new URL('../data/history.json', import.meta.url));
 }
 
 // Bare defaults; size limits are kept in MB here and converted to bytes at load
@@ -81,5 +93,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
+    // Off by default (in-memory only); the runnable server (main.ts) opts in.
+    historyFile: env.MARA_HISTORY_FILE?.trim() ?? '',
   };
 }

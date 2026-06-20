@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -240,5 +240,45 @@ describe('private messages, presence, ping', () => {
     const gone = await b.waitFor('userDisconnect');
     expect(gone.token).toBe(alice.token);
     b.close();
+  });
+});
+
+describe('history persistence', () => {
+  it('reloads channel backlog from disk after a restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-hist-'));
+    const historyFile = join(dir, 'history.json');
+    const cfg = {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile,
+    };
+
+    const s1 = await startServer(cfg, createLogger('silent'));
+    const a = await TestClient.connect(`ws://127.0.0.1:${s1.port}/ws`);
+    await login(a, 'alice');
+    a.send({ type: 'joinChannel', channel: 'lobby' });
+    const aj = await a.waitFor('channelJoined');
+    a.send({ type: 'chat', channelToken: aj.channelToken, text: 'persist me' });
+    await a.waitFor('chat');
+    a.close();
+    await s1.close(); // flushes history to disk
+
+    // A fresh server instance pointed at the same history file.
+    const s2 = await startServer(cfg, createLogger('silent'));
+    try {
+      const b = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      await login(b, 'bob');
+      b.send({ type: 'joinChannel', channel: 'lobby' });
+      const bj = await b.waitFor('channelJoined');
+      const entry = bj.history.find((h) => h.text === 'persist me');
+      expect(entry).toBeDefined();
+      expect(entry?.name).toBe('alice'); // author snapshot survived the restart
+      b.close();
+    } finally {
+      await s2.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

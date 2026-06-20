@@ -8,6 +8,7 @@ import {
 } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
+import { HistoryStore } from './history.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
@@ -19,13 +20,21 @@ import { makeSessionToken } from './tokens.js';
  */
 export class Hub {
   readonly state = new ServerState();
+  private readonly history: HistoryStore;
 
   constructor(
     private readonly cfg: ServerConfig,
     private readonly log: Logger,
     // Clock is injectable so tests get deterministic message timestamps.
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.history = new HistoryStore(cfg.historyFile, log);
+  }
+
+  /** Persist any pending history synchronously (call on shutdown). */
+  flushHistory(): void {
+    this.history.flush();
+  }
 
   onConnect(conn: Connection): void {
     // The client speaks first (`login`); nothing to send on connect.
@@ -152,7 +161,7 @@ export class Hub {
       channelToken: channel.token,
       channel: channel.name,
       users,
-      history: channel.history,
+      history: this.history.get(channel.name),
     });
     // Only announce a genuinely new membership (idempotent on rejoin/resume).
     if (!alreadyMember) {
@@ -192,19 +201,22 @@ export class Hub {
       session.connection.send({ type: 'error', message: 'not in that channel' });
       return;
     }
-    // Server-stamp the message, retain it as capped backlog, then broadcast it.
+    // Server-stamp the message, retain it as capped (persisted) backlog, then
+    // broadcast it. The author's name/colour are snapshotted so backlog renders
+    // even after a restart, when the author's token is gone.
     const at = this.now();
-    channel.history.push({
-      from: session.info.token,
-      name: session.info.name,
-      color: session.info.color,
-      kind,
-      text,
-      at,
-    });
-    if (channel.history.length > this.cfg.historyLimit) {
-      channel.history.splice(0, channel.history.length - this.cfg.historyLimit);
-    }
+    this.history.append(
+      channel.name,
+      {
+        from: session.info.token,
+        name: session.info.name,
+        color: session.info.color,
+        kind,
+        text,
+        at,
+      },
+      this.cfg.historyLimit,
+    );
     this.broadcastChannel(channelToken, {
       type: kind,
       from: session.info.token,

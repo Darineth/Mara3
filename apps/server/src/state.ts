@@ -1,5 +1,5 @@
 // In-memory registry of live sessions and channels — the hub's single source of truth.
-import type { ChannelHistoryEntry, Token, UserInfo } from '@mara/protocol';
+import type { Token, UserInfo } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import { nextToken } from './tokens.js';
 
@@ -12,13 +12,13 @@ export interface Session {
   channels: Set<Token>;
 }
 
-/** A chat channel and its current membership (by user token). */
+/** A chat channel and its current membership (by user token). Message backlog
+ *  lives in the HistoryStore (keyed by name), not here, so it can outlive an
+ *  empty/pruned channel and persist across restarts. */
 export interface Channel {
   token: Token;
   name: string;
   members: Set<Token>;
-  /** Recent chat/emote messages (oldest first), capped, replayed as join backlog. */
-  history: ChannelHistoryEntry[];
 }
 
 /**
@@ -76,12 +76,7 @@ export class ServerState {
       const channel = this.channelsByToken.get(existing);
       if (channel) return channel;
     }
-    const channel: Channel = {
-      token: this.allocChannelToken(),
-      name,
-      members: new Set(),
-      history: [],
-    };
+    const channel: Channel = { token: this.allocChannelToken(), name, members: new Set() };
     this.channelsByToken.set(channel.token, channel);
     this.channelTokenByName.set(name, channel.token);
     return channel;
