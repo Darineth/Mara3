@@ -18,6 +18,10 @@ apps/server/data/
 # Tauri / Rust
 apps/shell/src-tauri/target/
 apps/shell/src-tauri/gen/
+apps/client-legacy/src-tauri/target/
+apps/client-legacy/src-tauri/gen/
+# Pinned WebView2 fixed runtime for the Win7 client (~120 MB, downloaded, not committed)
+apps/client-legacy/src-tauri/webview2-runtime/
 
 # Updater signing — keep the public key, never commit the private key
 apps/shell/.tauri/*.key

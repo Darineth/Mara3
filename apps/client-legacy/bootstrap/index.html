@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mara 3</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        background: #1e1e1e;
+        color: #aaa;
+        font-family: system-ui, sans-serif;
+      }
+      .box {
+        width: min(420px, 82vw);
+        text-align: center;
+      }
+      .title {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #e6e6e6;
+        margin-bottom: 1.2rem;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        text-align: left;
+      }
+      label {
+        font-size: 0.8rem;
+        opacity: 0.7;
+      }
+      input {
+        padding: 0.6rem 0.7rem;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        background: #262626;
+        color: #e6e6e6;
+        font-size: 0.95rem;
+      }
+      input:focus {
+        outline: none;
+        border-color: #7aa2f7;
+      }
+      button {
+        padding: 0.6rem;
+        border: none;
+        border-radius: 6px;
+        background: #7aa2f7;
+        color: #15161e;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #status {
+        min-height: 1.2em;
+        font-size: 0.85rem;
+        opacity: 0.7;
+        text-align: center;
+      }
+      #status.error {
+        color: #f7768e;
+        opacity: 1;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8rem;
+        opacity: 0.85;
+      }
+      .row input {
+        width: auto;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="title">Mara 3</div>
+      <form id="form">
+        <label for="server">Server address</label>
+        <input
+          id="server"
+          name="server"
+          list="recent"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="http://localhost:5050"
+        />
+        <datalist id="recent"></datalist>
+        <label class="row"><input id="auto" type="checkbox" /> Auto-connect on launch</label>
+        <button id="connect" type="submit">Connect</button>
+      </form>
+      <p id="status"></p>
+    </div>
+    <script>
+      // Server picker for the legacy (Tauri 1) shell. Mirrors the modern shell, but
+      // resolves invoke across Tauri versions: v1 exposes window.__TAURI__.tauri.invoke
+      // (or .invoke), v2 uses window.__TAURI__.core.invoke. Settings persist next to
+      // the exe via native commands; a plain-browser fallback navigates directly.
+      const T = window.__TAURI__;
+      const invoke =
+        (T && ((T.core && T.core.invoke) || (T.tauri && T.tauri.invoke) || T.invoke)) || null;
+
+      const form = document.getElementById('form');
+      const input = document.getElementById('server');
+      const button = document.getElementById('connect');
+      const autoEl = document.getElementById('auto');
+      const statusEl = document.getElementById('status');
+      const recentEl = document.getElementById('recent');
+
+      function status(text, isError) {
+        statusEl.textContent = text;
+        statusEl.className = isError ? 'error' : '';
+      }
+
+      function normalize(value) {
+        let u = (value || '').trim();
+        if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
+        return u.replace(/\/+$/, '');
+      }
+
+      async function reachable(url) {
+        try {
+          await fetch(`${url}/health`, { mode: 'no-cors', cache: 'no-store' });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      async function go(url) {
+        status('Connected. Loading…');
+        if (invoke) {
+          await invoke('set_server_url', { url });
+          await invoke('open_app');
+        } else {
+          window.location.replace(url);
+        }
+      }
+
+      let auto = null;
+      let cancelled = false;
+      function stopAuto() {
+        cancelled = true;
+        if (auto) {
+          clearTimeout(auto);
+          auto = null;
+        }
+        button.disabled = false;
+      }
+
+      async function connectManual() {
+        stopAuto();
+        const url = normalize(input.value);
+        input.value = url;
+        if (!url) return status('Enter a server address.', true);
+        button.disabled = true;
+        status(`Connecting to ${url}…`);
+        if (await reachable(url)) {
+          await go(url);
+        } else {
+          button.disabled = false;
+          status(`Couldn't reach ${url}. Check the address and that the server is running.`, true);
+        }
+      }
+
+      function autoConnect(url) {
+        cancelled = false;
+        let attempt = 0;
+        const tick = async () => {
+          if (cancelled) return;
+          attempt += 1;
+          status(`Connecting to ${url}… (attempt ${attempt})`);
+          if (await reachable(url)) {
+            if (!cancelled) await go(url);
+          } else if (!cancelled) {
+            auto = setTimeout(tick, 1500);
+          }
+        };
+        tick();
+      }
+
+      input.addEventListener('focus', stopAuto);
+      input.addEventListener('input', stopAuto);
+      autoEl.addEventListener('change', () => {
+        if (invoke) invoke('set_auto_connect', { enabled: autoEl.checked }).catch(() => {});
+        if (!autoEl.checked) stopAuto();
+      });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        connectManual();
+      });
+
+      async function init() {
+        let settings = window.__MARA_SETTINGS__ || {
+          serverUrl: 'http://localhost:5050',
+          recent: [],
+          autoConnect: false,
+        };
+        if (invoke) {
+          try {
+            settings = await invoke('get_settings');
+          } catch {
+            /* keep injected/default settings */
+          }
+        }
+        input.value = settings.serverUrl || '';
+        autoEl.checked = settings.autoConnect !== false;
+        recentEl.replaceChildren();
+        for (const u of settings.recent || []) {
+          const opt = document.createElement('option');
+          opt.value = u;
+          recentEl.appendChild(opt);
+        }
+        const url = normalize(settings.serverUrl);
+        if (url && settings.autoConnect !== false) {
+          autoConnect(url);
+        } else {
+          status('Choose a server, then Connect.');
+          input.focus();
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

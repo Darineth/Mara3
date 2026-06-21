@@ -1,0 +1,20 @@
+[package]
+name = "mara-client-legacy"
+version = "3.0.0"
+description = "Mara 3 — legacy desktop client (Windows 7, Tauri 1)"
+authors = ["Mara"]
+edition = "2021"
+# Tauri 1 + an older toolchain is what keeps Windows 7 in reach; see README.md.
+rust-version = "1.70"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Tauri 1 release builds enable this (the CLI passes --features custom-protocol).
+custom-protocol = ["tauri/custom-protocol"]

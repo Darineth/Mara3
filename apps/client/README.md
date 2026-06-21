@@ -1,21 +1,25 @@
-# apps/client — built desktop client
+# apps/client — built desktop clients
 
-This folder holds the **portable desktop client** produced by the build:
+This folder holds the **built desktop client exes**, copied here by each client's
+`tauri:build` (via `scripts/copy-client.mjs`):
 
 ```
-Mara3-Desktop.exe   (Windows; "Mara3-Desktop" on macOS/Linux)
+Mara3-Desktop.exe   modern client  — Tauri 2 (Windows 10/11), from apps/shell
+Mara3-Legacy.exe    legacy client  — Tauri 1 (Windows 7+),    from apps/client-legacy
 ```
 
-It is written here automatically by `pnpm --filter @mara/shell tauri:build` (via
-`scripts/copy-client.mjs`) after the Tauri build compiles the standalone executable
-at `apps/shell/src-tauri/target/release/`. It's a single self-contained file — copy
-it anywhere and double-click; it needs only the system WebView2 runtime (preinstalled
-on Windows 11).
+(On macOS/Linux the names have no `.exe`.) The binaries are git-ignored (only this
+README is tracked) — they're build artifacts, not source. Rebuild any time:
 
-The binary itself is git-ignored (only this README is tracked) — it's a build
-artifact, not source. Rebuild it any time with `tauri:build`, or get it alongside the
-self-contained server via `pnpm package` (which also writes `dist/desktop/`).
+```bash
+pnpm --filter @mara/shell tauri:build          # -> Mara3-Desktop.exe
+pnpm --filter @mara/client-legacy tauri:build  # -> Mara3-Legacy.exe
+```
 
-On launch the client opens a window pointed at `MARA_URL` (default
-`http://localhost:5050`), so a Mara server must be reachable there. See
-[../shell/README.md](../shell/README.md).
+`pnpm package` also writes the modern client to `dist/desktop/`.
+
+Both open a window pointed at a Mara server (via the in-app picker / `MARA_URL`), so a
+server must be reachable. The modern client needs the system WebView2 runtime
+(preinstalled on Win 11); the legacy client targets Win7 and needs its bundled fixed
+WebView2 runtime — see [../shell/README.md](../shell/README.md) and
+[../client-legacy/README.md](../client-legacy/README.md).
