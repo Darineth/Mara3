@@ -157,10 +157,13 @@
     max-height: 240px;
     width: auto;
     height: auto;
+    /* A light border so images read as media, not chat text. A low-contrast themed
+       border is invisible on the dark background, so use a translucent light edge
+       (works on dark and light). */
+    border: 1px solid rgba(255, 255, 255, 0.45);
     border-radius: 6px;
-    margin: 0.25rem 0;
+    margin: 0.3rem 0;
     object-fit: contain;
-    background: rgba(127, 127, 127, 0.12);
     cursor: zoom-in;
   }
   .mara-chatview :global(.mara-imgs) {
