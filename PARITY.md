@@ -59,7 +59,7 @@ plugin data, response/error. ✅
 | Target                | Status                                                                        |
 | --------------------- | ----------------------------------------------------------------------------- |
 | Web (browser)         | ✅ server-hosted on one port; smoke-tested (login → join → chat)              |
-| Desktop Windows       | ✅ thin Tauri shell loads the hosted UI; `tauri build` → exe + MSI + NSIS     |
+| Desktop Windows       | ✅ thin Tauri shell loads the hosted UI; `tauri build` → single portable .exe |
 | Desktop macOS / Linux | ◻ scaffolded; build needs those hosts (Linux: verify WebKitGTK rendering)     |
 | iOS / Android         | ◻ scaffolded (lib target, icons, mobile entry point); needs Xcode/Android SDK |
 

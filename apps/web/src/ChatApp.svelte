@@ -9,7 +9,7 @@
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
-  import { isDesktop, nativeLog } from './lib/native.js';
+  import { isDesktop, nativeLog, switchServer } from './lib/native.js';
   import type { MaraSettings } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { uploadImage } from './lib/upload.js';
@@ -250,6 +250,20 @@
     menuOpen = false;
   }
 
+  // Desktop only: return to the native server picker. If the current server's
+  // origin isn't IPC-allowed the invoke throws — note it inline rather than
+  // failing silently.
+  async function onSwitchServer() {
+    menuOpen = false;
+    try {
+      await switchServer();
+    } catch {
+      pushSystem(
+        'Switch server is unavailable for this server (its origin is not allowed by the desktop client).',
+      );
+    }
+  }
+
   function handleSend(text: string) {
     if (activePm !== null) {
       // PMs are literal text — slash commands only apply to channel input.
@@ -375,6 +389,9 @@
             <button class="item" onclick={() => ((showMacros = true), (menuOpen = false))}
               >Macros…</button
             >
+            {#if isDesktop()}
+              <button class="item" onclick={onSwitchServer}>Switch server…</button>
+            {/if}
             <div class="sep"></div>
             <button class="item danger" onclick={onDisconnect}>Disconnect</button>
             <div class="who" data-state={$connection}>

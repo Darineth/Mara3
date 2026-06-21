@@ -1,20 +1,88 @@
-use std::fs::{create_dir_all, OpenOptions};
+use std::fs::create_dir_all;
 use std::io::Write;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use std::path::PathBuf;
 
-/// Default server the thin client points at; override with the `MARA_URL` env var.
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+
+/// Default server the client points at before the user picks one; the `MARA_URL`
+/// env var overrides this seed on first run (after that, the saved choice wins).
 const DEFAULT_URL: &str = "http://localhost:5050";
 
-fn server_url() -> String {
+/// The value used to seed settings the first time (no settings file yet).
+fn seed_url() -> String {
     std::env::var("MARA_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
+}
+
+/// Persisted client settings — a small JSON file kept **next to the executable**
+/// (portable), so copying the exe folder carries its configuration with it.
+#[derive(Serialize, Deserialize, Clone)]
+struct Settings {
+    /// The Mara server this client connects to.
+    #[serde(rename = "serverUrl")]
+    server_url: String,
+    /// Recently-used servers, most-recent first — drives the picker's suggestions.
+    #[serde(default)]
+    recent: Vec<String>,
+    /// Whether to auto-connect to `server_url` on launch. Off by default, so a
+    /// fresh install asks first; the user ticks it (it persists) once they've
+    /// picked a server they want to stick.
+    #[serde(rename = "autoConnect", default)]
+    auto_connect: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            server_url: seed_url(),
+            recent: Vec::new(),
+            auto_connect: false,
+        }
+    }
+}
+
+/// The bundled bootstrap (picker) page URL, captured at startup so "Switch server"
+/// can navigate the window back to it from any loaded server.
+struct BootstrapUrl(String);
+
+/// Path to `settings.json` beside the running executable (portable storage).
+fn settings_path() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "cannot resolve executable directory".to_string())?;
+    Ok(dir.join("settings.json"))
+}
+
+/// Load settings, falling back to defaults (seeded from `MARA_URL`/the default) on
+/// a missing or unparsable file, so the client always has a usable server URL.
+fn load_settings() -> Settings {
+    let mut s = settings_path()
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
+        .unwrap_or_default();
+    if s.server_url.trim().is_empty() {
+        s.server_url = seed_url();
+    }
+    s
+}
+
+fn save_settings(settings: &Settings) -> Result<(), String> {
+    let path = settings_path()?;
+    if let Some(dir) = path.parent() {
+        create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
 /// Native capability exposed to the hosted web UI: append a line to the local log.
 #[tauri::command]
-fn mara_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
+fn mara_log(app: AppHandle, line: String) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let mut file = OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(dir.join("mara.log"))
@@ -23,14 +91,62 @@ fn mara_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Called by the bootstrap page once the server is reachable: navigate the
+/// Return the current settings to the bootstrap picker.
+#[tauri::command]
+fn get_settings() -> Settings {
+    load_settings()
+}
+
+/// Persist a chosen server URL (validated) and record it in the recent list.
+#[tauri::command]
+fn set_server_url(url: String) -> Result<Settings, String> {
+    let trimmed = url.trim().to_string();
+    let parsed = tauri::Url::parse(&trimmed).map_err(|e| format!("invalid URL: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("URL must start with http:// or https://".to_string());
+    }
+    let mut s = load_settings();
+    s.server_url = trimmed.clone();
+    // Most-recent-first, deduped, capped — the picker's suggestion list.
+    s.recent.retain(|u| u != &trimmed);
+    s.recent.insert(0, trimmed);
+    s.recent.truncate(5);
+    save_settings(&s)?;
+    Ok(s)
+}
+
+/// Persist the auto-connect-on-launch preference.
+#[tauri::command]
+fn set_auto_connect(enabled: bool) -> Result<Settings, String> {
+    let mut s = load_settings();
+    s.auto_connect = enabled;
+    save_settings(&s)?;
+    Ok(s)
+}
+
+/// Called by the bootstrap page once the chosen server is reachable: navigate the
 /// window to the live hosted UI. Rust-initiated navigation reliably loads the
 /// remote origin (the bootstrap page handles retrying until this fires).
 #[tauri::command]
-fn open_app(app: tauri::AppHandle) -> Result<(), String> {
-    let url: tauri::Url = server_url()
+fn open_app(app: AppHandle) -> Result<(), String> {
+    let url: tauri::Url = load_settings()
+        .server_url
         .parse()
-        .map_err(|e| format!("invalid MARA_URL: {e}"))?;
+        .map_err(|e| format!("invalid server URL: {e}"))?;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window missing".to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Return to the picker from a loaded server (the in-app "Switch server" action).
+/// The `?switch=1` marker tells the picker to show even if auto-connect is on.
+#[tauri::command]
+fn switch_server(app: AppHandle) -> Result<(), String> {
+    let base = app.state::<BootstrapUrl>().inner().0.clone();
+    let mut url = tauri::Url::parse(&base).map_err(|e| format!("bootstrap url: {e}"))?;
+    url.set_query(Some("switch=1"));
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window missing".to_string())?;
@@ -42,7 +158,14 @@ fn open_app(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![mara_log, open_app]);
+        .invoke_handler(tauri::generate_handler![
+            mara_log,
+            get_settings,
+            set_server_url,
+            set_auto_connect,
+            open_app,
+            switch_server
+        ]);
 
     // Signed auto-update is desktop-only; mobile updates ship through app stores.
     #[cfg(desktop)]
@@ -50,18 +173,24 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // Load the local bootstrap page first; it polls the server and asks
-            // us to navigate to the live UI once it is reachable (retry-on-start).
+            // Load the local bootstrap page first; it shows the server picker, polls
+            // the chosen server, and asks us to navigate to the live UI once it is
+            // reachable. Seed the picker with the saved settings.
+            let settings = load_settings();
             let init = format!(
-                "window.__MARA_URL__ = {};",
-                serde_json::to_string(&server_url()).unwrap_or_else(|_| "\"\"".to_string())
+                "window.__MARA_SETTINGS__ = {};",
+                serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string())
             );
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Mara 3")
-                .inner_size(980.0, 720.0)
-                .min_inner_size(480.0, 400.0)
-                .initialization_script(&init)
-                .build()?;
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("Mara 3")
+                    .inner_size(980.0, 720.0)
+                    .min_inner_size(480.0, 400.0)
+                    .initialization_script(&init)
+                    .build()?;
+            // Remember the bundled picker URL so "Switch server" can return to it.
+            let boot = window.url().map(|u| u.to_string()).unwrap_or_default();
+            app.manage(BootstrapUrl(boot));
             Ok(())
         })
         .run(tauri::generate_context!())

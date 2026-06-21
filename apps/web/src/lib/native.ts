@@ -31,3 +31,14 @@ export async function nativeLog(line: string): Promise<void> {
     /* logging must never break the app */
   }
 }
+
+/**
+ * Return the desktop client to its server picker (the "Switch server" action).
+ * No-op outside the shell; throws are surfaced so the caller can report failure
+ * (e.g. when the current server's origin isn't IPC-allowed).
+ */
+export async function switchServer(): Promise<void> {
+  const t = tauri();
+  if (!t) return;
+  await t.core.invoke('switch_server');
+}

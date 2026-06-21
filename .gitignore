@@ -44,3 +44,7 @@ Thumbs.db
 
 # Runtime data
 apps/server/data/
+
+# Built desktop client distributable (apps/shell tauri:build copies it here)
+apps/client/*
+!apps/client/README.md

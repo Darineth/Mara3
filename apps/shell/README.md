@@ -26,23 +26,73 @@ to `/ws` with no configuration.
 
 ## Which server it loads
 
-Set with the `MARA_URL` environment variable; defaults to `http://localhost:5050`.
+On launch the shell shows a small **server picker** (the bootstrap page): an address
+field — prefilled with the last server used and suggesting recent ones — an
+**Auto-connect on launch** checkbox, and a Connect button. Auto-connect is **off by
+default**, so a fresh install asks you to pick a server first. Tick the box (it
+persists) once you've settled on a server you want to stick: then future launches
+connect to it automatically when reachable (retrying until it is), and start typing
+to choose a different one.
+
+**Switching servers while connected:** the in-app `⋯` menu has a desktop-only
+**Switch server…** item that returns you to the picker without quitting.
+
+### Settings file (portable — next to the executable)
+
+The choice is persisted to `settings.json` **in the same folder as the
+executable**, so copying the exe's folder carries its configuration along:
+
+```jsonc
+// <exe folder>/settings.json
+{
+  "serverUrl": "http://chat.example.com:5050",
+  "recent": ["http://chat.example.com:5050", "http://localhost:5050"],
+  "autoConnect": true, // default false; true here = the box was ticked
+}
+```
+
+Keep the exe somewhere writable (not a read-only install dir) so it can save. The
+`MARA_URL` environment variable only **seeds** the default the first time (before any
+settings file exists); after that the saved choice wins:
 
 ```bash
-# point the desktop client at a specific server
-set MARA_URL=http://chat.example.com:5050   # Windows
-export MARA_URL=http://chat.example.com:5050 # macOS/Linux
+set MARA_URL=http://chat.example.com:5050     # Windows (first run / no settings yet)
+export MARA_URL=http://chat.example.com:5050  # macOS/Linux
 pnpm --filter @mara/shell tauri:dev
 ```
+
+The picker (`bootstrap/index.html`) talks to native commands in `src-tauri/src/lib.rs`:
+`get_settings`, `set_server_url`, `set_auto_connect`, `open_app`, and `switch_server`.
+
+> Note: the **Switch server…** menu item invokes a native command from the _loaded
+> server's_ page, so it only works for origins the client grants IPC to —
+> `localhost`/`127.0.0.1` by default (see `capabilities/default.json` → `remote.urls`).
+> For other servers, switch via the launch picker (turn auto-connect off so it always
+> appears) or by editing `settings.json`.
 
 ## Run / build
 
 ```bash
-# dev (a Mara server must be reachable at MARA_URL)
+# dev (launches the picker; have a Mara server running to connect to)
 pnpm --filter @mara/shell tauri:dev
-# packaged installers in src-tauri/target
+# build a single portable .exe (no installer)
 pnpm --filter @mara/shell tauri:build
 ```
+
+The bundler is disabled (`bundle.active: false` in `tauri.conf.json`), so the build
+produces **one standalone executable** — no MSI/NSIS installer. Find it at:
+
+```
+src-tauri/target/release/mara-shell.exe
+```
+
+It's self-contained: the icon and the bootstrap page are compiled into the exe, so
+you can copy that single file anywhere and double-click it. (It still needs the
+system **WebView2** runtime, preinstalled on Windows 11.) `pnpm package` builds the
+same exe and copies it out as `dist/desktop/Mara3-Desktop.exe`.
+
+On launch it shows the server picker (above), then connects to the chosen server —
+so a Mara server must be reachable at that address.
 
 There is **no `beforeBuildCommand`** — the shell no longer bundles the web app, so
 it builds independently of `@mara/web`.

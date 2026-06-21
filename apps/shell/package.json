@@ -7,7 +7,7 @@
   "scripts": {
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "tauri build && node ../../scripts/copy-client.mjs",
     "icons": "tauri icon src-tauri/icons/icon.png"
   },
   "dependencies": {

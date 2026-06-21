@@ -133,7 +133,7 @@ rarely build a single piece by hand — but each is documented below.
 - **Primary deps:** JS: `@tauri-apps/api`, `@tauri-apps/plugin-updater`, dev `@tauri-apps/cli`. Rust: `tauri` 2, `tauri-plugin-opener`, `tauri-plugin-updater` (desktop), `serde`/`serde_json`.
 - **Build / run (needs Rust + Tauri OS deps):**
   - Dev: `pnpm --filter @mara/shell tauri:dev` — **desktop.bat** (starts a local server first if none is on `:5050`).
-  - Installers: `pnpm --filter @mara/shell tauri:build` → bundles under `apps/shell/src-tauri/target/release/bundle/` (Windows: `.exe` + MSI + NSIS).
+  - Build: `pnpm --filter @mara/shell tauri:build` → a single portable `mara-shell.exe` under `apps/shell/src-tauri/target/release/` (the installer bundler is disabled via `bundle.active: false`; no MSI/NSIS).
 
 ## Building everything
 
@@ -167,7 +167,7 @@ dist/
   server/    self-contained Node server: a bundled node.exe + the compiled
              server + the web build + Mara3-Server.bat. Needs nothing installed.
   web/       the raw static web build, for hosting elsewhere.
-  desktop/   Tauri installers — only if the Rust toolchain is present.
+  desktop/   portable Mara3-Desktop.exe — only if the Rust toolchain is present.
 ```
 
 Flags: `node scripts/package.mjs --skip-tests --skip-desktop`. The server bundle
@@ -202,4 +202,4 @@ identifiable:
 | @mara/ui          | packages/ui          | Svelte 5 source         | _(none — consumed by Vite)_ | —                             |
 | @mara/server      | apps/server          | Node ≥ 20               | `tsc`                       | `dist/` + `node dist/main.js` |
 | @mara/web         | apps/web             | Browser                 | `vite build`                | static `dist/`                |
-| @mara/shell       | apps/shell           | Tauri 2 / Rust          | `tauri build`               | OS installers                 |
+| @mara/shell       | apps/shell           | Tauri 2 / Rust          | `tauri build`               | portable .exe (no installer)  |

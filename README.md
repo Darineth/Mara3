@@ -69,7 +69,7 @@ pnpm --filter @mara/web dev       # Vite HMR on :5173, open http://localhost:517
 
 ```bash
 pnpm --filter @mara/shell tauri:dev      # native window loading the server's UI
-pnpm --filter @mara/shell tauri:build    # installers in apps/shell/src-tauri/target
+pnpm --filter @mara/shell tauri:build    # single portable .exe (no installer)
 ```
 
 On Windows, **desktop.bat** builds and launches the desktop client for testing —
@@ -89,12 +89,13 @@ dist/
              Copy the folder anywhere and run Mara3-Server.bat; nothing needs to
              be installed. Serves the UI + WebSocket on http://localhost:5050.
   web/       the raw web build, for hosting on your own server/CDN.
-  desktop/   Tauri installers (MSI + NSIS) — only if Rust is installed.
+  desktop/   Mara3-Desktop.exe — a single portable client (no installer),
+             only if Rust is installed. Copy it anywhere and double-click.
 ```
 
 Flags: `package.bat --skip-tests --skip-desktop`. The desktop step is skipped
-automatically when Rust isn't present, and builds **unsigned** installers unless
-the updater signing key is available.
+automatically when Rust isn't present. The build produces a standalone `.exe`
+(the installer bundler is disabled), so there's no MSI/NSIS to sign or run.
 
 ## Status
 
