@@ -1,0 +1,6 @@
+# Statically link the MSVC CRT for the Win7 target so the portable exe doesn't
+# depend on VCRUNTIME140.dll / the UCRT (api-ms-win-crt-*), which a clean Windows 7
+# SP1 lacks. Target-scoped so it does NOT affect `tauri:dev` host builds. (build-std
+# is passed as `-Z build-std` by the tauri:build script — needs the pinned nightly.)
+[target.x86_64-win7-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

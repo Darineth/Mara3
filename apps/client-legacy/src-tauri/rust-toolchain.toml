@@ -1,0 +1,9 @@
+# The Windows 7 client builds for the tier-3 `x86_64-win7-windows-msvc` target,
+# which keeps Win7 in reach with a modern dep tree (Tauri 1.8's transitive deps now
+# require edition2024 / newer Rust, so an old stable toolchain can't build them).
+# That target ships no prebuilt std, so we compile std from source — the tauri:build
+# script passes `-Z build-std`, which needs nightly + the rust-src component (both
+# pinned here). Pinned to a specific nightly for reproducibility; bump deliberately.
+[toolchain]
+channel = "nightly-2026-06-20"
+components = ["rust-src"]

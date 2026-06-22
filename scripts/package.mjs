@@ -116,7 +116,8 @@ if (!skipDesktop) {
     );
   } else {
     // The bundler is disabled (tauri.conf.json bundle.active:false), so this just
-    // compiles the standalone exe — no MSI/NSIS installer, no updater artifacts.
+    // compiles the standalone exe — no MSI/NSIS installer, no updater artifacts. Its
+    // tauri:build script deploys the exe to dist/desktop/Mara3-Desktop.exe itself.
     // Pass any signing key through anyway, harmlessly, in case bundling is re-enabled.
     const keyFile = join(root, 'apps', 'shell', '.tauri', 'mara-update.key');
     const env = { ...process.env };
@@ -125,11 +126,6 @@ if (!skipDesktop) {
       env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? '';
     }
     run('pnpm --filter @mara/shell tauri:build', env);
-    const desktopDir = join(dist, 'desktop');
-    mkdirSync(desktopDir, { recursive: true });
-    // A single portable exe — copy it out under a friendly name.
-    const exe = join(root, 'apps', 'shell', 'src-tauri', 'target', 'release', 'mara-shell.exe');
-    if (existsSync(exe)) copyFileSync(exe, join(desktopDir, 'Mara3-Desktop.exe'));
   }
 }
 

@@ -13,6 +13,7 @@
     "dev": "turbo run dev",
     "start": "pnpm --filter @mara/web build && pnpm --filter @mara/server serve",
     "package": "node scripts/package.mjs",
+    "package:legacy": "node scripts/package-legacy.mjs",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

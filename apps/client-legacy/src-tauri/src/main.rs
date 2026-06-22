@@ -3,6 +3,11 @@
 // picker + portable settings, adapted to the Tauri 1 API. See ../README.md.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Win7 compatibility: neutralize the MSVC CRT's ETW imports (EventSetInformation is
+// Win8+). Without this the binary won't load on Windows 7. See win7_compat.rs.
+#[cfg(windows)]
+mod win7_compat;
+
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 

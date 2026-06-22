@@ -1612,6 +1612,7 @@ dependencies = [
 name = "mara-client-legacy"
 version = "3.0.0"
 dependencies = [
+ "indexmap 1.9.3",
  "serde",
  "serde_json",
  "tauri",

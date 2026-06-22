@@ -17,12 +17,12 @@
     },
     "windows": [],
     "security": {
-      "csp": null
+      "csp": null,
+      "dangerousUseHttpScheme": true
     },
     "bundle": {
       "active": false,
       "identifier": "com.mara.chat.legacy",
-      "targets": ["nsis"],
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
