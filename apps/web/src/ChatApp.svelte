@@ -392,6 +392,14 @@
             {#if isDesktop()}
               <button class="item" onclick={onSwitchServer}>Switch server…</button>
             {/if}
+            <label class="item theme-row">
+              Theme
+              <select bind:value={settings.theme} onchange={persist}>
+                <option value="system">System</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
             <div class="sep"></div>
             <button class="item danger" onclick={onDisconnect}>Disconnect</button>
             <div class="who" data-state={$connection}>
@@ -677,6 +685,25 @@
   }
   .item.danger {
     color: var(--mara-danger);
+  }
+  .theme-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: default;
+  }
+  .theme-row:hover {
+    background: none;
+  }
+  .theme-row select {
+    font: inherit;
+    background: var(--mara-input-bg);
+    color: var(--mara-fg);
+    border: 1px solid var(--mara-border);
+    border-radius: 4px;
+    padding: 0.1rem 0.3rem;
+    cursor: pointer;
   }
   .sep {
     height: 1px;

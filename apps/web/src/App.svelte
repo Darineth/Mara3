@@ -7,7 +7,13 @@
   import { onMount } from 'svelte';
   import { MaraClient } from '@mara/client-core';
   import { createPipeline, shrugPlugin } from '@mara/plugin-api';
-  import { loadSettings, saveSettings, serverUrl, type MaraSettings } from './lib/settings.js';
+  import {
+    applyTheme,
+    loadSettings,
+    saveSettings,
+    serverUrl,
+    type MaraSettings,
+  } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import ChatApp from './ChatApp.svelte';
 
@@ -17,6 +23,10 @@
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);
   let error = $state('');
+
+  // Apply the colour theme app-wide whenever it changes (also covers the initial
+  // load and toggles made from the in-session menu, which mutate this same object).
+  $effect(() => applyTheme(settings.theme));
 
   function connect() {
     error = '';
@@ -79,6 +89,14 @@
       <label class="color">
         Color
         <input type="color" bind:value={settings.color} />
+      </label>
+      <label>
+        Theme
+        <select bind:value={settings.theme}>
+          <option value="system">System</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
       </label>
       {#if error}<p class="error">{error}</p>{/if}
       <button type="submit">Connect</button>

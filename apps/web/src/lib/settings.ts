@@ -1,10 +1,16 @@
 /** Number of macro slots (F1–F12). */
 export const MACRO_COUNT = 12;
 
+/** Colour theme: follow the OS, or force dark/light. "system" can't be expressed
+ *  on some platforms (e.g. Windows 7), where it resolves to dark. */
+export type Theme = 'system' | 'dark' | 'light';
+
 /** User-facing client settings, persisted to localStorage (or Tauri store later). */
 export interface MaraSettings {
   name: string;
   color: string;
+  /** Dark/light theme (or follow the OS). */
+  theme: Theme;
   /** Quick-text macros, indexed 0–11 for F1–F12. */
   macros: string[];
   /**
@@ -54,9 +60,19 @@ export function serverUrl(): string {
 export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
+  theme: 'system',
   macros: normalizeMacros([]),
   identityKey: '',
 };
+
+/** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;
+ *  "system" removes it so the stylesheet's prefers-color-scheme query takes over. */
+export function applyTheme(theme: Theme): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (theme === 'dark' || theme === 'light') root.setAttribute('data-theme', theme);
+  else root.removeAttribute('data-theme');
+}
 
 /**
  * Read persisted settings, merged over {@link defaultSettings} so fields added

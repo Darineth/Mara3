@@ -1,4 +1,10 @@
-/* @mara/ui shared theme. Dark by default; mirrors Mara 2's dark chat aesthetic. */
+/* @mara/ui shared theme. Dark by default. The active palette is chosen by a
+ * `data-theme` attribute on <html> (set by the app from the user's setting):
+ *   - data-theme="dark"   -> dark (same as the :root base)
+ *   - data-theme="light"  -> light
+ *   - no attribute        -> "System": follow the OS via prefers-color-scheme
+ *                            (always dark where the OS can't express it, e.g. Win7).
+ */
 :root {
   --mara-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mara-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
@@ -13,15 +19,34 @@
   --mara-link: #5aa9ff;
   --mara-danger: #e5534b;
   --mara-ok: #3fb950;
+  /* Inline-image frame: a translucent edge that reads on this background. */
+  --mara-img-border: rgba(255, 255, 255, 0.45);
+}
+
+/* Light palette — applied for an explicit "light" choice, and (below) for
+ * "System" when the OS prefers light. Keep these two blocks in sync. */
+:root[data-theme='light'] {
+  --mara-bg: #ffffff;
+  --mara-bg-alt: #f3f3f3;
+  --mara-fg: #1a1a1a;
+  --mara-border: #d4d4d4;
+  --mara-hover: #ececec;
+  --mara-input-bg: #fafafa;
+  --mara-accent: #2563eb;
+  --mara-link: #2563eb;
+  --mara-img-border: rgba(0, 0, 0, 0.3);
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     --mara-bg: #ffffff;
     --mara-bg-alt: #f3f3f3;
     --mara-fg: #1a1a1a;
-    --mara-border: #ddd;
-    --mara-hover: #eee;
+    --mara-border: #d4d4d4;
+    --mara-hover: #ececec;
     --mara-input-bg: #fafafa;
+    --mara-accent: #2563eb;
+    --mara-link: #2563eb;
+    --mara-img-border: rgba(0, 0, 0, 0.3);
   }
 }

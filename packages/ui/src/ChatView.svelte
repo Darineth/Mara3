@@ -157,10 +157,9 @@
     max-height: 240px;
     width: auto;
     height: auto;
-    /* A light border so images read as media, not chat text. A low-contrast themed
-       border is invisible on the dark background, so use a translucent light edge
-       (works on dark and light). */
-    border: 1px solid rgba(255, 255, 255, 0.45);
+    /* A translucent border so images read as media, not chat text. The colour is
+       theme-aware (light edge on dark bg, dark edge on light bg). */
+    border: 1px solid var(--mara-img-border, rgba(255, 255, 255, 0.45));
     border-radius: 6px;
     margin: 0.3rem 0;
     object-fit: contain;
