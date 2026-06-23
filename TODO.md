@@ -14,4 +14,40 @@ backlog.
 
 ## Features
 
-- [ ] _(add items here)_
+- [ ] **Inline images for extension-less / opaque URLs.** Today inline images are
+      detected purely by the URL's file extension (a client-side regex in
+      `@mara/chat-render`), so a real image URL with no extension — e.g. a Google
+      thumbnail `https://encrypted-tbn0.gstatic.com/images?q=tbn:…&s=10` — renders as
+      a plain link, not inline. Decided context: **no full media proxy** (external
+      images load directly from the host, as they always have; the direct-fetch
+      privacy/tracking tradeoff is accepted). Undecided which approach to take — the
+      server-side probe is appealing, ideally with the "send now, upgrade later" flow;
+      options:
+
+  - **Query-format heuristic** — also treat a URL as an image when it _declares_ a
+    format in the query (`?format=jpg`, `&fm=png`, `?ext=webp`). Cheap, no fetching,
+    catches Twitter/CDN URLs; does **not** help truly opaque URLs (the gstatic one).
+  - **Server-side Content-Type probe** — on an incoming chat/emote, the server does a
+    `HEAD` (or `GET` with `Range: bytes=0-0`) on the posted URLs, reads `Content-Type`,
+    and flags the image ones in the broadcast + stored history; clients render those
+    inline (still loading the bytes **directly** from the host — no proxying). Solves
+    opaque detection. ⚠️ Big caveat: this makes the server fetch user-supplied URLs →
+    **SSRF risk** — must block private/loopback/link-local/cloud-metadata IPs (re-check
+    across redirects / disable redirects), http(s)-only, tight timeout, per-user rate
+    limit, and a per-URL result cache. Needs a small `images: string[]` field on the
+    chat/emote/history messages and a renderer tweak to honor it.
+    - **Send-now-upgrade-later (preferred flavor)** — broadcast the message
+      immediately as a link, probe async, then push a follow-up that upgrades the URL
+      to inline so there's no message-delivery latency. Requires per-message ids / an
+      edit-or-update mechanism we don't have yet (see ROADMAP "stable message ids").
+      Without it, the probe has to run _before_ broadcast (adds up to the timeout's
+      delay on a novel link; cached/repeat links are instant).
+  - **Sender explicit marker (simplest, no fetching/SSRF)** — a bang prefix `!<url>`
+    (or `![](url)` markdown) forces that URL inline regardless of extension/type. Per-URL
+    opt-in by whoever posts it; composes with the existing extension auto-detect.
+  - **Client speculative load** — render any URL as `<img>`, fall back to a link on
+    `onerror`. Fully automatic incl. opaque URLs, but speculatively GETs **every**
+    posted link from every viewer (privacy/perf/GET-side-effect cost). Not preferred.
+  - **Viewer opt-in toggle** — a per-client "auto-show inline images" setting (default
+    could be off → links). Privacy-friendly gating, but on its own doesn't solve opaque
+    detection. Could pair with any of the above.
