@@ -25,7 +25,8 @@ JSON-over-WebSocket and is deliberately not compatible with the old Qt-era Mara 
   spoiler), code blocks, and optional emoticons. Inline images from URLs render as a
   tile below the message (click to lightbox, hide/restore), detected by file
   extension, a query-declared format (`?format=jpg`, `&fm=png`), or a `!<url>` sender
-  marker.
+  marker. Legacy Mara 2 BBCode tags (`[img]`, `[spoiler]`, `[b]`, `[i]`, `[u]`, `[s]`)
+  are also recognized for backwards compatibility.
 - **Image uploads** — server temp-stores images with per-file and rolling-cache size
   caps; `/upload` requires a WebSocket session token; SVG is rejected; files are
   served with `nosniff` and a sandbox CSP.

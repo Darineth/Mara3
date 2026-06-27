@@ -199,6 +199,73 @@ describe('renderText — Discord markdown', () => {
   });
 });
 
+describe('renderText — legacy Mara 2 tags', () => {
+  it('forces [img] contents inline as an image regardless of extension', () => {
+    const html = renderText('[img]https://example.com/pic[/img]');
+    expect(html).toContain('<img class="mara-img" src="https://example.com/pic"');
+    expect(html).not.toContain('[img]');
+    expect(html).not.toContain('[/img]');
+  });
+
+  it('renders an [img] server-relative upload path inline', () => {
+    const html = renderText('[img]/uploads/abc123.bin[/img]');
+    expect(html).toContain('<img class="mara-img" src="/uploads/abc123.bin"');
+  });
+
+  it('leaves [img] with non-URL contents as literal text', () => {
+    const html = renderText('[img]not a url[/img]');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('[img]not a url[/img]');
+  });
+
+  it('escapes a quote smuggled into [img] contents (no attribute breakout)', () => {
+    const html = renderText('[img]https://x.com/a"onerror="alert(1)[/img]');
+    expect(html).not.toContain('"onerror="'); // quote did not break out of src
+    expect(html).toContain('&quot;'); // it was escaped instead
+  });
+
+  it('renders [img] as a link when images are disabled', () => {
+    const html = renderText('[img]https://example.com/pic[/img]', { images: false });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('<a href="https://example.com/pic"');
+  });
+
+  it('renders legacy [b], [i], [u], [s] tags as their markdown equivalents', () => {
+    expect(renderText('[b]bold[/b]')).toBe('<strong>bold</strong>');
+    expect(renderText('[i]italic[/i]')).toBe('<em>italic</em>');
+    expect(renderText('[u]under[/u]')).toBe('<u>under</u>');
+    expect(renderText('[s]strike[/s]')).toBe('<s>strike</s>');
+  });
+
+  it('matches bracket tags case-insensitively and nests', () => {
+    expect(renderText('[B][i]x[/I][/b]')).toBe('<strong><em>x</em></strong>');
+  });
+
+  it('leaves bracket tags literal when markdown is disabled', () => {
+    expect(renderText('[b]x[/b]', { markdown: false })).toBe('[b]x[/b]');
+  });
+
+  it('renders the legacy [spoiler] tag like a ||spoiler||', () => {
+    expect(renderText('[spoiler]hidden[/spoiler]')).toBe(
+      '<span class="mara-spoiler">hidden</span>',
+    );
+  });
+
+  it('matches [spoiler] case-insensitively', () => {
+    expect(renderText('[Spoiler]x[/SPOILER]')).toBe('<span class="mara-spoiler">x</span>');
+  });
+
+  it('applies inner markdown inside a [spoiler] tag', () => {
+    expect(renderText('[spoiler]**bold**[/spoiler]')).toBe(
+      '<span class="mara-spoiler"><strong>bold</strong></span>',
+    );
+  });
+
+  it('leaves [spoiler] literal when markdown is disabled', () => {
+    expect(renderText('[spoiler]x[/spoiler]', { markdown: false })).toBe('[spoiler]x[/spoiler]');
+  });
+});
+
 describe('renderLine', () => {
   it('renders a chat line with author color and escaped text', () => {
     const html = renderLine({

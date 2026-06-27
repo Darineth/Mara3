@@ -2,11 +2,13 @@
  * Text → safe HTML pipeline (ports Mara 2's `MTextProcessors` / `MHtmlEscaper`).
  *
  * Order is deliberate:
- *  1. Lift code spans and URLs out of the RAW text into placeholders, escaping
- *     each one's contents as it is stashed (URLs must be matched pre-escape so a
- *     trailing `&` isn't split into a stranded `&amp;` `;`).
+ *  1. Lift code spans, legacy `[img]…[/img]` tags, and URLs out of the RAW text
+ *     into placeholders, escaping each one's contents as it is stashed (URLs must
+ *     be matched pre-escape so a trailing `&` isn't split into a stranded
+ *     `&amp;` `;`).
  *  2. HTML-escape everything that remains.
- *  3. Apply Discord-style markdown to the escaped text.
+ *  3. Apply Discord-style markdown (and the legacy `[spoiler]…[/spoiler]` tag) to
+ *     the escaped text.
  *  4. Restore the placeholders in a SINGLE pass.
  *
  * The single-pass restore is load-bearing for safety: stashed HTML is already
@@ -64,6 +66,16 @@ function isImageUrl(url: string): boolean {
 // `!` itself is consumed so it never shows in the rendered text. Built from
 // URL_RE so the two stay in lock-step.
 const MARKED_URL_RE = new RegExp(`(!?)(${URL_RE.source})`, 'g');
+
+// Legacy Mara 2 BBCode tags for backwards compatibility (see TODO.md §Features).
+// `[img]URL[/img]` forces the wrapped URL inline as an image; `[spoiler]…[/spoiler]`
+// maps to the same hidden-until-clicked treatment as `||…||`. Both are
+// case-insensitive and non-greedy so multiple tags on one line stay separate.
+const IMG_TAG_RE = /\[img\]([\s\S]+?)\[\/img\]/gi;
+// A `[img]` payload is only honored if its trimmed contents are a clean http(s)
+// or server-relative upload URL with no whitespace/`<` — same scheme allowlist as
+// auto-detected links, so the tag can't smuggle a `javascript:`/`data:` src.
+const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
 
 function anchor(url: string): string {
   return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
@@ -129,7 +141,17 @@ export function applyMarkdown(input: string): string {
     .replace(/(?<!\w)__(?=\S)([\s\S]+?)(?<=\S)__(?!\w)/g, '<u>$1</u>')
     .replace(/(?<!\w)_(?=\S)([\s\S]+?)(?<=\S)_(?!\w)/g, '<em>$1</em>')
     .replace(/~~(?=\S)([\s\S]+?)(?<=\S)~~/g, '<s>$1</s>')
-    .replace(/\|\|(?=\S)([\s\S]+?)(?<=\S)\|\|/g, '<span class="mara-spoiler">$1</span>');
+    .replace(/\|\|(?=\S)([\s\S]+?)(?<=\S)\|\|/g, '<span class="mara-spoiler">$1</span>')
+    // Legacy Mara 2 BBCode tags (`[b]`/`[i]`/`[u]`/`[s]`/`[spoiler]`) — same output as
+    // their markdown equivalents above. Run last so any inner markdown is already
+    // applied; the literal brackets survive HTML-escaping untouched, so matching here on
+    // the escaped text is safe. Case-insensitive and non-greedy. (Stopped at these; no
+    // `[url]`/`[color]` etc.)
+    .replace(/\[b\]([\s\S]+?)\[\/b\]/gi, '<strong>$1</strong>')
+    .replace(/\[i\]([\s\S]+?)\[\/i\]/gi, '<em>$1</em>')
+    .replace(/\[u\]([\s\S]+?)\[\/u\]/gi, '<u>$1</u>')
+    .replace(/\[s\]([\s\S]+?)\[\/s\]/gi, '<s>$1</s>')
+    .replace(/\[spoiler\]([\s\S]+?)\[\/spoiler\]/gi, '<span class="mara-spoiler">$1</span>');
 }
 
 export interface RenderTextOptions {
@@ -167,6 +189,22 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   s = s.replace(/`([^`\n]+?)`/g, (_m, code: string) =>
     stash(`<code class="mara-code">${escapeHtml(code)}</code>`),
   );
+
+  // Legacy [img]URL[/img] (Mara 2 compat): force the wrapped URL inline as an
+  // image regardless of its extension/format — composes with the `!` marker and
+  // the auto-detect below. Only a clean http(s)/upload URL is honored; anything
+  // else is left as literal text (and may still auto-detect as a link later).
+  // Runs before the URL pass so the inner URL isn't also linkified.
+  s = s.replace(IMG_TAG_RE, (literal, inner: string) => {
+    const url = inner.trim();
+    if (!IMG_URL_RE.test(url)) return literal; // not a clean URL → leave as text
+    if (options.images === false) {
+      // Images disabled: degrade to a link, honoring the links toggle.
+      if (options.links === false) return literal;
+      return stash(anchor(escapeHtml(url)), false);
+    }
+    return stash(imageTag(escapeHtml(url)), true);
+  });
 
   // Image URLs become inline thumbnails; everything else a link. Images are
   // flagged so they can be lifted out of the text flow and shown below it.

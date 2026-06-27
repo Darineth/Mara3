@@ -32,15 +32,18 @@ backlog.
       distinctly from chat messages and it doesn't pollute history. Should also be included
       in the admin page (see ROADMAP §7) as a runtime-editable field.
 
-- [ ] **Legacy `[img]…[/img]` and `[spoiler]…[/spoiler]` tags (Mara 2 compatibility).**
+- [x] **Legacy `[img]`, `[spoiler]`, `[b]`, `[i]`, `[u]`, `[s]` tags (Mara 2 compatibility).**
       Support the old Mara BBCode-style tags so messages copied from / shared with the
       old client render the same: `[img]url[/img]` forces that URL inline as an image
       (regardless of extension — composes with the existing extension/query auto-detect
-      and the `!<url>` marker), and `[spoiler]text[/spoiler]` renders a spoiler (the
-      same hidden-until-clicked treatment as the current `||spoiler||` markdown). Add to
-      the `@mara/chat-render` pipeline; escape contents as usual and keep the single-pass
-      restore invariant. Consider whether to also accept other old tags (e.g. `[b]`/`[i]`)
-      or stop at these two.
+      and the `!<url>` marker), `[spoiler]text[/spoiler]` renders a spoiler (the same
+      hidden-until-clicked treatment as `||spoiler||`), and `[b]`/`[i]`/`[u]`/`[s]` map to
+      bold/italic/underline/strikethrough like `**`/`*`/`__`/`~~`.
+      _(Done 2026-06-27 in `@mara/chat-render`: `IMG_TAG_RE`/`IMG_URL_RE` in the URL
+      pass; `[b]`/`[i]`/`[u]`/`[s]`/`[spoiler]` rules in `applyMarkdown`. `[img]` honors
+      only clean http(s)/upload URLs — same scheme allowlist as auto-links — and respects
+      the images/links toggles; the bracket tags ride the markdown toggle like `||…||` and
+      are case-insensitive. Stopped here; no `[url]`/`[color]` etc.)_
 
 - [ ] **Inline images for extension-less / opaque URLs.** Today inline images are
       detected purely by the URL's file extension (a client-side regex in
