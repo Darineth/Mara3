@@ -90,6 +90,20 @@ identity-key based.
 - [ ] **Change name / colour / avatar without reconnecting** — today appearance is
       set on the connect screen only.
 
+## 7. Server administration (operator-facing, long term)
+
+Tools for whoever **runs** the server, gated by an operator secret rather than an
+in-app role model — distinct from the "Moderation/admin platform" under *Not planned*
+below, which would mean per-user roles + accounts the app intentionally lacks. This
+is operator-scoped management of one's own server, not in-app moderation powers.
+
+- [ ] **Admin page** — a server-operator console on a separate route, gated by an
+      operator token/secret (never exposed to ordinary clients), to see live state and
+      manage the running server: connected sessions and channels, recent activity /
+      logs, upload-cache usage, and basic actions (drop a connection, clear an upload,
+      prune history), plus runtime config (port, payload/size caps, history retention).
+      Operator-only — it introduces no per-user roles or in-app moderation.
+
 ---
 
 ## Not planned (nope)

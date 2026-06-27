@@ -14,6 +14,24 @@ backlog.
 
 ## Features
 
+- [ ] **Native HTTPS / WSS support.** Today the server speaks plaintext `ws://`/`http://`
+      only, so traffic — including private messages — is readable by any network observer
+      (the client already derives `wss` from an `https` origin, so it works behind a
+      TLS-terminating reverse proxy). Add optional built-in TLS: serve `https`/`wss` when
+      a cert+key are supplied (e.g. `MARA_TLS_CERT` / `MARA_TLS_KEY` or a config block),
+      falling back to plaintext when not. Until then, document the reverse-proxy setup and
+      state plainly that PMs aren't confidential on an untrusted network. _(Tracked as
+      **M4** in [SECURITY-TODO.md](SECURITY-TODO.md); server entry point is
+      `apps/server/src/server.ts`, currently `node:http`.)_
+
+- [ ] **MOTD (Message of the Day).** Let the server operator configure a message that is
+      sent to every client on connect, displayed as a system line (or a distinct notice
+      banner) at the top of the main channel backlog. Configured via a field in the server
+      config (e.g. `MARA_MOTD` env var or a `motd` key in a config file); empty/absent
+      means no MOTD. Needs a new protocol frame (e.g. `motd`) so clients can render it
+      distinctly from chat messages and it doesn't pollute history. Should also be included
+      in the admin page (see ROADMAP §7) as a runtime-editable field.
+
 - [ ] **Legacy `[img]…[/img]` and `[spoiler]…[/spoiler]` tags (Mara 2 compatibility).**
       Support the old Mara BBCode-style tags so messages copied from / shared with the
       old client render the same: `[img]url[/img]` forces that URL inline as an image
@@ -66,3 +84,40 @@ backlog.
   - **Viewer opt-in toggle** — a per-client "auto-show inline images" setting (default
     could be off → links). Privacy-friendly gating, but on its own doesn't solve opaque
     detection. Could pair with any of the above.
+
+## Polish
+
+- [ ] **Mobile / small-display layout pass.** The web UI has not been tested on small
+      screens; verify layout, touch targets, and scrolling behaviour in a mobile browser
+      (Chrome for Android / Safari on iOS) at common breakpoints (360 px, 390 px, 768 px).
+      Pay attention to: the channel sidebar (collapsed state and the toggle), the message
+      input bar, the user roster, and the lightbox. Fix any overflow, wrapping, or
+      tap-target issues found. No native mobile app is planned — the goal is a usable
+      browser experience on a phone when the desktop client isn't available.
+
+- [ ] **Linux standalone desktop client.** The Tauri 2 shell (`apps/shell`) already
+      targets Linux via `cargo`; add a `package:linux` script (parallel to `package:legacy`)
+      that produces an AppImage or `.deb` portable bundle on a Linux host (or CI runner).
+      Verify the portable-settings path (next to the executable) works on Linux the same
+      way it does on Windows, and add the resulting archive to `package:all` / `zip-dist.mjs`.
+
+- [ ] **Android app.** Tauri 2 supports Android targets (`tauri android build`); once the
+      mobile layout pass (above) is solid, package the Tauri 2 shell as an `.apk` / `.aab`.
+      Requires the Android SDK + NDK and a connected device or emulator for testing. The
+      portable-settings path will need a platform-appropriate data directory on Android
+      (Tauri exposes this via `appDataDir`). Sideloading the APK is fine for personal use;
+      Play Store distribution requires a developer account and signing setup.
+
+- [ ] **macOS standalone desktop client.** Same as Linux above, but produces a `.dmg` /
+      `.app` bundle. **Requires an Apple-hosted build machine** — Tauri cannot cross-compile
+      to Apple targets from Windows or Linux; use a real Mac or a `macos-latest` GitHub
+      Actions runner (costs more CI minutes). Code-signing and notarization are optional for
+      personal use but required to distribute without Gatekeeper warnings.
+
+- [ ] **Finish the new app icon / logo.** Settle on the new icon from the concept art in
+      `references/`, then replace the placeholder icon set across both Tauri shells —
+      `apps/shell/src-tauri/icons/` and `apps/client-legacy/src-tauri/icons/` (the full
+      set: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.ico`, `icon.icns`, the
+      `Square*`/`StoreLogo` and iOS/Android variants) — plus the web favicon. Regenerate
+      the whole set from the chosen master image with the Tauri icon generator
+      (`pnpm tauri icon <source.png>`).
