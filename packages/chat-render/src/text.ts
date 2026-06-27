@@ -134,24 +134,26 @@ export function linkify(escaped: string): string {
  * word boundaries so `snake_case` and URLs are left alone.
  */
 export function applyMarkdown(input: string): string {
-  return input
-    .replace(/\*\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(?=\S)([\s\S]+?)(?<=\S)\*/g, '<em>$1</em>')
-    .replace(/(?<!\w)__(?=\S)([\s\S]+?)(?<=\S)__(?!\w)/g, '<u>$1</u>')
-    .replace(/(?<!\w)_(?=\S)([\s\S]+?)(?<=\S)_(?!\w)/g, '<em>$1</em>')
-    .replace(/~~(?=\S)([\s\S]+?)(?<=\S)~~/g, '<s>$1</s>')
-    .replace(/\|\|(?=\S)([\s\S]+?)(?<=\S)\|\|/g, '<span class="mara-spoiler">$1</span>')
-    // Legacy Mara 2 BBCode tags (`[b]`/`[i]`/`[u]`/`[s]`/`[spoiler]`) — same output as
-    // their markdown equivalents above. Run last so any inner markdown is already
-    // applied; the literal brackets survive HTML-escaping untouched, so matching here on
-    // the escaped text is safe. Case-insensitive and non-greedy. (Stopped at these; no
-    // `[url]`/`[color]` etc.)
-    .replace(/\[b\]([\s\S]+?)\[\/b\]/gi, '<strong>$1</strong>')
-    .replace(/\[i\]([\s\S]+?)\[\/i\]/gi, '<em>$1</em>')
-    .replace(/\[u\]([\s\S]+?)\[\/u\]/gi, '<u>$1</u>')
-    .replace(/\[s\]([\s\S]+?)\[\/s\]/gi, '<s>$1</s>')
-    .replace(/\[spoiler\]([\s\S]+?)\[\/spoiler\]/gi, '<span class="mara-spoiler">$1</span>');
+  return (
+    input
+      .replace(/\*\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(?=\S)([\s\S]+?)(?<=\S)\*/g, '<em>$1</em>')
+      .replace(/(?<!\w)__(?=\S)([\s\S]+?)(?<=\S)__(?!\w)/g, '<u>$1</u>')
+      .replace(/(?<!\w)_(?=\S)([\s\S]+?)(?<=\S)_(?!\w)/g, '<em>$1</em>')
+      .replace(/~~(?=\S)([\s\S]+?)(?<=\S)~~/g, '<s>$1</s>')
+      .replace(/\|\|(?=\S)([\s\S]+?)(?<=\S)\|\|/g, '<span class="mara-spoiler">$1</span>')
+      // Legacy Mara 2 BBCode tags (`[b]`/`[i]`/`[u]`/`[s]`/`[spoiler]`) — same output as
+      // their markdown equivalents above. Run last so any inner markdown is already
+      // applied; the literal brackets survive HTML-escaping untouched, so matching here on
+      // the escaped text is safe. Case-insensitive and non-greedy. (Stopped at these; no
+      // `[url]`/`[color]` etc.)
+      .replace(/\[b\]([\s\S]+?)\[\/b\]/gi, '<strong>$1</strong>')
+      .replace(/\[i\]([\s\S]+?)\[\/i\]/gi, '<em>$1</em>')
+      .replace(/\[u\]([\s\S]+?)\[\/u\]/gi, '<u>$1</u>')
+      .replace(/\[s\]([\s\S]+?)\[\/s\]/gi, '<s>$1</s>')
+      .replace(/\[spoiler\]([\s\S]+?)\[\/spoiler\]/gi, '<span class="mara-spoiler">$1</span>')
+  );
 }
 
 export interface RenderTextOptions {
