@@ -14,6 +14,8 @@
     "start": "pnpm --filter @mara/web build && pnpm --filter @mara/server serve",
     "package": "node scripts/package.mjs",
     "package:legacy": "node scripts/package-legacy.mjs",
+    "package:zip": "node scripts/zip-dist.mjs",
+    "package:all": "node scripts/package.mjs && node scripts/package-legacy.mjs && node scripts/zip-dist.mjs",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

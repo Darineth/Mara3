@@ -97,7 +97,13 @@ mkdirSync(dist, { recursive: true });
 step(5, total, 'Packaging self-contained Node server');
 const serverDir = join(dist, 'server');
 // 1. Server + its production dependencies (resolves the @mara/* workspace deps).
-run(`pnpm --filter @mara/server deploy --prod "${join(serverDir, 'app')}"`);
+//    node-linker=hoisted forces a FLAT node_modules of real files (no pnpm symlink
+//    store), so the bundle is self-contained and portable: it survives being zipped
+//    and extracted on another machine. The default isolated layout resolves transitive
+//    deps via physical .pnpm nesting + symlinks, which can't be archived faithfully —
+//    stored links are absolute (dangle elsewhere) and dereferenced copies lose their
+//    .pnpm siblings (e.g. sirv can't find totalist). Hoisted sidesteps both.
+run(`pnpm --filter @mara/server deploy --prod --config.node-linker=hoisted "${join(serverDir, 'app')}"`);
 // 2. Bundle the Node runtime currently running this script.
 copyFileSync(process.execPath, join(serverDir, 'node.exe'));
 // 3. Bundle the web client the server hosts locally.
