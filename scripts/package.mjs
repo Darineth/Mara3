@@ -30,7 +30,7 @@ set "MARA_WEB_ROOT=%~dp0web"
 rem Keep persistent state (data\\, uploads\\) next to this launcher, OUTSIDE app\\,
 rem so updating only replaces code and never touches saved data or mara.config.
 set "MARA_BASE_DIR=%~dp0"
-rem Display only — do NOT export MARA_PORT, or it would override mara.config.
+rem Display only - do NOT export MARA_PORT, or it would override mara.config.
 set "SHOWPORT=%MARA_PORT%"
 if "%SHOWPORT%"=="" set "SHOWPORT=5050"
 echo Mara 3 server  -^>  http://localhost:%SHOWPORT%
@@ -72,7 +72,7 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 # default (in data\\ and uploads\\), so an update that replaces app\\ + web\\ leaves
 # it untouched. Point these at absolute paths to relocate it (e.g. a backed-up
 # drive). Set MARA_HISTORY_FILE / MARA_IDENTITY_FILE empty to disable persistence
-# (in-memory only — history and tokens are lost on restart).
+# (in-memory only - history and tokens are lost on restart).
 #MARA_UPLOAD_DIR=D:\\Mara3-Data\\uploads
 #MARA_HISTORY_FILE=D:\\Mara3-Data\\history.json
 #MARA_IDENTITY_FILE=D:\\Mara3-Data\\identity.json
@@ -98,7 +98,7 @@ Configuration (highest priority first):
      name, MOTD, upload caps, history limit, ...).
   Environment variables override the file, which overrides the built-in defaults.
 
-Your data (created on first run, kept next to this launcher — NOT inside app\\):
+Your data (created on first run, kept next to this launcher - NOT inside app\\):
   mara.config   your settings (you create this from mara.config.example)
   data\\         message history + identity tokens (history.json, identity.json)
   uploads\\      uploaded images (size-capped cache)
