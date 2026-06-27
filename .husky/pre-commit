@@ -1,0 +1,6 @@
+pnpm format:check || {
+  echo ""
+  echo "✖ Prettier found unformatted files. Run: pnpm format"
+  echo "  (then re-stage and commit again)"
+  exit 1
+}

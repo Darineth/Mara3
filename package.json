@@ -9,7 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm format && turbo run build",
+    "build": "turbo run build",
     "dev": "turbo run dev",
     "start": "pnpm --filter @mara/web build && pnpm --filter @mara/server serve",
     "package": "node scripts/package.mjs",
@@ -20,10 +20,12 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"**/*.{ts,svelte,js,json}\"",
-    "format:check": "prettier --check \"**/*.{ts,svelte,js,json}\""
+    "format:check": "prettier --check \"**/*.{ts,svelte,js,json}\"",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "husky": "^9.1.7",
     "prettier": "^3.4.2",
     "prettier-plugin-svelte": "^3.3.2",
     "turbo": "^2.3.3",
