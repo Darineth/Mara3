@@ -54,6 +54,22 @@
     if (pinnedToBottom && viewport) viewport.scrollTop = viewport.scrollHeight;
   });
 
+  // Inline images load asynchronously and grow the content height AFTER the
+  // new-line scroll above has already run, leaving the view a little short of the
+  // bottom. While still pinned, re-stick to the bottom as each image finishes.
+  // ('load' doesn't bubble, so listen in the capture phase.)
+  $effect(() => {
+    const el = viewport;
+    if (!el) return;
+    const onLoad = (event: Event) => {
+      if (pinnedToBottom && event.target instanceof HTMLImageElement) {
+        el.scrollTop = el.scrollHeight;
+      }
+    };
+    el.addEventListener('load', onLoad, true);
+    return () => el.removeEventListener('load', onLoad, true);
+  });
+
   // Handle clicks inside the log imperatively so the container doesn't need a
   // declarative interactive handler: spoilers toggle, and inline images open in
   // the lightbox (plain left-click only — modifier/middle clicks still follow

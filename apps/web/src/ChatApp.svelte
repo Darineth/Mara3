@@ -443,6 +443,7 @@
       <ChatInput
         onsend={handleSend}
         disabled={$connection !== 'active'}
+        placeholder={`Message ${title}`}
         macros={settings.macros}
         upload={(file) => uploadImage(file, client.sessionToken)}
       />

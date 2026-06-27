@@ -50,3 +50,37 @@
     --mara-img-border: rgba(0, 0, 0, 0.3);
   }
 }
+
+/* Scrollbars: subtle and faded by default, darkening as you hover the area or
+   drag the thumb. Applies app-wide — message list, roster, composer textarea,
+   dialogs. A mid-grey alpha reads acceptably on both the dark and light themes. */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* The transparent border + content-box clip render the thumb as a thin, rounded
+   pill inset from the edge rather than a full-width chunky bar. */
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.28);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: rgba(128, 128, 128, 0.7);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -130,7 +130,17 @@
   function autosize() {
     if (!textarea) return;
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    // scrollHeight excludes the border, but with box-sizing:border-box the height
+    // we set IS the border box — so add the vertical border back, otherwise the
+    // content is a couple of px too tall for its box and a scrollbar appears even
+    // while the field is still auto-expanding.
+    const cs = getComputedStyle(textarea);
+    const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const full = textarea.scrollHeight + border;
+    textarea.style.height = `${Math.min(full, 160)}px`;
+    // Only allow scrolling once the content exceeds the cap; below it, keep the
+    // scrollbar hidden so the expanding field never flashes one.
+    textarea.style.overflowY = full > 160 ? 'auto' : 'hidden';
   }
 
   function submit() {
@@ -225,18 +235,41 @@
       {/each}
     </div>
   {/if}
-  <textarea
-    bind:this={textarea}
-    bind:value={text}
-    {placeholder}
-    {disabled}
-    maxlength={maxLength}
-    rows="1"
-    onkeydown={onKeydown}
-    oninput={autosize}
-    onpaste={onPaste}
-  ></textarea>
-  <button type="button" class="send" onclick={submit} disabled={!canSend}>Send</button>
+  <div class="mara-field">
+    <textarea
+      bind:this={textarea}
+      bind:value={text}
+      {placeholder}
+      {disabled}
+      maxlength={maxLength}
+      rows="1"
+      onkeydown={onKeydown}
+      oninput={autosize}
+      onpaste={onPaste}
+    ></textarea>
+    <button
+      type="button"
+      class="send"
+      onclick={submit}
+      disabled={!canSend}
+      aria-label="Send"
+      title="Send message"
+    >
+      <svg
+        class="send-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <line x1="22" y1="2" x2="11" y2="13" />
+        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+      </svg>
+    </button>
+  </div>
 </div>
 
 <style>
@@ -323,27 +356,69 @@
       transform: rotate(360deg);
     }
   }
+  .mara-field {
+    position: relative;
+    flex: 1;
+    display: flex;
+  }
   textarea {
     flex: 1;
     resize: none;
     font: inherit;
-    padding: 0.45rem 0.6rem;
+    /* Extra right padding leaves room for the send icon that sits inside the field. */
+    padding: 0.45rem 2.5rem 0.45rem 0.6rem;
     border-radius: 6px;
     border: 1px solid var(--mara-border, #333);
     background: var(--mara-input-bg, #2a2a2a);
     color: inherit;
     max-height: 160px;
-    overflow-y: auto;
+    /* Resting state: no scrollbar. autosize() switches this to `auto` only when
+       the content passes the max-height cap. */
+    overflow-y: hidden;
   }
+  /* Pure icon button living INSIDE the field at the bottom-right corner, so it
+     can't drift out of height-sync with the textarea: the field grows, the icon
+     stays pinned to the corner. */
   .send {
-    padding: 0.45rem 0.9rem;
-    border-radius: 6px;
+    position: absolute;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    padding: 0;
     border: none;
-    background: var(--mara-accent, #3b82f6);
-    color: #fff;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--mara-accent, #3b82f6);
     cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      transform 0.06s ease;
+  }
+  .send-icon {
+    width: 1.15rem;
+    height: 1.15rem;
+    display: block;
+    /* The paper plane's mass sits low-left; nudge it to look optically centered. */
+    transform: translate(-1px, 1px);
+  }
+  .send:hover:not(:disabled) {
+    background: rgba(127, 127, 127, 0.16);
+  }
+  .send:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .send:focus-visible {
+    outline: 2px solid var(--mara-accent, #3b82f6);
+    outline-offset: 1px;
   }
   .send:disabled {
+    /* Muted but still clearly legible — not the very-dim border colour. */
+    color: var(--mara-fg, #ddd);
     opacity: 0.5;
     cursor: default;
   }
