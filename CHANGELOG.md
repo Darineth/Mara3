@@ -40,6 +40,11 @@ JSON-over-WebSocket and is deliberately not compatible with the old Qt-era Mara 
   picker, settings stored next to the executable (portable), and opt-in auto-connect.
 - **Windows 7 client** (Tauri 1) — a separate legacy target built with a static CRT
   and a bundled WebView2 fixed runtime.
+- **Server configuration** — every setting (port, host, server name, MOTD, WebSocket
+  path, upload caps, history limit, ...) is read from `MARA_*` environment variables,
+  and the portable bundle also reads an optional `mara.config` file next to the
+  launcher. Precedence is defaults < `mara.config` < environment; only `MARA_*` keys
+  are honored. The bundle ships a commented `mara.config.example`.
 - **Distribution** — `pnpm package`, `package:legacy`, `package:zip`, and
   `package:all` build self-contained server, web, and desktop artifacts into `dist/`,
   and zip each into version-stamped archives carrying a BUILD-INFO manifest, plus a

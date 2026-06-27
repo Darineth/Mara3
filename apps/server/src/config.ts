@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 
 /** Server configuration, resolved from environment with sensible defaults. */
 export interface ServerConfig {
@@ -45,23 +46,19 @@ function defaultWebRoot(): string | null {
 }
 
 /**
- * Upload cache, nested under the server's own directory so it travels with the
- * deployment. Resolved relative to this module, so it lands in the server
- * package root whether running from `src/` (tsx) or the built `dist/`.
+ * Base directory for the server's PERSISTENT state — message history, the identity
+ * map, and the upload cache. Deliberately kept apart from the server CODE so a
+ * deployment can be updated by replacing the code (the bundle's `app/` + `web/`)
+ * without disturbing saved data.
+ *
+ * Defaults to the server package root (relative to this module), so a dev run keeps
+ * using `apps/server/{data,uploads}`. The portable launcher sets `MARA_BASE_DIR` to
+ * the bundle root, so in a packaged install the state lives next to the launcher and
+ * `mara.config` — outside the replaceable `app/` folder. Per-store overrides
+ * (`MARA_UPLOAD_DIR`, `MARA_HISTORY_FILE`, `MARA_IDENTITY_FILE`) still win over this.
  */
-function defaultUploadDir(): string {
-  return fileURLToPath(new URL('../uploads/', import.meta.url));
-}
-
-/** Default history file, nested under the server dir (like uploads). For the
- *  runnable server to opt into persistence; tests leave `historyFile` empty. */
-export function defaultHistoryFile(): string {
-  return fileURLToPath(new URL('../data/history.json', import.meta.url));
-}
-
-/** Default identity-map file (see {@link defaultHistoryFile}). */
-export function defaultIdentityFile(): string {
-  return fileURLToPath(new URL('../data/identity.json', import.meta.url));
+function baseDir(env: NodeJS.ProcessEnv): string {
+  return env.MARA_BASE_DIR?.trim() || fileURLToPath(new URL('../', import.meta.url));
 }
 
 // Bare defaults; size limits are kept in MB here and converted to bytes at load
@@ -87,11 +84,63 @@ function num(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Load a `KEY=value` config file (next to the launcher) into `env`, layering it
+ * UNDER the real environment: a variable already present in `env` is never
+ * overwritten, so precedence stays defaults < file < environment. Only keys in
+ * the `MARA_*` namespace are honored, so the file can't tamper with PATH,
+ * NODE_OPTIONS, etc. Lines are `KEY=value`; blank lines and `#` comments are
+ * skipped, and one layer of matching surrounding quotes is stripped from values.
+ *
+ * The file is `mara.config` in the working directory by default (the launcher
+ * `cd`s next to itself first, so that's right beside the executable); override
+ * the location with `MARA_CONFIG=<path>`. Returns the path loaded and which keys
+ * it actually applied (those not already set in `env`), or null if no file.
+ */
+export function loadConfigFile(
+  env: NodeJS.ProcessEnv = process.env,
+): { path: string; applied: string[] } | null {
+  const path = env.MARA_CONFIG?.trim() || resolve(process.cwd(), 'mara.config');
+  if (!existsSync(path)) return null;
+
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return null; // unreadable file → fall back to env/defaults rather than crash
+  }
+
+  const applied: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue; // no key, or malformed line
+    const key = line.slice(0, eq).trim();
+    if (!/^MARA_[A-Z0-9_]+$/.test(key)) continue; // only our namespace
+    let value = line.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1); // strip one layer of matching quotes
+    }
+    if (env[key] === undefined) {
+      env[key] = value; // real environment wins; only fill what's unset
+      applied.push(key);
+    }
+  }
+  return { path, applied };
+}
+
 /** Resolve the full server config from `env`, applying defaults for anything unset. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   // MB env var → bytes; clamp negatives to 0 so a bad value can't widen a limit.
   const mb = (v: string | undefined, fallback: number) =>
     Math.max(0, num(v, fallback)) * 1024 * 1024;
+  // Persistent state lives under here (overridable per-store below). See baseDir().
+  const base = baseDir(env);
   return {
     host: env.MARA_HOST?.trim() || DEFAULTS.host,
     port: num(env.MARA_PORT, DEFAULTS.port),
@@ -101,12 +150,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     webRoot: env.MARA_WEB_ROOT?.trim() || defaultWebRoot(),
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,
     defaultChannel: (env.MARA_DEFAULT_CHANNEL ?? DEFAULTS.defaultChannel).trim(),
-    uploadDir: env.MARA_UPLOAD_DIR?.trim() || defaultUploadDir(),
+    uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
-    historyFile: (env.MARA_HISTORY_FILE ?? defaultHistoryFile()).trim(),
-    identityFile: (env.MARA_IDENTITY_FILE ?? defaultIdentityFile()).trim(),
+    historyFile: (env.MARA_HISTORY_FILE ?? join(base, 'data', 'history.json')).trim(),
+    identityFile: (env.MARA_IDENTITY_FILE ?? join(base, 'data', 'identity.json')).trim(),
   };
 }

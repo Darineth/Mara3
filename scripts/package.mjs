@@ -27,11 +27,55 @@ const LAUNCHER = `@echo off
 cd /d "%~dp0"
 set NODE_ENV=production
 set "MARA_WEB_ROOT=%~dp0web"
-if "%MARA_PORT%"=="" set MARA_PORT=5050
-echo Mara 3 server  -^>  http://localhost:%MARA_PORT%
-echo (Close this window to stop the server.)
-start "" cmd /c "timeout /t 2 >nul & start "" http://localhost:%MARA_PORT%"
+rem Keep persistent state (data\\, uploads\\) next to this launcher, OUTSIDE app\\,
+rem so updating only replaces code and never touches saved data or mara.config.
+set "MARA_BASE_DIR=%~dp0"
+rem Display only — do NOT export MARA_PORT, or it would override mara.config.
+set "SHOWPORT=%MARA_PORT%"
+if "%SHOWPORT%"=="" set "SHOWPORT=5050"
+echo Mara 3 server  -^>  http://localhost:%SHOWPORT%
+echo (Port/host come from the environment or mara.config; see README.txt.)
+echo Open that URL in a browser to use the chat. Close this window to stop the server.
 "%~dp0node.exe" "%~dp0app\\dist\\main.js"
+`;
+
+const CONFIG_EXAMPLE = `# Mara 3 server configuration.
+#
+# Rename this file to "mara.config" (keep it next to Mara3-Server.bat) to use it.
+# Format is KEY=value, one per line; lines starting with # are comments.
+# Environment variables override anything set here, so you can still do
+#     set MARA_PORT=6000
+#     Mara3-Server.bat
+# to override for a single launch.
+
+# --- Network ---
+#MARA_HOST=0.0.0.0           # bind address; set 127.0.0.1 when behind a reverse proxy
+#MARA_PORT=5050              # listen port
+
+# --- Presentation ---
+#MARA_SERVER_NAME=Mara 3 Server
+#MARA_MOTD=Welcome to Mara 3.
+#MARA_DEFAULT_CHANNEL=Main   # channel everyone auto-joins; leave empty to disable
+
+# --- WebSocket ---
+#MARA_WS_PATH=/ws            # must match what a reverse proxy forwards
+
+# --- Uploads ---
+#MARA_MAX_UPLOAD_MB=10       # per-file cap
+#MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)
+
+# --- History ---
+#MARA_HISTORY_LIMIT=100      # messages retained per channel, replayed on join
+
+# --- Storage ---
+# Persistent state (history, identities, uploads) lives next to Mara3-Server.bat by
+# default (in data\\ and uploads\\), so an update that replaces app\\ + web\\ leaves
+# it untouched. Point these at absolute paths to relocate it (e.g. a backed-up
+# drive). Set MARA_HISTORY_FILE / MARA_IDENTITY_FILE empty to disable persistence
+# (in-memory only — history and tokens are lost on restart).
+#MARA_UPLOAD_DIR=D:\\Mara3-Data\\uploads
+#MARA_HISTORY_FILE=D:\\Mara3-Data\\history.json
+#MARA_IDENTITY_FILE=D:\\Mara3-Data\\identity.json
 `;
 
 const SERVER_README = `Mara 3 Server (self-contained)
@@ -45,14 +89,33 @@ single port (default 5050).
   - Other PCs:      http://<this-machine-ip>:5050  (allow the port through the
                     firewall; the app auto-connects to whatever address it loads)
 
-Change the port:
-    set MARA_PORT=6000
-    Mara3-Server.bat
+Configuration (highest priority first):
+  1. Environment variables, per launch, e.g.:
+         set MARA_PORT=6000
+         Mara3-Server.bat
+  2. A "mara.config" file next to Mara3-Server.bat. Copy mara.config.example
+     to mara.config and edit it; it lists every setting (port, host, server
+     name, MOTD, upload caps, history limit, ...).
+  Environment variables override the file, which overrides the built-in defaults.
+
+Your data (created on first run, kept next to this launcher — NOT inside app\\):
+  mara.config   your settings (you create this from mara.config.example)
+  data\\         message history + identity tokens (history.json, identity.json)
+  uploads\\      uploaded images (size-capped cache)
+
+Updating without losing settings or data:
+  Replace the CODE, keep your state. Overwrite these from the new version:
+      app\\   web\\   node.exe   Mara3-Server.bat   README.txt   mara.config.example
+  Leave these alone:
+      mara.config   data\\   uploads\\
+  State lives beside the launcher (not inside app\\), so dropping in a new app\\ +
+  web\\ never disturbs your history, identities, uploads, or config.
 
 Contents:
-  node.exe   bundled Node.js runtime
-  app\\       the server (app\\dist\\main.js) and its dependencies
-  web\\       the chat client the server hosts
+  node.exe              bundled Node.js runtime                               [code]
+  app\\                  the server (app\\dist\\main.js) and its dependencies    [code]
+  web\\                  the chat client the server hosts                       [code]
+  mara.config.example   sample config; rename to mara.config to use
 `;
 
 function run(cmd, env = process.env) {
@@ -103,7 +166,9 @@ const serverDir = join(dist, 'server');
 //    deps via physical .pnpm nesting + symlinks, which can't be archived faithfully —
 //    stored links are absolute (dangle elsewhere) and dereferenced copies lose their
 //    .pnpm siblings (e.g. sirv can't find totalist). Hoisted sidesteps both.
-run(`pnpm --filter @mara/server deploy --prod --config.node-linker=hoisted "${join(serverDir, 'app')}"`);
+run(
+  `pnpm --filter @mara/server deploy --prod --config.node-linker=hoisted "${join(serverDir, 'app')}"`,
+);
 // 2. Bundle the Node runtime currently running this script.
 copyFileSync(process.execPath, join(serverDir, 'node.exe'));
 // 3. Bundle the web client the server hosts locally.
@@ -111,6 +176,7 @@ cpSync(join(root, 'apps', 'web', 'dist'), join(serverDir, 'web'), { recursive: t
 // 4. Launcher + readme.
 writeFileSync(join(serverDir, 'Mara3-Server.bat'), LAUNCHER);
 writeFileSync(join(serverDir, 'README.txt'), SERVER_README);
+writeFileSync(join(serverDir, 'mara.config.example'), CONFIG_EXAMPLE);
 // 5. Also drop the raw web build for custom hosting.
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 
