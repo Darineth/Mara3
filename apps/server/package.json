@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "// files": "Allowlist for `pnpm deploy` (the packaged server). Keeps the build output only — never the runtime data/ (chat history + identity tokens) or .turbo logs.",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

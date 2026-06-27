@@ -65,19 +65,25 @@ describe('renderText — safety + links', () => {
 
   it('treats an extension-less URL as an image when the query declares a format', () => {
     expect(renderText('https://cdn.example.com/img?format=jpg')).toContain('<img class="mara-img"');
-    expect(renderText('https://cdn.example.com/img?w=20&fm=png')).toContain('<img class="mara-img"');
+    expect(renderText('https://cdn.example.com/img?w=20&fm=png')).toContain(
+      '<img class="mara-img"',
+    );
     expect(renderText('https://cdn.example.com/i?ext=webp')).toContain('<img class="mara-img"');
   });
 
   it('leaves a genuinely opaque URL (no extension, no declared format) as a link', () => {
     const html = renderText('https://encrypted-tbn0.gstatic.com/images?q=tbn:abc&s=10');
     expect(html).not.toContain('<img');
-    expect(html).toContain('<a href="https://encrypted-tbn0.gstatic.com/images?q=tbn:abc&amp;s=10"');
+    expect(html).toContain(
+      '<a href="https://encrypted-tbn0.gstatic.com/images?q=tbn:abc&amp;s=10"',
+    );
   });
 
   it('forces an opaque URL inline when prefixed with the `!` sender marker', () => {
     const html = renderText('!https://encrypted-tbn0.gstatic.com/images?q=tbn:abc');
-    expect(html).toContain('<img class="mara-img" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:abc"');
+    expect(html).toContain(
+      '<img class="mara-img" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:abc"',
+    );
     expect(html).not.toContain('!https'); // the marker is consumed, not rendered
     expect(html).not.toContain('src="!'); // and never leaks into the URL
   });

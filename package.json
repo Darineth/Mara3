@@ -19,8 +19,8 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "format": "prettier --write \"**/*.{ts,svelte,js,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,svelte,js,json,md}\""
+    "format": "prettier --write \"**/*.{ts,svelte,js,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,svelte,js,json}\""
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
