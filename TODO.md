@@ -14,6 +14,16 @@ backlog.
 
 ## Features
 
+- [ ] **Legacy `[img]…[/img]` and `[spoiler]…[/spoiler]` tags (Mara 2 compatibility).**
+      Support the old Mara BBCode-style tags so messages copied from / shared with the
+      old client render the same: `[img]url[/img]` forces that URL inline as an image
+      (regardless of extension — composes with the existing extension/query auto-detect
+      and the `!<url>` marker), and `[spoiler]text[/spoiler]` renders a spoiler (the
+      same hidden-until-clicked treatment as the current `||spoiler||` markdown). Add to
+      the `@mara/chat-render` pipeline; escape contents as usual and keep the single-pass
+      restore invariant. Consider whether to also accept other old tags (e.g. `[b]`/`[i]`)
+      or stop at these two.
+
 - [ ] **Inline images for extension-less / opaque URLs.** Today inline images are
       detected purely by the URL's file extension (a client-side regex in
       `@mara/chat-render`), so a real image URL with no extension — e.g. a Google

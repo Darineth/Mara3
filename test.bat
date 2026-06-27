@@ -1,5 +1,5 @@
 @echo off
-:: Run the full test suite (126 tests across the packages).
+:: Run the full Vitest test suite across all packages.
 cd /d "%~dp0"
 pnpm test
 echo.
