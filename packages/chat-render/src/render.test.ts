@@ -125,10 +125,19 @@ describe('renderText — safety + links', () => {
     expect(html).toContain('class="mara-img-show"');
   });
 
-  it('renders a server-relative upload path as an inline image (no baked-in host)', () => {
+  it('renders a server-relative upload path as a base-relative inline image', () => {
+    // Emitted WITHOUT the leading slash so it resolves against the page base —
+    // works at the domain root and under a subpath (e.g. https://host/mara/).
     const html = renderText('here you go /uploads/abc123.png');
-    expect(html).toContain('<img class="mara-img" src="/uploads/abc123.png"');
+    expect(html).toContain('<img class="mara-img" src="uploads/abc123.png"');
+    expect(html).not.toContain('src="/uploads/'); // not root-absolute
+    expect(html).toContain('href="uploads/abc123.png"'); // lightbox link too
     expect(html).toContain('here you go'); // text stays, image lifted below
+  });
+
+  it('leaves absolute http(s) image URLs untouched (only /uploads/ is made relative)', () => {
+    const html = renderText('https://cdn.example.com/a.png');
+    expect(html).toContain('src="https://cdn.example.com/a.png"');
   });
 
   it('does not treat /uploads inside a larger token as a relative image', () => {
@@ -209,7 +218,7 @@ describe('renderText — legacy Mara 2 tags', () => {
 
   it('renders an [img] server-relative upload path inline', () => {
     const html = renderText('[img]/uploads/abc123.bin[/img]');
-    expect(html).toContain('<img class="mara-img" src="/uploads/abc123.bin"');
+    expect(html).toContain('<img class="mara-img" src="uploads/abc123.bin"');
   });
 
   it('leaves [img] with non-URL contents as literal text', () => {

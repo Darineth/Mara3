@@ -80,6 +80,15 @@ const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
 function anchor(url: string): string {
   return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
 }
+// A server-relative upload path (`/uploads/<id>.ext`) is emitted WITHOUT its
+// leading slash so the browser resolves it against the page's base URL. That makes
+// uploaded images load whether the app is hosted at the domain root or under a
+// subpath (e.g. https://host/mara/). Absolute http(s) URLs are returned unchanged.
+// Detection elsewhere still keys on the leading-slash form; this only adjusts the
+// rendered href/src (a subpath deployment must be served with a trailing slash).
+function toRenderUrl(url: string): string {
+  return url.startsWith('/uploads/') ? url.slice(1) : url;
+}
 function imageTag(url: string): string {
   // Wrapped in a box with hide/show controls the client wires up; the image can
   // be collapsed to the "Show image" chip and restored. `url` is pre-escaped.
@@ -203,16 +212,17 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
     if (options.images === false) {
       // Images disabled: degrade to a link, honoring the links toggle.
       if (options.links === false) return literal;
-      return stash(anchor(escapeHtml(url)), false);
+      return stash(anchor(escapeHtml(toRenderUrl(url))), false);
     }
-    return stash(imageTag(escapeHtml(url)), true);
+    return stash(imageTag(escapeHtml(toRenderUrl(url))), true);
   });
 
   // Image URLs become inline thumbnails; everything else a link. Images are
   // flagged so they can be lifted out of the text flow and shown below it.
   if (options.links !== false) {
     s = s.replace(MARKED_URL_RE, (_m, bang: string, url: string) => {
-      const safe = escapeHtml(url);
+      // Detection uses the raw url; the rendered href/src uses the base-relative form.
+      const safe = escapeHtml(toRenderUrl(url));
       // A leading `!` forces inline; otherwise auto-detect by extension/format.
       const forced = bang === '!';
       const isImg = options.images !== false && (forced || isImageUrl(url));

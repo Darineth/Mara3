@@ -18,13 +18,16 @@ export function isUploadableImage(file: File): boolean {
 /**
  * POST an image file to the server and return its hosted path. The path is
  * left *relative* (e.g. `/uploads/<id>.png`) on purpose: it travels in the chat
- * message and each client resolves it against the origin it connected to, so
+ * message and each client resolves it against the page base it loaded from, so
  * the image loads correctly regardless of how a given client reaches the server
- * (localhost vs machine name vs proxy). A baked-in absolute URL would force the
- * uploader's hostname onto everyone else and break cross-machine viewing.
+ * (localhost vs machine name vs proxy vs a subpath). A baked-in absolute URL would
+ * force the uploader's hostname onto everyone else and break cross-machine viewing.
+ *
+ * The endpoint itself is requested relative to the document base (`upload`, no
+ * leading slash) so it survives a subpath deployment like `https://host/mara/`.
  */
 export async function uploadImage(file: File, token: string | null): Promise<string> {
-  const res = await fetch('/upload', {
+  const res = await fetch(new URL('upload', document.baseURI), {
     method: 'POST',
     headers: {
       'content-type': file.type,

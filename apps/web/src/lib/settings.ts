@@ -42,15 +42,20 @@ function normalizeMacros(value: unknown): string[] {
 
 /**
  * The WebSocket URL to connect to. When the page is served by the Mara server
- * (the normal case), that is the same origin's `/ws` endpoint — so there is
- * nothing to configure. In Vite dev (port 5173) the dev server proxies `/ws`
- * through to the real server. The localhost fallback covers non-HTTP origins
- * (e.g. a future Tauri build pointed at a local server).
+ * (the normal case), that is the `ws` endpoint resolved relative to the page's
+ * base URL — so it works whether the app is hosted at the domain root or under a
+ * subpath (e.g. `https://host/mara/` → `wss://host/mara/ws`). A subpath deployment
+ * must be served with a trailing slash, as is standard. In Vite dev (port 5173)
+ * the dev server proxies `/ws` through to the real server. The localhost fallback
+ * covers non-HTTP origins (e.g. a Tauri build pointed at a local server).
  */
 export function serverUrl(): string {
-  if (typeof window !== 'undefined' && window.location?.protocol.startsWith('http')) {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}/ws`;
+  if (typeof document !== 'undefined' && window.location?.protocol.startsWith('http')) {
+    // Resolve `ws` against the document base so a subpath prefix is preserved;
+    // `new URL` drops a trailing filename (e.g. /mara/index.html → /mara/ws).
+    const httpUrl = new URL('ws', document.baseURI);
+    const wsProto = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${httpUrl.host}${httpUrl.pathname}${httpUrl.search}`;
   }
   return 'ws://localhost:5050/ws';
 }
