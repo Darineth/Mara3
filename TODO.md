@@ -24,10 +24,18 @@ backlog.
       server-side probe is appealing, ideally with the "send now, upgrade later" flow;
       options:
 
-  - **Query-format heuristic** — also treat a URL as an image when it _declares_ a
+  - [x] **Query-format heuristic** — also treat a URL as an image when it _declares_ a
     format in the query (`?format=jpg`, `&fm=png`, `?ext=webp`). Cheap, no fetching,
     catches Twitter/CDN URLs; does **not** help truly opaque URLs (the gstatic one).
-  - **Server-side Content-Type probe** — on an incoming chat/emote, the server does a
+    _(Done 2026-06-26: `IMAGE_QUERY_RE` in `@mara/chat-render`.)_
+  - [x] **Sender explicit marker** `!<url>` — a bang prefix forces that URL inline
+    regardless of extension/type; the `!` is consumed from the rendered text. Per-URL
+    opt-in by whoever posts it, no fetching/SSRF. Covers the truly opaque URLs the
+    query heuristic can't. _(Done 2026-06-26: `MARKED_URL_RE` in `@mara/chat-render`.)_
+  - [ ] **Server-side Content-Type probe** — _deferred until stable message ids exist
+    (see ROADMAP), so we get the "send now, upgrade-later" flavor for free rather than
+    paying probe latency before every broadcast and taking on SSRF hardening now._ On
+    an incoming chat/emote, the server does a
     `HEAD` (or `GET` with `Range: bytes=0-0`) on the posted URLs, reads `Content-Type`,
     and flags the image ones in the broadcast + stored history; clients render those
     inline (still loading the bytes **directly** from the host — no proxying). Solves
@@ -42,9 +50,6 @@ backlog.
       edit-or-update mechanism we don't have yet (see ROADMAP "stable message ids").
       Without it, the probe has to run _before_ broadcast (adds up to the timeout's
       delay on a novel link; cached/repeat links are instant).
-  - **Sender explicit marker (simplest, no fetching/SSRF)** — a bang prefix `!<url>`
-    (or `![](url)` markdown) forces that URL inline regardless of extension/type. Per-URL
-    opt-in by whoever posts it; composes with the existing extension auto-detect.
   - **Client speculative load** — render any URL as `<img>`, fall back to a link on
     `onerror`. Fully automatic incl. opaque URLs, but speculatively GETs **every**
     posted link from every viewer (privacy/perf/GET-side-effect cost). Not preferred.

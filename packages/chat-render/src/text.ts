@@ -46,6 +46,24 @@ const HTML_ESCAPES: Record<string, string> = {
 // inside a larger token (and an http URL's own `/uploads/` stays part of it).
 const URL_RE = /(?:https?:\/\/|(?<![^\s])\/uploads\/)[^\s<]+[^\s<.,!?;:)]/g;
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]\S*)?$/i;
+// Some hosts carry no file extension but *declare* the image format in the query
+// string instead (`?format=jpg`, `&fm=png`, `?ext=webp`). Treat those as images
+// too — purely a string check, no network fetch. This does not help genuinely
+// opaque URLs (no extension, no declared format); the `!` sender marker covers
+// those. See TODO.md §Features (inline images for extension-less URLs).
+const IMAGE_QUERY_RE = /[?&](?:format|fm|ext)=(?:png|jpe?g|gif|webp|avif|bmp|svg)\b/i;
+
+/** A URL whose path extension OR query-declared format says it's an image. */
+function isImageUrl(url: string): boolean {
+  return IMAGE_RE.test(url) || IMAGE_QUERY_RE.test(url);
+}
+
+// URL pattern with an optional leading `!` sender marker captured separately. A
+// bang immediately before a URL forces it inline as an image regardless of
+// extension/format (the per-URL opt-in escape hatch for opaque image URLs); the
+// `!` itself is consumed so it never shows in the rendered text. Built from
+// URL_RE so the two stay in lock-step.
+const MARKED_URL_RE = new RegExp(`(!?)(${URL_RE.source})`, 'g');
 
 function anchor(url: string): string {
   return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
@@ -153,9 +171,11 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   // Image URLs become inline thumbnails; everything else a link. Images are
   // flagged so they can be lifted out of the text flow and shown below it.
   if (options.links !== false) {
-    s = s.replace(URL_RE, (url) => {
+    s = s.replace(MARKED_URL_RE, (_m, bang: string, url: string) => {
       const safe = escapeHtml(url);
-      const isImg = options.images !== false && IMAGE_RE.test(url);
+      // A leading `!` forces inline; otherwise auto-detect by extension/format.
+      const forced = bang === '!';
+      const isImg = options.images !== false && (forced || isImageUrl(url));
       return stash(isImg ? imageTag(safe) : anchor(safe), isImg);
     });
   }
