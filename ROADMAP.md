@@ -52,8 +52,6 @@ notifications today.
 - [ ] **Arbitrary file attachments** — generalize the image upload pipeline
       (`/upload`, rolling cache, size caps) to any file type. Already flagged in
       PARITY as the remaining piece next to inline images.
-- [ ] **Syntax-highlighted code blocks** — code blocks render today, but
-      monochrome; add language detection/highlighting in `@mara/chat-render`.
 - [ ] **Rich link unfurling** — OpenGraph cards for non-image links (Mara inlines
       image URLs/uploads but not regular-link previews).
 - [ ] **Pinned messages** — pin/unpin per channel, with a pinned view.
@@ -70,9 +68,6 @@ identity-key based.
       and message lines.
 - [ ] **Richer profile / custom status** — bio and a free-form status beyond the
       current away note.
-- [ ] **Group DMs** — multi-party private conversations; today `privateMessage`
-      targets exactly one user token (1:1 only).
-- [ ] **Block a user** — client-side hide, optionally enforced server-side.
 
 ## 5. Search & history
 
@@ -90,7 +85,23 @@ identity-key based.
 - [ ] **Change name / colour / avatar without reconnecting** — today appearance is
       set on the connect screen only.
 
-## 7. Server administration (operator-facing, long term)
+## 7. Appearance & personalization (client-side)
+
+Local display preferences — purely how *this* client renders chat for you, stored
+per-install like the existing theme toggle. No protocol or server changes needed;
+the palette is already CSS-variable driven (`--mara-*`).
+
+- [ ] **Message display style** — let the user choose how messages are laid out: the
+      current compact single-line style, a roomier Discord-like style (avatar +
+      grouped author headers + more spacing), and room for others (e.g. IRC-style).
+      A per-client setting; the renderer (`@mara/chat-render` + `ChatView`) switches
+      layout from it.
+- [ ] **Detailed theme / colour choices** — go beyond the System / Dark / Light
+      toggle: pick an accent colour, choose from preset themes, and (longer term)
+      tweak individual palette tokens (background, text, link, …). Mostly a settings
+      UI over the existing `--mara-*` custom properties.
+
+## 8. Server administration (operator-facing, long term)
 
 Tools for whoever **runs** the server, gated by an operator secret rather than an
 in-app role model — distinct from the "Moderation/admin platform" under *Not planned*
@@ -103,6 +114,24 @@ is operator-scoped management of one's own server, not in-app moderation powers.
       logs, upload-cache usage, and basic actions (drop a connection, clear an upload,
       prune history), plus runtime config (port, payload/size caps, history retention).
       Operator-only — it introduces no per-user roles or in-app moderation.
+
+## Open questions — Mara 2 behaviours (community input)
+
+Things Mara 2 did that Mara 3 deliberately changed or dropped. Whether to bring
+them back is genuinely undecided — raised here for the community to weigh in on,
+rather than promised or ruled out.
+
+- **User-selectable fonts** — Mara 2 let users choose a font for their messages;
+  Mara 3 renders everyone in one consistent UI font. Bring back a per-user (or
+  per-client) font choice?
+- **Message text in the author's colour** — Mara 2 coloured the whole message body
+  in the author's colour; Mara 3 colours only the author's name and keeps body text
+  in the default foreground (more legible, less noisy). Offer the old behaviour as an
+  option?
+- **Inline colour tags** — Mara 2 supported colour tags in message text (e.g.
+  `[color=…]…[/color]`) so users could colour parts of a message; Mara 3's renderer
+  drops them by design. Add them back, perhaps behind a setting? (Would extend the
+  legacy-tag work already in `@mara/chat-render`.)
 
 ---
 

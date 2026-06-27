@@ -38,7 +38,6 @@ plugin data, response/error. ✅
 | Timestamps                           | ✅     | always shown; server-stamped, so consistent across clients                       |
 | Message history / backlog            | ✅     | server replays recent channel messages on join; persisted to disk                |
 | Discord-style markdown               | ✅     | bold/italic/underline/strike/spoiler/code                                        |
-| Emoticons                            | ◻      | implemented but off by default (opt-in via render option)                        |
 | URL linkification                    | ✅     | safe anchors, HTML-escaped                                                       |
 | Inline images (by URL)               | ✅     | image URLs render as a clickable thumbnail                                       |
 | Image upload (drag-drop / paste)     | ✅     | hosted by the server; rolling cache, per-file + total size cap                   |
