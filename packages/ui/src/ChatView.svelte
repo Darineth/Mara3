@@ -37,7 +37,15 @@
       authorName: user?.name ?? (line.from !== null ? `#${line.from}` : ''),
       authorColor: user?.color ?? '#888888',
       text: line.text,
-      timestamp: new Date(line.at).toLocaleTimeString(),
+      // 2-digit fields keep every timestamp the same character count (the hour is
+      // otherwise 1 or 2 digits, which shifts the message after it). The locale's
+      // 12-/24-hour preference is preserved. Paired with tabular-nums in the CSS so
+      // the digits are fixed-width and the message column never moves.
+      timestamp: new Date(line.at).toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
     };
   }
 
@@ -151,6 +159,9 @@
     word-wrap: break-word;
   }
   .mara-chatview :global(.mara-ts) {
+    /* inline-block + tabular digits so the timestamp occupies a stable width and
+       the author/message after it always starts at the same x. */
+    display: inline-block;
     opacity: 0.45;
     font-size: 0.78em;
     font-variant-numeric: tabular-nums;
