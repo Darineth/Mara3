@@ -1,16 +1,23 @@
-// Single-command version bump across Mara's polyglot manifests. The version lives in
-// three ecosystems that don't share a source of truth — npm (every workspace
-// package.json), Cargo (each Tauri client's Cargo.toml + Cargo.lock), and Tauri
-// (each tauri.conf.json, which stamps the exe's Windows FileVersion) — so a release
-// has to move all of them in lockstep. This keeps that one command, and fails loudly
-// if any manifest has drifted out of lockstep so a stray version can't ship silently.
+// Version bump across Mara's manifests, split into two independently-released TRACKS:
 //
-//   node scripts/bump-version.mjs 3.0.2     bump every manifest to 3.0.2
-//   node scripts/bump-version.mjs --check    verify they all agree (CI/pre-flight); no writes
-//   node scripts/bump-version.mjs 3.0.2 --force   bump even if currently drifted (re-aligns all)
+//   app     server + web + the product (root) version — bumped on server/web releases.
+//   client  both desktop shells — bumped ONLY on native client changes. This is what
+//           the update nudge + the titlebar/picker key off; an app release must NOT
+//           move it, or installed clients would be told to re-download an identical
+//           client.
 //
-// Wired as `pnpm bump <version>` / `pnpm bump --check` (see root package.json).
-// The source of truth for "the current version" is the root package.json.
+// Each track spans the three manifest ecosystems it touches (npm package.json, Cargo
+// Cargo.toml/Cargo.lock, Tauri tauri.conf.json) and is bumped in lockstep within the
+// track. The private packages/* are intentionally NOT managed here — they're
+// workspace-linked, their versions are never read, so they stay frozen.
+//
+//   node scripts/bump-version.mjs app 3.1.0        bump the app track to 3.1.0
+//   node scripts/bump-version.mjs client 3.0.2     bump the client track to 3.0.2
+//   node scripts/bump-version.mjs --check          verify every track is internally in lockstep
+//   node scripts/bump-version.mjs client --check    ...just the client track
+//   node scripts/bump-version.mjs app 3.1.0 --force  bump even if the track is currently drifted
+//
+// Wired as `pnpm bump <track> <version>` / `pnpm version:check` (root package.json).
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -18,44 +25,43 @@ import { join, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 
 // Each target declares how to read its version and how to rewrite it in place — string
-// surgery, not a reserialize, so formatting/comments are preserved. A target whose
-// pattern doesn't match is a hard error (loud miss), never a silent skip.
-const JSON_PKGS = [
-  'package.json',
-  'packages/ui/package.json',
-  'packages/protocol/package.json',
-  'packages/chat-render/package.json',
-  'packages/client-core/package.json',
-  'packages/plugin-api/package.json',
-  'apps/web/package.json',
-  'apps/server/package.json',
-  'apps/shell/package.json',
-  'apps/client-legacy/package.json',
-];
-
-const targets = [
-  // npm: the top-level "version" of each workspace package. The only "version" key in a
-  // package.json is the package's own (deps are name->range), so first-match is safe.
-  ...JSON_PKGS.map((file) => ({ file, kind: 'json', get: (o) => o.version })),
-  // Tauri: shell config has a top-level version; legacy nests it under "package".
-  { file: 'apps/shell/src-tauri/tauri.conf.json', kind: 'json', get: (o) => o.version },
-  {
-    file: 'apps/client-legacy/src-tauri/tauri.conf.json',
-    kind: 'json',
-    get: (o) => o.package.version,
+// surgery, not a reserialize, so formatting/comments are preserved. `canonical` is the
+// track's reference file (drift = a target disagreeing with it).
+const TRACKS = {
+  app: {
+    desc: 'server + web + product (root)',
+    canonical: 'package.json',
+    targets: [
+      { file: 'package.json', kind: 'json', get: (o) => o.version },
+      { file: 'apps/server/package.json', kind: 'json', get: (o) => o.version },
+      { file: 'apps/web/package.json', kind: 'json', get: (o) => o.version },
+    ],
   },
-  // Cargo: the [package] version baked into the exe as CARGO_PKG_VERSION.
-  { file: 'apps/shell/src-tauri/Cargo.toml', kind: 'cargo-toml' },
-  { file: 'apps/client-legacy/src-tauri/Cargo.toml', kind: 'cargo-toml' },
-  // Cargo.lock: the same crate's recorded version (or cargo rewrites it on next build).
-  { file: 'apps/shell/src-tauri/Cargo.lock', kind: 'cargo-lock', crate: 'mara-shell' },
-  {
-    file: 'apps/client-legacy/src-tauri/Cargo.lock',
-    kind: 'cargo-lock',
-    crate: 'mara-client-legacy',
+  client: {
+    desc: 'both desktop shells (drives the update nudge)',
+    canonical: 'apps/shell/src-tauri/Cargo.toml',
+    targets: [
+      { file: 'apps/shell/package.json', kind: 'json', get: (o) => o.version },
+      { file: 'apps/client-legacy/package.json', kind: 'json', get: (o) => o.version },
+      { file: 'apps/shell/src-tauri/tauri.conf.json', kind: 'json', get: (o) => o.version },
+      {
+        file: 'apps/client-legacy/src-tauri/tauri.conf.json',
+        kind: 'json',
+        get: (o) => o.package.version,
+      },
+      { file: 'apps/shell/src-tauri/Cargo.toml', kind: 'cargo-toml' },
+      { file: 'apps/client-legacy/src-tauri/Cargo.toml', kind: 'cargo-toml' },
+      { file: 'apps/shell/src-tauri/Cargo.lock', kind: 'cargo-lock', crate: 'mara-shell' },
+      {
+        file: 'apps/client-legacy/src-tauri/Cargo.lock',
+        kind: 'cargo-lock',
+        crate: 'mara-client-legacy',
+      },
+    ],
   },
-];
+};
 
+const TRACK_NAMES = Object.keys(TRACKS);
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 /** Read a target's current version. Throws (loud) if the manifest shape is unexpected. */
@@ -96,48 +102,83 @@ function rewrite(src, t, from, to) {
   );
 }
 
+/** Load a track's targets and read each current version. */
+function loadTrack(track) {
+  return TRACKS[track].targets.map((t) => {
+    const path = join(root, t.file);
+    const src = readFileSync(path, 'utf8');
+    return { t, path, src, version: readVersion(src, t) };
+  });
+}
+
+/** {current, drift[]} for a track relative to its canonical file. */
+function inspect(track) {
+  const loaded = loadTrack(track);
+  const current = loaded.find((l) => l.t.file === TRACKS[track].canonical).version;
+  return { loaded, current, drift: loaded.filter((l) => l.version !== current) };
+}
+
+function reportDrift(track, current, drift) {
+  console.error(
+    `[${track}] version drift — these disagree with ${TRACKS[track].canonical} (${current}):`,
+  );
+  for (const l of drift) console.error(`  ${l.version.padEnd(12)} ${l.t.file}`);
+}
+
 // --- run ------------------------------------------------------------------------
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
 const check = args.includes('--check');
-const newVersion = args.find((a) => !a.startsWith('--'));
+const positional = args.filter((a) => !a.startsWith('--'));
+const track = positional[0];
+const newVersion = positional[1];
 
-if (!check && !newVersion) {
-  console.error('Usage: node scripts/bump-version.mjs <version> [--force]   |   --check');
-  process.exit(2);
+function usage(code) {
+  console.error('Usage: node scripts/bump-version.mjs <app|client> <version> [--force]');
+  console.error('       node scripts/bump-version.mjs [<app|client>] --check');
+  for (const t of TRACK_NAMES) console.error(`  ${t.padEnd(7)} ${TRACKS[t].desc}`);
+  process.exit(code);
 }
-if (newVersion && !SEMVER.test(newVersion)) {
+
+// --check with no track: verify every track is internally in lockstep.
+if (check && !track) {
+  let bad = false;
+  for (const t of TRACK_NAMES) {
+    const { current, drift } = inspect(t);
+    if (drift.length) {
+      bad = true;
+      reportDrift(t, current, drift);
+    } else {
+      console.log(`[${t}] lockstep at ${current}  (${TRACKS[t].targets.length} files)`);
+    }
+  }
+  process.exit(bad ? 1 : 0);
+}
+
+if (!track || !TRACK_NAMES.includes(track)) usage(2);
+
+if (check) {
+  const { current, drift } = inspect(track);
+  if (drift.length) {
+    reportDrift(track, current, drift);
+    process.exit(1);
+  }
+  console.log(`[${track}] lockstep at ${current}  (${TRACKS[track].targets.length} files)`);
+  process.exit(0);
+}
+
+if (!newVersion) usage(2);
+if (!SEMVER.test(newVersion)) {
   console.error(`Not a valid semver version: "${newVersion}" (expected e.g. 3.0.2)`);
   process.exit(2);
 }
 
-// Load every target and read its current version up front.
-const loaded = targets.map((t) => {
-  const path = join(root, t.file);
-  const src = readFileSync(path, 'utf8');
-  return { t, path, src, version: readVersion(src, t) };
-});
-
-const current = loaded.find((l) => l.t.file === 'package.json').version;
-const drift = loaded.filter((l) => l.version !== current);
-
-if (drift.length) {
-  console.error(`Version drift — these disagree with root package.json (${current}):`);
-  for (const l of drift) console.error(`  ${l.version.padEnd(10)} ${l.t.file}`);
-  if (check || !force) {
-    console.error(
-      check
-        ? '\nManifests are NOT in lockstep.'
-        : '\nRefusing to bump on drift. Re-run with --force to re-align everything to the new version.',
-    );
-    process.exit(1);
-  }
-}
-
-if (check) {
-  console.log(`All ${loaded.length} manifests in lockstep at ${current}.`);
-  process.exit(0);
+const { loaded, current, drift } = inspect(track);
+if (drift.length && !force) {
+  reportDrift(track, current, drift);
+  console.error('\nRefusing to bump on drift. Re-run with --force to re-align the whole track.');
+  process.exit(1);
 }
 
 let changed = 0;
@@ -156,4 +197,4 @@ for (const l of loaded) {
   console.log(`  ok    ${l.t.file}  ${l.version} -> ${newVersion}`);
 }
 
-console.log(`\nBumped ${changed} manifest(s) ${current} -> ${newVersion}.`);
+console.log(`\n[${track}] bumped ${changed} file(s) ${current} -> ${newVersion}.`);

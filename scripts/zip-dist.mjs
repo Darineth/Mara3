@@ -40,6 +40,10 @@ const PRODUCT_VERSION = pkg.version;
 // `latest` also writes a stable-named copy (<name>-latest.zip) so an operator can link
 // the *current* client from a permanent URL (e.g. in a server MOTD) without the
 // version-stamped filename breaking the link each release.
+// `versionFrom` makes a component version itself off the CLIENT track (read from its
+// tauri.conf.json) rather than the app/product version — so its zip name + update
+// manifest reflect the client's own version, and an app-only release never bumps it or
+// false-fires the update nudge. Components without it use the product version.
 const COMPONENTS = [
   {
     dir: 'server',
@@ -58,6 +62,7 @@ const COMPONENTS = [
     bundlesNode: false,
     flatten: true,
     latest: true,
+    versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
   },
   {
     dir: 'desktop-legacy',
@@ -68,6 +73,10 @@ const COMPONENTS = [
     bundlesNode: false,
     flatten: true,
     latest: true,
+    versionFrom: {
+      file: 'apps/client-legacy/src-tauri/tauri.conf.json',
+      path: ['package', 'version'],
+    },
   },
   {
     dir: 'web',
@@ -126,6 +135,20 @@ function readFileVersion(exePath) {
   );
 }
 
+/** A component's own version: the client track (its tauri.conf, via `versionFrom`)
+ *  for the desktop clients, else the app/product version. Falls back to the product
+ *  version if the file is missing/unreadable. */
+function componentVersion(comp) {
+  if (!comp.versionFrom) return PRODUCT_VERSION;
+  try {
+    const o = JSON.parse(readFileSync(join(root, comp.versionFrom.file), 'utf8'));
+    const v = comp.versionFrom.path.reduce((acc, k) => (acc == null ? acc : acc[k]), o);
+    return typeof v === 'string' && v ? v : PRODUCT_VERSION;
+  } catch {
+    return PRODUCT_VERSION;
+  }
+}
+
 function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
@@ -176,9 +199,12 @@ const nodeVersion = process.version;
 const builtAt = new Date().toISOString();
 // Compact UTC filename stamp, e.g. 20260626-2253, from the ISO timestamp.
 const stamp = builtAt.replace(/[-:]/g, '').slice(0, 13).replace('T', '-');
-const verTag = [PRODUCT_VERSION, stamp, gitCommit && `${gitCommit}${gitDirty ? '-dirty' : ''}`]
-  .filter(Boolean)
-  .join('-');
+// <version>-<utc stamp>-<commit[-dirty]>. Per-component: client zips carry the client
+// version, others the product version (see componentVersion). verTag is the release-wide
+// (product) tag, used for the top-level manifest summary + the log line.
+const verTagFor = (v) =>
+  [v, stamp, gitCommit && `${gitCommit}${gitDirty ? '-dirty' : ''}`].filter(Boolean).join('-');
+const verTag = verTagFor(PRODUCT_VERSION);
 
 if (!existsSync(dist)) {
   console.error(`zip-dist: ${dist} does not exist — run pnpm package / package:legacy first.`);
@@ -225,7 +251,7 @@ for (const comp of COMPONENTS) {
       .join('\n') + '\n',
   );
 
-  const zipName = `${comp.name}-v${verTag}.zip`;
+  const zipName = `${comp.name}-v${verTagFor(componentVersion(comp))}.zip`;
   const zipPath = join(outDir, zipName);
   try {
     zip(comp.dir, zipPath, comp.flatten);
@@ -283,8 +309,11 @@ for (const { component, manifest, label } of [
 ]) {
   const archive = archives.find((a) => a.component === component);
   if (!archive) continue;
+  // The manifest version is the CLIENT version (not the product version), so the nudge
+  // compares like-for-like against the installed shell's baked version — an app-only
+  // release never makes installed clients think a new client exists.
   const latest = {
-    version: PRODUCT_VERSION,
+    version: componentVersion(COMPONENTS.find((c) => c.name === component)),
     url: `${updateBase}/${archive.file}`,
     notes: '',
     pub_date: builtAt,

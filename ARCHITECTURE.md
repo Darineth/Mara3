@@ -143,16 +143,22 @@ pnpm build        # all packages + apps, in dependency order (Turborepo)   build
 pnpm test         # full test suite (Vitest across packages)               test.bat
 pnpm typecheck    # type-check every workspace
 pnpm lint         # lint/type every workspace
-pnpm bump 3.0.2   # set the release version across every manifest in lockstep
-pnpm version:check # verify all manifests agree (no writes; for CI/pre-flight)
-pnpm icons:gen    # regenerate all app icons + logos from resources/ master art
+pnpm bump app 3.1.0    # bump the app (server/web) track
+pnpm bump client 3.0.2 # bump the client (desktop shells) track
+pnpm version:check     # verify each track is internally in lockstep (no writes; for CI)
+pnpm icons:gen         # regenerate all app icons + logos from resources/ master art
 ```
 
-> **Versioning:** the version lives in three ecosystems with no shared source of truth —
-> npm (every workspace `package.json`), Cargo (each Tauri client's `Cargo.toml` +
-> `Cargo.lock`), and Tauri (each `tauri.conf.json`, which stamps the exe's Windows
-> FileVersion). `scripts/bump-version.mjs` (via `pnpm bump`) moves all of them at once
-> and refuses to run on drift, so a stray version can't ship silently.
+> **Versioning — two tracks:** Mara releases on two cadences, so versions are split
+> rather than one lockstep number. **`app`** = server + web + the product (root) version,
+> bumped on server/web releases — the web UI auto-updates (the server serves it; clients
+> reload), so this never needs a client download. **`client`** = both desktop shells
+> (their `Cargo.toml`/`Cargo.lock` + `tauri.conf.json` + `package.json`), bumped **only**
+> on native client changes; this is what the update nudge + titlebar key off, and the
+> client update manifests (`latest*.json`) take their version from here — so an app
+> release can't false-fire the nudge. `scripts/bump-version.mjs` (`pnpm bump <track> <ver>`)
+> moves a track in lockstep and refuses to run on drift. The private `packages/*` are
+> workspace-linked and their versions are never read, so they stay frozen (out of the bump).
 
 > **Icons/logos:** every app icon, picker/web splash logo, web favicon, and the server
 > `.ico` derive from the master art in `resources/Mara3Logo1_<Color>_1000.png` (Blue =
