@@ -143,7 +143,22 @@ pnpm build        # all packages + apps, in dependency order (Turborepo)   build
 pnpm test         # full test suite (Vitest across packages)               test.bat
 pnpm typecheck    # type-check every workspace
 pnpm lint         # lint/type every workspace
+pnpm bump 3.0.2   # set the release version across every manifest in lockstep
+pnpm version:check # verify all manifests agree (no writes; for CI/pre-flight)
+pnpm icons:gen    # regenerate all app icons + logos from resources/ master art
 ```
+
+> **Versioning:** the version lives in three ecosystems with no shared source of truth —
+> npm (every workspace `package.json`), Cargo (each Tauri client's `Cargo.toml` +
+> `Cargo.lock`), and Tauri (each `tauri.conf.json`, which stamps the exe's Windows
+> FileVersion). `scripts/bump-version.mjs` (via `pnpm bump`) moves all of them at once
+> and refuses to run on drift, so a stray version can't ship silently.
+
+> **Icons/logos:** every app icon, picker/web splash logo, web favicon, and the server
+> `.ico` derive from the master art in `resources/Mara3Logo1_<Color>_1000.png` (Blue =
+> desktop/web, Purple = Win7 legacy, Green = server). Edit the source PNGs, then
+> `pnpm icons:gen` (`scripts/generate-icons.mjs`) regenerates everything via `tauri icon`
+> in one shot — never hand-edit the generated icons.
 
 ### Run it (single port — recommended)
 
