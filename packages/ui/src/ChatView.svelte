@@ -230,15 +230,12 @@
     object-fit: contain;
     cursor: zoom-in;
   }
-  .mara-chatview :global(.mara-imgs) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-top: 0.15rem;
-  }
   .mara-chatview :global(.mara-img-box) {
     position: relative;
     display: inline-block;
+    /* Align the image's top with the surrounding inline text, not the inline-block
+       baseline (which would drop the text to the image's bottom edge). */
+    vertical-align: top;
     max-width: 100%;
   }
   .mara-chatview :global(.mara-img-hide) {

@@ -2,10 +2,10 @@
  * Text → safe HTML pipeline (ports Mara 2's `MTextProcessors` / `MHtmlEscaper`).
  *
  * Order is deliberate:
- *  1. Lift code spans, legacy `[img]…[/img]` tags, and URLs out of the RAW text
- *     into placeholders, escaping each one's contents as it is stashed (URLs must
- *     be matched pre-escape so a trailing `&` isn't split into a stranded
- *     `&amp;` `;`).
+ *  1. Lift code spans, legacy `[img]…[/img]` tags, Markdown `![alt](url)` images,
+ *     and URLs out of the RAW text into placeholders, escaping each one's contents
+ *     as it is stashed (URLs must be matched pre-escape so a trailing `&` isn't
+ *     split into a stranded `&amp;` `;`). Each placeholder is restored in place.
  *  2. HTML-escape everything that remains.
  *  3. Apply Discord-style markdown (and the legacy `[spoiler]…[/spoiler]` tag) to
  *     the escaped text.
@@ -76,6 +76,10 @@ const IMG_TAG_RE = /\[img\]([\s\S]+?)\[\/img\]/gi;
 // or server-relative upload URL with no whitespace/`<` — same scheme allowlist as
 // auto-detected links, so the tag can't smuggle a `javascript:`/`data:` src.
 const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
+// Standard Markdown image syntax `![alt](url)`, in addition to the legacy `[img]`
+// tag and the `!`/auto-detect forms. `alt` is optional; the URL (no spaces or `)`)
+// is validated against IMG_URL_RE before it's honored.
+const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 
 function anchor(url: string): string {
   return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
@@ -89,13 +93,14 @@ function anchor(url: string): string {
 function toRenderUrl(url: string): string {
   return url.startsWith('/uploads/') ? url.slice(1) : url;
 }
-function imageTag(url: string): string {
+function imageTag(url: string, alt = ''): string {
   // Wrapped in a box with hide/show controls the client wires up; the image can
-  // be collapsed to the "Show image" chip and restored. `url` is pre-escaped.
+  // be collapsed to the "Show image" chip and restored. `url` and `alt` are
+  // pre-escaped (alt carries the Markdown `![alt](…)` text when present).
   return (
     `<span class="mara-img-box">` +
     `<a href="${url}" class="mara-img-link" target="_blank" rel="noopener noreferrer">` +
-    `<img class="mara-img" src="${url}" alt="" loading="lazy" /></a>` +
+    `<img class="mara-img" src="${url}" alt="${alt}" loading="lazy" /></a>` +
     `<button type="button" class="mara-img-hide" aria-label="Hide image">Hide</button>` +
     `<button type="button" class="mara-img-show" aria-label="Show image">🖼 Show image</button>` +
     `</span>`
@@ -179,10 +184,8 @@ export interface RenderTextOptions {
 /** Turn a raw message body into safe, display-ready HTML. */
 export function renderText(raw: string, options: RenderTextOptions = {}): string {
   const tokens: string[] = [];
-  const imageTokens = new Set<number>();
-  const stash = (html: string, isImage = false): string => {
+  const stash = (html: string): string => {
     tokens.push(html);
-    if (isImage) imageTokens.add(tokens.length - 1);
     return `${SENTINEL}${tokens.length - 1}${SENTINEL}`;
   };
 
@@ -212,13 +215,28 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
     if (options.images === false) {
       // Images disabled: degrade to a link, honoring the links toggle.
       if (options.links === false) return literal;
-      return stash(anchor(escapeHtml(toRenderUrl(url))), false);
+      return stash(anchor(escapeHtml(toRenderUrl(url))));
     }
-    return stash(imageTag(escapeHtml(toRenderUrl(url))), true);
+    return stash(imageTag(escapeHtml(toRenderUrl(url))));
   });
 
-  // Image URLs become inline thumbnails; everything else a link. Images are
-  // flagged so they can be lifted out of the text flow and shown below it.
+  // Markdown image syntax ![alt](url): force the URL inline as an image regardless
+  // of extension — like [img] but standard Markdown and carrying alt text. Same
+  // clean http(s)/upload scheme allowlist; honors the images/links toggles. Runs
+  // before the URL pass so the inner URL isn't separately linkified.
+  s = s.replace(IMG_MD_RE, (literal, alt: string, rawUrl: string) => {
+    const url = rawUrl.trim();
+    if (!IMG_URL_RE.test(url)) return literal; // not a clean URL → leave as text
+    const safe = escapeHtml(toRenderUrl(url));
+    if (options.images === false) {
+      if (options.links === false) return literal;
+      return stash(anchor(safe));
+    }
+    return stash(imageTag(safe, escapeHtml(alt)));
+  });
+
+  // Image URLs become inline thumbnails; everything else a link. Both render in
+  // place, where the URL appeared in the message.
   if (options.links !== false) {
     s = s.replace(MARKED_URL_RE, (_m, bang: string, url: string) => {
       // Detection uses the raw url; the rendered href/src uses the base-relative form.
@@ -226,7 +244,7 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
       // A leading `!` forces inline; otherwise auto-detect by extension/format.
       const forced = bang === '!';
       const isImg = options.images !== false && (forced || isImageUrl(url));
-      return stash(isImg ? imageTag(safe) : anchor(safe), isImg);
+      return stash(isImg ? imageTag(safe) : anchor(safe));
     });
   }
 
@@ -236,19 +254,8 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
 
   if (options.markdown !== false) s = applyMarkdown(s);
 
-  // Restore placeholders, but collect image tags separately so they render in a
-  // block below the message text rather than inline within it.
-  const images: string[] = [];
-  let body = s.replace(RESTORE_RE, (_m, i: string) => {
-    const idx = Number(i);
-    if (imageTokens.has(idx)) {
-      images.push(tokens[idx] ?? '');
-      return '';
-    }
-    return tokens[idx] ?? '';
-  });
-
-  if (images.length === 0) return body;
-  body = body.replace(/\s+$/, ''); // drop whitespace stranded where images were
-  return `${body}<span class="mara-imgs">${images.join('')}</span>`;
+  // Restore every placeholder in a SINGLE non-recursive pass (see the file header).
+  // Images restore in place — where their URL/tag/Markdown appeared in the message —
+  // rather than being lifted to a block at the end.
+  return s.replace(RESTORE_RE, (_m, i: string) => tokens[Number(i)] ?? '');
 }

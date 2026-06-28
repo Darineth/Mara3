@@ -132,7 +132,15 @@ describe('renderText — safety + links', () => {
     expect(html).toContain('<img class="mara-img" src="uploads/abc123.png"');
     expect(html).not.toContain('src="/uploads/'); // not root-absolute
     expect(html).toContain('href="uploads/abc123.png"'); // lightbox link too
-    expect(html).toContain('here you go'); // text stays, image lifted below
+    expect(html).toContain('here you go'); // surrounding text stays
+  });
+
+  it('renders an inline image IN PLACE, between the surrounding text', () => {
+    const html = renderText('before https://example.com/cat.png after');
+    // The image sits where the URL was: "before" precedes it, "after" follows it —
+    // not lifted into a block at the end.
+    expect(html).toMatch(/before[\s\S]*<img class="mara-img"[\s\S]*after/);
+    expect(html).not.toContain('mara-imgs'); // no hoist wrapper
   });
 
   it('leaves absolute http(s) image URLs untouched (only /uploads/ is made relative)', () => {
@@ -205,6 +213,46 @@ describe('renderText — Discord markdown', () => {
     expect(html).toContain('<strong>see ');
     expect(html).toContain('<a href="http://x.com"');
     expect(html).toContain('now</strong>');
+  });
+});
+
+describe('renderText — Markdown image syntax', () => {
+  it('renders ![alt](url) inline as an image with the alt text', () => {
+    const html = renderText('look ![a cat](https://example.com/cat.png) here');
+    expect(html).toContain('<img class="mara-img" src="https://example.com/cat.png"');
+    expect(html).toContain('alt="a cat"');
+    expect(html).toMatch(/look[\s\S]*<img[\s\S]*here/); // in place
+    expect(html).not.toContain('!['); // the markdown syntax is consumed
+  });
+
+  it('forces ![](url) inline regardless of extension, with empty alt', () => {
+    const html = renderText('![](https://example.com/opaque)');
+    expect(html).toContain('<img class="mara-img" src="https://example.com/opaque"');
+    expect(html).toContain('alt=""');
+  });
+
+  it('renders a ![alt](/uploads/…) path as a base-relative inline image', () => {
+    const html = renderText('![shot](/uploads/abc123.png)');
+    expect(html).toContain('<img class="mara-img" src="uploads/abc123.png"');
+    expect(html).toContain('alt="shot"');
+  });
+
+  it('escapes the alt text (no attribute breakout)', () => {
+    const html = renderText('![x"onerror="alert(1)](https://example.com/p.png)');
+    expect(html).not.toContain('"onerror="');
+    expect(html).toContain('&quot;');
+  });
+
+  it('degrades ![alt](url) to a link when images are disabled', () => {
+    const html = renderText('![cat](https://example.com/cat.png)', { images: false });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('<a href="https://example.com/cat.png"');
+  });
+
+  it('leaves ![alt](url) literal when the URL is not an allowed scheme', () => {
+    const html = renderText('![x](javascript:alert(1))');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('src="javascript:');
   });
 });
 
