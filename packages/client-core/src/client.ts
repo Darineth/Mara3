@@ -107,6 +107,9 @@ export class MaraClient {
     this.reconnectMaxDelayMs = opts.reconnectMaxDelayMs ?? 10_000;
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 25_000;
     this.historyLimit = opts.historyLimit ?? 500;
+    // Seed the intended set with the persisted "channels you were in" so the first
+    // connect rejoins them (see the welcome handler).
+    for (const name of opts.initialChannels ?? []) this.intendedChannels.add(name);
   }
 
   // -- lifecycle ------------------------------------------------------------
@@ -285,9 +288,6 @@ export class MaraClient {
   private handle(msg: ServerMessage): void {
     switch (msg.type) {
       case 'welcome': {
-        // Capture reconnect-ness before resetting attempts, so we know whether
-        // to re-join channels below.
-        const wasReconnect = this.reconnectAttempts > 0;
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
         this._motd.set(msg.motd ?? '');
@@ -298,12 +298,13 @@ export class MaraClient {
         this.setStatus('active');
         this.startHeartbeat();
         this.events.emit('connected', { token: msg.self.token, name: msg.self.name });
-        // On a reconnect the server doesn't restore our channel membership, so
-        // re-join everything we intended to be in. channelJoined then reconciles
-        // any reassigned tokens (see below).
-        if (wasReconnect)
-          for (const name of this.intendedChannels)
-            this.send({ type: 'joinChannel', channel: name });
+        // (Re)join every channel we intend to be in. On a fresh session that's the
+        // persisted "channels you were in" (seeded via opts.initialChannels); on a
+        // reconnect it's whatever we accumulated, since the server doesn't restore
+        // membership. The server also auto-joins its default channel — a duplicate
+        // join is idempotent (it just re-snapshots; channelJoined below reconciles any
+        // reassigned tokens, and the joinAnnounced guard avoids a repeated join line).
+        for (const name of this.intendedChannels) this.send({ type: 'joinChannel', channel: name });
         return;
       }
 

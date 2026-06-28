@@ -73,6 +73,27 @@ describe('handshake + session', () => {
 });
 
 describe('channels + chat', () => {
+  it('rejoins the persisted initialChannels on a fresh connect', async () => {
+    // Server has no default channel (defaultChannel: ''), so the only joins are the
+    // ones the client replays from its persisted set.
+    const client = makeClient('alice', { initialChannels: ['lobby', 'random'] });
+    const names = new Set<string>();
+    const bothJoined = new Promise<void>((resolve) => {
+      client.events.on('channelJoined', (ch) => {
+        names.add(ch.name);
+        if (names.size === 2) resolve();
+      });
+    });
+    client.connect();
+    await bothJoined;
+    expect([...names].sort()).toEqual(['lobby', 'random']);
+    expect([...get(client.channels).values()].map((c) => c.name).sort()).toEqual([
+      'lobby',
+      'random',
+    ]);
+    client.disconnect();
+  });
+
   it('tracks channel state and receives its own chat echo', async () => {
     const client = makeClient('alice');
     const me = await connected(client);

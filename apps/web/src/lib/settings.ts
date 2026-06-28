@@ -19,6 +19,9 @@ export interface MaraSettings {
    * reconnects and restarts.
    */
   identityKey: string;
+  /** Channel names the user was in, persisted so a fresh session rejoins them
+   *  (seeded into the client as `initialChannels`). */
+  channels: string[];
 }
 
 const KEY = 'mara3.settings';
@@ -38,6 +41,12 @@ function normalizeMacros(value: unknown): string[] {
   return Array.from({ length: MACRO_COUNT }, (_, i) =>
     typeof source[i] === 'string' ? (source[i] as string) : '',
   );
+}
+
+/** Coerce stored channels to a fresh array of (non-empty) string names. */
+function normalizeChannels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((c): c is string => typeof c === 'string' && c.length > 0);
 }
 
 /**
@@ -68,6 +77,7 @@ export const defaultSettings: MaraSettings = {
   theme: 'system',
   macros: normalizeMacros([]),
   identityKey: '',
+  channels: [],
 };
 
 /** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;
@@ -86,10 +96,11 @@ export function applyTheme(theme: Theme): void {
  * must never block startup.
  */
 export function loadSettings(): MaraSettings {
-  // Fresh copies clone `macros` and mint a new identity key.
+  // Fresh copies clone `macros`/`channels` and mint a new identity key.
   const fresh = (): MaraSettings => ({
     ...defaultSettings,
     macros: normalizeMacros([]),
+    channels: [],
     identityKey: newIdentityKey(),
   });
   if (typeof localStorage === 'undefined') return fresh();
@@ -101,6 +112,7 @@ export function loadSettings(): MaraSettings {
       ...defaultSettings,
       ...saved,
       macros: normalizeMacros(saved.macros),
+      channels: normalizeChannels(saved.channels),
       // Keep the stored key; mint one for installs from before this field existed.
       identityKey: saved.identityKey || newIdentityKey(),
     };

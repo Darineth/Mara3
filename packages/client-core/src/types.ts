@@ -63,6 +63,9 @@ export interface ClientOptions {
   heartbeatIntervalMs?: number;
   /** Max retained lines per conversation. */
   historyLimit?: number;
+  /** Channel names to (re)join on connect — the persisted "channels you were in",
+   *  so a fresh session restores them. Rejoining is idempotent server-side. */
+  initialChannels?: string[];
   /** Plugin pipeline applied to outgoing and incoming chat/emote text. */
   plugins?: TextPipeline;
   /** Clock injection point (defaults to Date.now); lets tests drive timestamps/RTT. */

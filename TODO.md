@@ -9,10 +9,15 @@ backlog.
 
 The remaining blockers before tagging **v3.0.0** and publishing the first build:
 
-- [ ] **Rejoin the channels you were in.** On reconnect (and on relaunch) automatically
+- [x] **Rejoin the channels you were in.** On reconnect (and on relaunch) automatically
       re-join the set of channels the user had open, instead of resetting to just the
       default channel. Persist the joined-channel set client-side and replay the joins once
       the session is active; restore the active tab where possible.
+      _(Done — persisted `channels` in `MaraSettings`, seeded into the client as
+      `initialChannels` and (re)joined on every `welcome` (idempotent with the server's
+      default-channel auto-join). Leaving drops a channel from the set. The active tab
+      lands on the default/main channel after connect — silently-rejoined channels stay
+      background tabs — while a deliberate join via `+` still focuses it.)_
 
 - [ ] **Formatting help screen.** A dialog listing the message-formatting syntax — markdown
       (`**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``, `||spoiler||`),

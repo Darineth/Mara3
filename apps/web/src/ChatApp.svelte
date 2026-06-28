@@ -5,7 +5,7 @@
   remounted (fresh state) whenever the client instance changes.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
@@ -65,12 +65,31 @@
     if (isDesktop()) updateStatus = await getUpdateStatus();
   });
 
+  // Persist the set of channel names the user is in, so a fresh session rejoins them
+  // (the client seeds these via initialChannels). Keyed on the sorted name set so
+  // member-only changes — which also bump the channels store — don't thrash storage.
+  // svelte-ignore state_referenced_locally
+  let persistedChannelKey = settings.channels.slice().sort().join('\n');
+  const unsubChannels = channels.subscribe((map) => {
+    const names = [...map.values()].map((c) => c.name).sort();
+    const key = names.join('\n');
+    if (key === persistedChannelKey) return;
+    persistedChannelKey = key;
+    settings.channels = names;
+    persist();
+  });
+  onDestroy(unsubChannels);
+
   // Active view: a channel token, a private-message peer token, or neither
   // (placeholder). Mutually exclusive — at most one is non-null at a time;
   // every selector below nulls the other to preserve that invariant, which the
   // title/baseLines deriveds rely on to pick which conversation to show.
   let activeChannel = $state<Token | null>(null);
   let activePm = $state<Token | null>(null);
+  // Name of a channel the user just asked to join (via the + popover) and wants
+  // focused once it lands — distinguishes a deliberate join from the channels we
+  // silently rejoin on a fresh session.
+  let pendingFocusJoin = $state<string | null>(null);
   // Open PM conversations, in tab order. This is the source of truth for which
   // PM tabs exist — so opening a conversation shows a real tab immediately,
   // before any message is sent. Seeded from any history present at mount.
@@ -137,10 +156,16 @@
   // against a stale closure if the effect re-runs.
   $effect(() => {
     const offs = [
-      // Joining a channel switches focus to it (and out of any PM view).
       client.events.on('channelJoined', (ch) => {
-        activeChannel = ch.token;
-        activePm = null;
+        // Focus the channel when the user deliberately joined it (via +) or when it's
+        // the first view of the session — the server's default channel, which joins
+        // first on connect. The other channels we silently rejoin on a fresh session
+        // stay background tabs, so a returning user lands on the main channel.
+        if (ch.name === pendingFocusJoin || (activeChannel === null && activePm === null)) {
+          activeChannel = ch.token;
+          activePm = null;
+        }
+        if (ch.name === pendingFocusJoin) pendingFocusJoin = null;
         // Show the MOTD once, after the first "You joined" line (which the server
         // adds to the channel log), so the connect sequence reads Connected →
         // joined → MOTD. Markdown notice at default text colour.
@@ -280,6 +305,7 @@
   function join() {
     const name = joinName.trim();
     if (!name) return;
+    pendingFocusJoin = name; // a deliberate join: focus it once the server confirms
     client.joinChannel(name);
     joinName = '';
     joinOpen = false;
@@ -552,7 +578,10 @@
     display: flex;
     gap: 0.25rem;
     overflow-x: auto;
-    flex: 1;
+    /* Size to the tabs' content so the + button sits right after them, but allow
+       shrinking (min-width: 0) + horizontal scroll when there are too many to fit —
+       NOT flex-grow, which would stretch the strip and push + to the far right. */
+    flex: 0 1 auto;
     min-width: 0;
   }
   .join-wrap {

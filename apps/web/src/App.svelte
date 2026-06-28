@@ -57,6 +57,7 @@
       name: settings.name.trim() || 'guest',
       color: settings.color,
       identityKey: settings.identityKey,
+      initialChannels: settings.channels,
       plugins,
     });
     c.events.on('loginDenied', (d) => {
