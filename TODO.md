@@ -19,10 +19,13 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       lands on the default/main channel after connect — silently-rejoined channels stay
       background tabs — while a deliberate join via `+` still focuses it.)_
 
-- [ ] **Formatting help screen.** A dialog listing the message-formatting syntax — markdown
+- [x] **Formatting help screen.** A dialog listing the message-formatting syntax — markdown
       (`**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``, `||spoiler||`),
       the legacy `[b]`/`[i]`/`[u]`/`[s]`/`[img]`/`[spoiler]` tags, emoticons, and the `!<url>`
       inline-image marker — reachable from the composer or the overflow menu.
+      _(Done — `FormattingHelp.svelte` dialog from the overflow menu (⋯ → Formatting help…):
+      text markdown, links/images incl. `![alt](url)`/`!url`/`[img]`, and the legacy
+      `[b]/[i]/[u]/[s]/[spoiler]` tags. Emoticons omitted — they render off by default.)_
 
 - [ ] **Options menu (name / color / preferences).** An in-session settings dialog to change
       display name, color, theme, and other preferences without disconnecting (today name and

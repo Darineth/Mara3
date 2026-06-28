@@ -16,6 +16,7 @@
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
   import { uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
+  import FormattingHelp from './FormattingHelp.svelte';
 
   let {
     client,
@@ -30,6 +31,7 @@
   } = $props();
 
   let showMacros = $state(false);
+  let showFormatting = $state(false);
   let menuOpen = $state(false);
   let showUsers = $state(true);
   let menuEl = $state<HTMLElement | null>(null);
@@ -465,6 +467,9 @@
             <button class="item" onclick={() => ((showMacros = true), (menuOpen = false))}
               >Macros…</button
             >
+            <button class="item" onclick={() => ((showFormatting = true), (menuOpen = false))}
+              >Formatting help…</button
+            >
             {#if isDesktop()}
               <button class="item" onclick={onSwitchServer}>Switch server…</button>
             {/if}
@@ -542,6 +547,10 @@
       persist();
     }}
   />
+{/if}
+
+{#if showFormatting}
+  <FormattingHelp onClose={() => (showFormatting = false)} />
 {/if}
 
 <!-- Single shared lightbox for chat images and attachment tiles. -->
