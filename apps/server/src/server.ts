@@ -56,6 +56,19 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
         res.end('ok');
         return;
       }
+      // Public, unauthenticated server identity — lets the pre-connection startup
+      // screen show the operator-set name (and versions) before a WS login exists.
+      if (req.url === '/info') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(
+          JSON.stringify({
+            name: cfg.serverName,
+            version: hub.serverInfo.version,
+            protocol: hub.serverInfo.protocol,
+          }),
+        );
+        return;
+      }
       if (req.url === UPLOAD_ENDPOINT) {
         // Authorize uploads against a live session: the bearer token must match a
         // current session secret. GETs on UPLOAD_ROUTE stay open (capability URLs).

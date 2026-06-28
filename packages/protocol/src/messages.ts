@@ -95,6 +95,8 @@ export type ClientMessageType = ClientMessage['type'];
 /** Server/build identity, sent in `welcome` so a client can show versions and
  *  detect when it is itself running a stale web build (see `webBuild`). */
 export const serverInfoSchema = z.object({
+  /** Operator-set display name for this server (MARA_SERVER_NAME). */
+  name: z.string().min(1).max(64),
   /** The server package version (semver). */
   version: z.string().max(64),
   /** Wire protocol version the server speaks (matches PROTOCOL_VERSION). */

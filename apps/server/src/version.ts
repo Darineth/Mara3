@@ -29,9 +29,10 @@ export function readWebBuild(webRoot: string | null): string | undefined {
   }
 }
 
-/** Assemble the `welcome.server` payload for a given web root. */
-export function getServerInfo(webRoot: string | null): ServerInfo {
+/** Assemble the `welcome.server` payload from the configured name and web root. */
+export function getServerInfo(webRoot: string | null, name: string): ServerInfo {
   return {
+    name,
     version: SERVER_VERSION,
     protocol: PROTOCOL_VERSION,
     webBuild: readWebBuild(webRoot),

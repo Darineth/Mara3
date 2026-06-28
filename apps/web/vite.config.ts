@@ -39,6 +39,7 @@ export default defineConfig({
     // `/uploads/...` by prefix, but both are listed for clarity.)
     proxy: {
       '/ws': { target: `ws://localhost:${serverPort}`, ws: true },
+      '/info': `http://localhost:${serverPort}`,
       '/upload': `http://localhost:${serverPort}`,
       '/uploads': `http://localhost:${serverPort}`,
     },

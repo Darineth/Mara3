@@ -111,11 +111,28 @@ Updating without losing settings or data:
   State lives beside the launcher (not inside app\\), so dropping in a new app\\ +
   web\\ never disturbs your history, identities, uploads, or config.
 
+Optional: run Create-Shortcut.bat to put a "Mara 3 Server" shortcut (with icon)
+on your Desktop, pointing at this launcher.
+
 Contents:
   node.exe              bundled Node.js runtime                               [code]
   app\\                  the server (app\\dist\\main.js) and its dependencies    [code]
   web\\                  the chat client the server hosts                       [code]
   mara.config.example   sample config; rename to mara.config to use
+  Create-Shortcut.bat   makes a Desktop shortcut to the server (with the icon)
+  Mara3-Server.ico      the server's icon (used by that shortcut)
+`;
+
+// Helper the user can run to drop a Desktop shortcut to the launcher, carrying the
+// green Mara icon. Created on the user's machine so the (absolute) shortcut path is
+// correct and survives the bundle being moved/extracted anywhere.
+const CREATE_SHORTCUT = `@echo off
+rem Create a Desktop shortcut to the Mara 3 server launcher, with the Mara icon.
+set "DIR=%~dp0"
+set "LNK=%USERPROFILE%\\Desktop\\Mara 3 Server.lnk"
+powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%LNK%'); $s.TargetPath='%DIR%Mara3-Server.bat'; $s.WorkingDirectory='%DIR%'; $s.IconLocation='%DIR%Mara3-Server.ico'; $s.Description='Mara 3 chat server'; $s.Save()"
+if errorlevel 1 (echo Failed to create the shortcut.) else (echo Created shortcut: "%LNK%")
+pause
 `;
 
 function run(cmd, env = process.env) {
@@ -177,6 +194,8 @@ cpSync(join(root, 'apps', 'web', 'dist'), join(serverDir, 'web'), { recursive: t
 writeFileSync(join(serverDir, 'Mara3-Server.bat'), LAUNCHER);
 writeFileSync(join(serverDir, 'README.txt'), SERVER_README);
 writeFileSync(join(serverDir, 'mara.config.example'), CONFIG_EXAMPLE);
+writeFileSync(join(serverDir, 'Create-Shortcut.bat'), CREATE_SHORTCUT);
+copyFileSync(join(root, 'apps', 'server', 'Mara3-Server.ico'), join(serverDir, 'Mara3-Server.ico'));
 // 5. Also drop the raw web build for custom hosting.
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 

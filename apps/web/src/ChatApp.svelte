@@ -102,6 +102,17 @@
     connectionLines = [...connectionLines, line].slice(-50);
   }
 
+  // Announce the connection once it's established, naming the server (carried in the
+  // welcome payload). Fires a single time per session; reconnects are covered by the
+  // drop/reconnect notices in the statusChanged handler below.
+  let connectAnnounced = false;
+  $effect(() => {
+    if ($serverInfo && !connectAnnounced) {
+      connectAnnounced = true;
+      pushSystem(`Connected to ${$serverInfo.name}.`);
+    }
+  });
+
   // Subscribe to client events for the life of the component. Each `.on` returns
   // an unsubscribe fn; the cleanup runs them all so handlers don't leak or fire
   // against a stale closure if the effect re-runs.
@@ -380,6 +391,10 @@
         >
         {#if menuOpen}
           <div class="menu" role="menu">
+            {#if $serverInfo}
+              <div class="menu-title" title="Server name">{$serverInfo.name}</div>
+              <div class="sep"></div>
+            {/if}
             {#if activeChannel !== null}
               <button class="item" onclick={leaveActive}>Leave channel</button>
               <button class="item" onclick={() => ((showUsers = !showUsers), (menuOpen = false))}>
@@ -424,6 +439,7 @@
     {#if activeChannel === null && activePm === null}
       <div class="placeholder">
         {#if $connection !== 'active'}
+          <img class="splash-logo" src="logo.png" alt="Mara 3" />
           <p>Connecting…</p>
         {:else}
           <p>Join a channel with the + button to start chatting.</p>
@@ -671,6 +687,15 @@
     gap: 0.15rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
+  .menu-title {
+    padding: 0.3rem 0.5rem 0.1rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--mara-fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .item {
     text-align: left;
     background: none;
@@ -764,6 +789,12 @@
     opacity: 0.5;
     text-align: center;
     padding: 1rem;
+  }
+  .splash-logo {
+    width: min(256px, 70vw);
+    height: auto;
+    display: block;
+    margin: 0 auto 0.75rem;
   }
   @media (max-width: 640px) {
     .convo.with-users {

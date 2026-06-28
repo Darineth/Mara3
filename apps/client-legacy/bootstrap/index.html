@@ -18,6 +18,12 @@
         width: min(420px, 82vw);
         text-align: center;
       }
+      .logo {
+        width: 200px;
+        height: auto;
+        display: block;
+        margin: 0 auto 0.8rem;
+      }
       .title {
         font-size: 1.6rem;
         font-weight: 700;
@@ -85,6 +91,7 @@
   </head>
   <body>
     <div class="box">
+      <img class="logo" src="logo.png" alt="Mara 3" />
       <div class="title">Mara 3</div>
       <form id="form">
         <label for="server">Server address</label>
@@ -123,15 +130,19 @@
         statusEl.className = isError ? 'error' : '';
       }
 
+      // Ensure exactly one trailing slash: required for a server hosted under a
+      // subpath (https://host/mara/) so the loaded page's base URL resolves the
+      // ws/upload/asset paths under the subpath; harmless for a root server.
       function normalize(value) {
         let u = (value || '').trim();
-        if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
-        return u.replace(/\/+$/, '');
+        if (!u) return '';
+        if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+        return u.replace(/\/+$/, '') + '/';
       }
 
       async function reachable(url) {
         try {
-          await fetch(`${url}/health`, { mode: 'no-cors', cache: 'no-store' });
+          await fetch(new URL('health', url).href, { mode: 'no-cors', cache: 'no-store' });
           return true;
         } catch {
           return false;

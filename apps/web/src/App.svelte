@@ -23,6 +23,22 @@
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);
   let error = $state('');
+  // The operator-set server name, shown under the logo on the connect screen.
+  // Fetched from the public /info endpoint (no login needed); falls back to the
+  // app name if the server is unreachable or doesn't report one.
+  let serverName = $state('Mara 3');
+
+  async function loadServerName() {
+    try {
+      // Resolve against the document base so it works at a subpath too.
+      const res = await fetch(new URL('info', document.baseURI), { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { name?: unknown };
+      if (typeof data.name === 'string' && data.name.trim()) serverName = data.name.trim();
+    } catch {
+      /* keep the fallback name */
+    }
+  }
 
   // Apply the colour theme app-wide whenever it changes (also covers the initial
   // load and toggles made from the in-session menu, which mutate this same object).
@@ -72,6 +88,7 @@
     // Log the build to the console so a stale page is identifiable even without
     // opening the in-app menu (e.g. when debugging a client that didn't refresh).
     console.info(`Mara 3 web client ${clientBuild.version} · build ${clientBuild.buildId}`);
+    void loadServerName();
     if (settings.name.trim()) connect();
   });
 </script>
@@ -81,7 +98,8 @@
 {:else}
   <div class="connect">
     <form onsubmit={onSubmit}>
-      <h1>Mara 3</h1>
+      <img class="logo" src="logo.png" alt="Mara 3" />
+      <h1>{serverName}</h1>
       <label>
         Display name
         <input bind:value={settings.name} placeholder="your name" required />
@@ -122,6 +140,12 @@
     background: var(--mara-bg-alt);
     border: 1px solid var(--mara-border);
     border-radius: 10px;
+  }
+  .logo {
+    width: min(256px, 100%);
+    height: auto;
+    display: block;
+    margin: 0 auto 0.5rem;
   }
   h1 {
     margin: 0 0 0.5rem;

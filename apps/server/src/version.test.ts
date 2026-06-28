@@ -14,8 +14,9 @@ afterEach(() => {
 });
 
 describe('server version + served web build', () => {
-  it('reports its own semver and protocol version', () => {
-    const info = getServerInfo(null);
+  it('reports its name, own semver, and protocol version', () => {
+    const info = getServerInfo(null, 'My Server');
+    expect(info.name).toBe('My Server');
     expect(info.version).toBe(SERVER_VERSION);
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(info.protocol).toBe(PROTOCOL_VERSION);
@@ -28,7 +29,7 @@ describe('server version + served web build', () => {
       JSON.stringify({ version: '3.0.0', buildId: 'abc123' }),
     );
     expect(readWebBuild(dir)).toBe('abc123');
-    expect(getServerInfo(dir).webBuild).toBe('abc123');
+    expect(getServerInfo(dir, 'My Server').webBuild).toBe('abc123');
   });
 
   it('stays quiet when version.json is missing or malformed', () => {

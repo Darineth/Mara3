@@ -37,7 +37,7 @@ export class Hub {
     this.history = new HistoryStore(cfg.historyFile, log);
     this.identity = new IdentityStore(cfg.identityFile, log);
     this.state = new ServerState(this.identity);
-    this.serverInfo = getServerInfo(cfg.webRoot);
+    this.serverInfo = getServerInfo(cfg.webRoot, cfg.serverName);
   }
 
   /** Persist any pending history + identities synchronously (call on shutdown). */

@@ -117,10 +117,10 @@ backlog.
       Actions runner (costs more CI minutes). Code-signing and notarization are optional for
       personal use but required to distribute without Gatekeeper warnings.
 
-- [ ] **Finish the new app icon / logo.** Settle on the new icon from the concept art in
-      `references/`, then replace the placeholder icon set across both Tauri shells —
-      `apps/shell/src-tauri/icons/` and `apps/client-legacy/src-tauri/icons/` (the full
-      set: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.ico`, `icon.icns`, the
-      `Square*`/`StoreLogo` and iOS/Android variants) — plus the web favicon. Regenerate
-      the whole set from the chosen master image with the Tauri icon generator
-      (`pnpm tauri icon <source.png>`).
+- [x] **New app icon / logo.** Master logos live in `resources/`
+      (`Mara3Logo1_<Color>_1000.png`). Per-target colour: **Blue** = desktop shell +
+      web favicon/splash, **Green** = server (its `.ico` + Create-Shortcut), **Purple** =
+      Win7 legacy. _(Done 2026-06-27: regenerated the full icon sets for both Tauri
+      shells via `pnpm tauri icon resources/…` , green server `.ico`, web favicon, and
+      startup/splash logos on the shell/Win7 pickers and the web connect + "Connecting…"
+      screens.)_

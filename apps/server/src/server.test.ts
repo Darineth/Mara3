@@ -16,6 +16,7 @@ beforeEach(async () => {
     ...loadConfig(),
     host: '127.0.0.1',
     port: 0,
+    serverName: 'Test Server',
     motd: 'hello world',
     defaultChannel: '',
     historyFile: '',
@@ -34,6 +35,16 @@ describe('http', () => {
     const res = await fetch(`http://127.0.0.1:${server.port}/health`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('ok');
+  });
+
+  it('exposes the server name and versions at /info (unauthenticated)', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/info`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    const info = (await res.json()) as { name: string; version: string; protocol: number };
+    expect(info.name).toBe('Test Server');
+    expect(typeof info.version).toBe('string');
+    expect(typeof info.protocol).toBe('number');
   });
 
   it('serves a clear message when no web build is present', async () => {

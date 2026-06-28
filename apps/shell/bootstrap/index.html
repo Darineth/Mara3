@@ -18,6 +18,12 @@
         width: min(420px, 82vw);
         text-align: center;
       }
+      .logo {
+        width: 200px;
+        height: auto;
+        display: block;
+        margin: 0 auto 0.8rem;
+      }
       .title {
         font-size: 1.6rem;
         font-weight: 700;
@@ -85,6 +91,7 @@
   </head>
   <body>
     <div class="box">
+      <img class="logo" src="logo.png" alt="Mara 3" />
       <div class="title">Mara 3</div>
       <form id="form">
         <label for="server">Server address</label>
@@ -123,17 +130,24 @@
         statusEl.className = isError ? 'error' : '';
       }
 
-      // Trim, default the scheme to http://, and drop any trailing slashes.
+      // Trim, default the scheme to http://, and ensure exactly one trailing slash.
+      // The trailing slash is REQUIRED for a server hosted under a subpath
+      // (e.g. https://host/mara/): the loaded page's base URL must end in '/' so the
+      // client resolves the ws/upload/asset paths under the subpath, not the domain
+      // root. It's harmless for a root server (https://host/).
       function normalize(value) {
         let u = (value || '').trim();
-        if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
-        return u.replace(/\/+$/, '');
+        if (!u) return '';
+        if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+        return u.replace(/\/+$/, '') + '/';
       }
 
       // Opaque, CORS-agnostic reachability probe — resolves if the host answers.
+      // Resolve `health` against the (slash-terminated) base so it lands at
+      // <base>/health for both root and subpath servers, with no double slash.
       async function reachable(url) {
         try {
-          await fetch(`${url}/health`, { mode: 'no-cors', cache: 'no-store' });
+          await fetch(new URL('health', url).href, { mode: 'no-cors', cache: 'no-store' });
           return true;
         } catch {
           return false;
