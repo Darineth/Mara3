@@ -117,3 +117,25 @@ describe('loadConfig storage paths', () => {
     expect(cfg.historyFile.endsWith(join('data', 'history.json'))).toBe(true);
   });
 });
+
+describe('loadConfig motd', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
+  });
+
+  it('reads the MOTD from a file when present (markdown preserved)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-motd-'));
+    dirs.push(dir);
+    const file = join(dir, 'MOTD.md');
+    writeFileSync(file, '# Welcome\n\nBe **nice**.\n');
+    const cfg = loadConfig({ MARA_MOTD_FILE: file });
+    expect(cfg.motd).toBe('# Welcome\n\nBe **nice**.'); // trailing newline trimmed
+  });
+
+  it('falls back to MARA_MOTD when the file is absent', () => {
+    const missing = join(tmpdir(), 'mara-motd-missing-xyz', 'MOTD.md');
+    const cfg = loadConfig({ MARA_MOTD_FILE: missing, MARA_MOTD: 'inline message' });
+    expect(cfg.motd).toBe('inline message');
+  });
+});

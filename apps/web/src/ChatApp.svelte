@@ -47,6 +47,7 @@
     channelMessages,
     privateMessages,
     serverInfo,
+    motd,
   } = client;
 
   // The page is stale when the server reports serving a different web build than
@@ -92,13 +93,15 @@
   // Connection drop/recover notices, shown inline in every conversation.
   let connectionLines = $state<ChatLine[]>([]);
   let sysSeq = 0;
+  // This session's connect time; ChatView rules off the backlog/session boundary.
+  let sessionStart = $state(0);
   const noticeState: NoticeState = { dropAnnounced: false };
 
-  function pushSystem(text: string) {
+  function pushSystem(text: string, kind: 'system' | 'notice' = 'system') {
     // Negative, decreasing ids keep system lines distinct from server message ids
     // (which are non-negative) and stably ordered among themselves. Cap at the
     // last 50 so a long flaky session doesn't grow this unbounded.
-    const line: ChatLine = { id: --sysSeq, kind: 'system', from: null, text, at: Date.now() };
+    const line: ChatLine = { id: --sysSeq, kind, from: null, text, at: Date.now() };
     connectionLines = [...connectionLines, line].slice(-50);
   }
 
@@ -106,10 +109,17 @@
   // welcome payload). Fires a single time per session; reconnects are covered by the
   // drop/reconnect notices in the statusChanged handler below.
   let connectAnnounced = false;
+  let motdShown = false;
   $effect(() => {
     if ($serverInfo && !connectAnnounced) {
       connectAnnounced = true;
+      // Mark where the backlog ends and this session begins (ChatView draws a rule
+      // at the boundary). Captured before the first notice so all session lines
+      // (Connected/joined/MOTD/live) sort at or after it.
+      sessionStart = Date.now();
       pushSystem(`Connected to ${$serverInfo.name}.`);
+      // The MOTD is pushed later, on the first channel join, so it reads
+      // Connected → joined → MOTD.
     }
   });
 
@@ -122,6 +132,16 @@
       client.events.on('channelJoined', (ch) => {
         activeChannel = ch.token;
         activePm = null;
+        // Show the MOTD once, after the first "You joined" line (which the server
+        // adds to the channel log), so the connect sequence reads Connected →
+        // joined → MOTD. Markdown notice at default text colour.
+        if (!motdShown) {
+          const text = $motd.trim();
+          if (text) {
+            motdShown = true;
+            pushSystem(text, 'notice');
+          }
+        }
       }),
       client.events.on('channelLeft', (ev) => {
         if (activeChannel === ev.channelToken) {
@@ -298,11 +318,17 @@
         : [],
   );
 
-  // Interleave connection notices with the conversation, in time order.
+  // Interleave connection notices with the conversation, in time order. At equal
+  // timestamps, rank conversation lines (positive ids) before connection notices
+  // (negative ids), each group in push order — so e.g. "You joined" precedes a MOTD
+  // notice pushed at the same instant.
+  const lineRank = (id: number) => (id >= 0 ? id : 1e15 - id);
   const activeLines = $derived(
     connectionLines.length === 0
       ? baseLines
-      : [...baseLines, ...connectionLines].sort((a, b) => a.at - b.at || a.id - b.id),
+      : [...baseLines, ...connectionLines].sort(
+          (a, b) => a.at - b.at || lineRank(a.id) - lineRank(b.id),
+        ),
   );
 </script>
 
@@ -447,7 +473,7 @@
       </div>
     {:else}
       <div class="convo" class:with-users={activeChannel !== null && showUsers}>
-        <ChatView lines={activeLines} users={$directory} />
+        <ChatView lines={activeLines} users={$directory} {sessionStart} />
         {#if activeChannel !== null && showUsers}
           <UserList
             users={membersOf(activeChannel)}

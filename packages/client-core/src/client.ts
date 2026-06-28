@@ -48,6 +48,8 @@ export class MaraClient {
   /** The server's reported version + served web build, from `welcome` (null until
    *  login, or if the server is too old to send it). */
   readonly serverInfo: Readable<ServerInfo | null>;
+  /** The server's message of the day from `welcome` ('' when none is set). */
+  readonly motd: Readable<string>;
 
   private readonly _connection = writable<ConnectionState>('idle');
   private readonly _self = writable<SelfState | null>(null);
@@ -57,6 +59,7 @@ export class MaraClient {
   private readonly _channelMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _serverInfo = writable<ServerInfo | null>(null);
+  private readonly _motd = writable('');
 
   private socket: WebSocketLike | null = null;
   /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
@@ -95,6 +98,7 @@ export class MaraClient {
     this.channelMessages = { subscribe: this._channelMessages.subscribe };
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
     this.serverInfo = { subscribe: this._serverInfo.subscribe };
+    this.motd = { subscribe: this._motd.subscribe };
 
     this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
@@ -286,6 +290,7 @@ export class MaraClient {
         const wasReconnect = this.reconnectAttempts > 0;
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
+        this._motd.set(msg.motd ?? '');
         this.reconnectAttempts = 0;
         this._self.set({ token: msg.self.token, name: msg.self.name });
         // Seed our own roster/directory entry (colour, away) from `self`.

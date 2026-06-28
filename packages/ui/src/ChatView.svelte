@@ -9,12 +9,17 @@
   let {
     lines = [],
     users,
+    sessionStart = 0,
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
+    /** Timestamp (ms) of this session's connect; a rule is drawn where the lines
+     *  cross from older backlog (< this) into the session (>= this). 0 disables it. */
+    sessionStart?: number;
   } = $props();
 
   let viewport = $state<HTMLDivElement | null>(null);
+  let content = $state<HTMLDivElement | null>(null);
   // Auto-scroll unless the user has scrolled up to read history ("freeze").
   let pinnedToBottom = $state(true);
   // Inline images the user has collapsed, keyed by URL. Kept here (not in the
@@ -49,12 +54,20 @@
     };
   }
 
-  // Re-pin once the user scrolls back within 40px of the bottom; beyond that we
-  // assume they're reading history and stop auto-scrolling.
+  // Last seen scrollTop, to tell a user scroll-up from content growing under us.
+  let lastScrollTop = 0;
+  // Re-pin when at the bottom; only UNPIN when the user actively scrolls up. This
+  // matters because our own scroll-to-bottom fires a `scroll` event asynchronously,
+  // by which point an image may have grown the content — measuring a large distance
+  // then must NOT unpin, or auto-scroll would die mid-load on join.
   function onScroll() {
     if (!viewport) return;
-    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    pinnedToBottom = distance < 40; // px slack to absorb sub-pixel/layout jitter
+    const st = viewport.scrollTop;
+    const distance = viewport.scrollHeight - st - viewport.clientHeight;
+    if (distance < 40)
+      pinnedToBottom = true; // at (or snapped back to) the bottom
+    else if (st < lastScrollTop - 2) pinnedToBottom = false; // user scrolled up to read
+    lastScrollTop = st;
   }
 
   $effect(() => {
@@ -62,20 +75,20 @@
     if (pinnedToBottom && viewport) viewport.scrollTop = viewport.scrollHeight;
   });
 
-  // Inline images load asynchronously and grow the content height AFTER the
-  // new-line scroll above has already run, leaving the view a little short of the
-  // bottom. While still pinned, re-stick to the bottom as each image finishes.
-  // ('load' doesn't bubble, so listen in the capture phase.)
+  // Keep pinned to the bottom as the content's height changes after the initial
+  // scroll — new lines, and especially inline images that finish loading later (on
+  // join, a backlog full of images grows the height well after the first scroll). A
+  // ResizeObserver on the content wrapper catches every height change, which is more
+  // robust than per-image 'load' events (lazy/off-screen images don't all fire).
   $effect(() => {
     const el = viewport;
-    if (!el) return;
-    const onLoad = (event: Event) => {
-      if (pinnedToBottom && event.target instanceof HTMLImageElement) {
-        el.scrollTop = el.scrollHeight;
-      }
-    };
-    el.addEventListener('load', onLoad, true);
-    return () => el.removeEventListener('load', onLoad, true);
+    const c = content;
+    if (!el || !c) return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedToBottom) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(c);
+    return () => ro.disconnect();
   });
 
   // Handle clicks inside the log imperatively so the container doesn't need a
@@ -132,22 +145,35 @@
 </script>
 
 <div class="mara-chatview" role="log" bind:this={viewport} onscroll={onScroll}>
-  {#each lines as line (line.id)}
-    <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-    {@html renderLine(toModel(line))}
-  {/each}
-  {#if lines.length === 0}
-    <div class="mara-empty">No messages yet.</div>
-  {/if}
+  <div class="mara-content" bind:this={content}>
+    {#each lines as line, i (line.id)}
+      {#if sessionStart > 0 && i > 0 && (lines[i - 1]?.at ?? sessionStart) < sessionStart && line.at >= sessionStart}
+        <hr class="mara-sep" />
+      {/if}
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
+      {@html renderLine(toModel(line))}
+    {/each}
+    {#if lines.length === 0}
+      <div class="mara-empty">No messages yet.</div>
+    {/if}
+  </div>
 </div>
 
 <style>
   .mara-chatview {
     flex: 1;
     overflow-y: auto;
+    /* Don't let scroll anchoring fight our auto-scroll-to-bottom as images load. */
+    overflow-anchor: none;
     padding: 0.5rem 0.75rem;
     font-size: 0.9rem;
     line-height: 1.4;
+  }
+  /* Session boundary rule: between older backlog and the current session. */
+  .mara-sep {
+    border: none;
+    border-top: 1px solid var(--mara-border, #333);
+    margin: 0.6rem 0;
   }
   .mara-empty {
     opacity: 0.4;
@@ -155,16 +181,28 @@
     padding: 1rem 0;
   }
   .mara-chatview :global(.mara-line) {
+    /* Timestamp gutter + body column: wrapped lines align to the body's start
+       (the author/message), not under the timestamp. */
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
     margin: 0.1rem 0;
-    word-wrap: break-word;
   }
   .mara-chatview :global(.mara-ts) {
-    /* inline-block + tabular digits so the timestamp occupies a stable width and
-       the author/message after it always starts at the same x. */
-    display: inline-block;
+    /* The fixed-width gutter; tabular digits keep every timestamp the same width
+       so all bodies line up at the same x. */
+    flex: none;
     opacity: 0.45;
     font-size: 0.78em;
     font-variant-numeric: tabular-nums;
+  }
+  .mara-chatview :global(.mara-body) {
+    /* The wrapping column. min-width:0 lets it shrink/wrap inside the flex row;
+       pre-wrap keeps author-entered (and MOTD) line breaks. */
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
   }
   .mara-chatview :global(.mara-author) {
     font-weight: 600;

@@ -2,8 +2,12 @@
 // chat/emote/system markup the Svelte ChatView injects via {@html}.
 import { escapeHtml, renderText, type RenderTextOptions } from './text.js';
 
-/** How a line is presented: a normal message, a `/me` action, or a server notice. */
-export type LineKind = 'chat' | 'emote' | 'system';
+/**
+ * How a line is presented: a normal message, a `/me` action, a dim server notice
+ * (joins/leaves/connection), or a prominent server `notice` (the MOTD) rendered at
+ * the default text colour.
+ */
+export type LineKind = 'chat' | 'emote' | 'system' | 'notice';
 
 /** A single conversation line, decoupled from transport/roster types. */
 export interface LineModel {
@@ -19,11 +23,13 @@ export interface LineModel {
 /** Per-line options; currently just the text pipeline's options. */
 export type RenderLineOptions = RenderTextOptions;
 
-// Leading timestamp span (with trailing space), or empty when the line carries
-// no timestamp. Timestamps always render when present (no user toggle).
+// Leading timestamp span, or empty when the line carries no timestamp. Timestamps
+// always render when present (no user toggle). It sits in its own column (a flex
+// gutter, see ChatView) so the message body wraps to the body's start, not under
+// the timestamp — hence no trailing space here.
 function ts(line: LineModel): string {
   if (!line.timestamp) return '';
-  return `<span class="mara-ts">${escapeHtml(line.timestamp)}</span> `;
+  return `<span class="mara-ts">${escapeHtml(line.timestamp)}</span>`;
 }
 
 /**
@@ -40,22 +46,32 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   // chat: "name:" prefix in author color, body in default color.
   // emote: whole "name + body" italicized in author color (a `/me` action).
   // system: italic body only, no author (server-generated notice).
+  // The body is a single wrapping column after the timestamp gutter, so wrapped
+  // lines align to where the author/message starts (see ChatView's flex layout).
   switch (line.kind) {
     case 'chat':
       return (
         `<div class="mara-line mara-chat">${ts(line)}` +
+        `<span class="mara-body">` +
         `<span class="mara-author" style="color:${color}">${name}:</span> ` +
-        `<span class="mara-text">${renderText(line.text, options)}</span></div>`
+        `<span class="mara-text">${renderText(line.text, options)}</span>` +
+        `</span></div>`
       );
     case 'emote':
       return (
         `<div class="mara-line mara-emote">${ts(line)}` +
-        `<span class="mara-text" style="color:${color}"><em>${name} ${renderText(line.text, options)}</em></span></div>`
+        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, options)}</em></span></div>`
       );
     case 'system':
       return (
         `<div class="mara-line mara-system">${ts(line)}` +
-        `<span class="mara-text"><em>${renderText(line.text, options)}</em></span></div>`
+        `<span class="mara-body mara-text"><em>${renderText(line.text, options)}</em></span></div>`
+      );
+    case 'notice':
+      // Prominent server notice (MOTD): default text colour, no dim/italic.
+      return (
+        `<div class="mara-line mara-notice">${ts(line)}` +
+        `<span class="mara-body mara-text">${renderText(line.text, options)}</span></div>`
       );
   }
 }

@@ -32,8 +32,9 @@ export interface ChannelState {
 export interface ChatLine {
   /** Client-assigned monotonic sequence; stable key for list rendering (not a server id). */
   id: number;
-  kind: 'chat' | 'emote' | 'system';
-  /** Author token, or null for system lines. */
+  /** `notice` is a client-synthesized, prominently-styled server notice (the MOTD). */
+  kind: 'chat' | 'emote' | 'system' | 'notice';
+  /** Author token, or null for system/notice lines. */
   from: Token | null;
   text: string;
   /** Receipt timestamp (ms) from the client's clock, not the server's. */

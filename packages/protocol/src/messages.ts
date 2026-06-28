@@ -107,13 +107,17 @@ export const serverInfoSchema = z.object({
 });
 export type ServerInfo = z.infer<typeof serverInfoSchema>;
 
+/** Max MOTD length (chars). Generous so a `MOTD.md` file can hold a sizable
+ *  markdown message; `welcome` is infrequent, so the extra payload is negligible. */
+export const MOTD_MAX_LEN = 65536;
+
 const welcome = z.object({
   type: z.literal('welcome'),
   /** The logged-in user's own info (token, the possibly-deduped name, colour). */
   self: userInfoSchema,
   /** Per-session secret for authenticated HTTP calls (e.g. image upload). */
   sessionToken: z.string().max(128),
-  motd: z.string().max(8192).default(''),
+  motd: z.string().max(MOTD_MAX_LEN).default(''),
   /** Server + build identity. Optional so a newer client tolerates an older server. */
   server: serverInfoSchema.optional(),
 });

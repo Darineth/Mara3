@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
+import { MOTD_MAX_LEN } from '@mara/protocol';
 
 /** Server configuration, resolved from environment with sensible defaults. */
 export interface ServerConfig {
@@ -59,6 +60,26 @@ function defaultWebRoot(): string | null {
  */
 function baseDir(env: NodeJS.ProcessEnv): string {
   return env.MARA_BASE_DIR?.trim() || fileURLToPath(new URL('../', import.meta.url));
+}
+
+/**
+ * Message of the day. A `MOTD.md` file next to the launcher (the working directory,
+ * where `mara.config` also lives) is the zero-config way to set a longer / markdown
+ * message: if it exists, its contents are the MOTD. Otherwise fall back to the inline
+ * `MARA_MOTD` (or the built-in default). Truncated to the protocol's cap so an
+ * oversized file can't make the `welcome` frame fail validation. `MARA_MOTD_FILE`
+ * overrides the path for a file kept elsewhere.
+ */
+function readMotd(env: NodeJS.ProcessEnv): string {
+  const file = env.MARA_MOTD_FILE?.trim() || resolve(process.cwd(), 'MOTD.md');
+  if (existsSync(file)) {
+    try {
+      return readFileSync(file, 'utf8').trim().slice(0, MOTD_MAX_LEN);
+    } catch {
+      /* unreadable → fall through to env/default */
+    }
+  }
+  return (env.MARA_MOTD ?? DEFAULTS.motd).slice(0, MOTD_MAX_LEN);
 }
 
 // Bare defaults; size limits are kept in MB here and converted to bytes at load
@@ -153,7 +174,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     host: env.MARA_HOST?.trim() || DEFAULTS.host,
     port: num(env.MARA_PORT, DEFAULTS.port),
     serverName: env.MARA_SERVER_NAME?.trim() || DEFAULTS.serverName,
-    motd: env.MARA_MOTD ?? DEFAULTS.motd,
+    motd: readMotd(env),
     minAppVersion: num(env.MARA_MIN_APP_VERSION, DEFAULTS.minAppVersion),
     webRoot: env.MARA_WEB_ROOT?.trim() || defaultWebRoot(),
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,

@@ -313,4 +313,16 @@ describe('renderLine', () => {
       renderLine({ kind: 'system', authorName: '', authorColor: '', text: 'bob joined' }),
     ).toContain('mara-system');
   });
+
+  it('renders a notice line at default colour (no dim/italic wrapper) with markdown', () => {
+    const html = renderLine({
+      kind: 'notice',
+      authorName: '',
+      authorColor: '',
+      text: 'MOTD **hi**',
+    });
+    expect(html).toContain('mara-notice');
+    expect(html).not.toContain('<em>'); // not the dim italic system style
+    expect(html).toContain('<strong>hi</strong>'); // markdown still applies
+  });
 });
