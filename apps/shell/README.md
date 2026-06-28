@@ -127,6 +127,13 @@ picker; a plain browser, with nothing to update, never shows it).
 > (it's fetched cross-origin from both the picker and the web UI). On a static host
 > that's one header (nginx `add_header`, Apache `Header set`, S3/CDN CORS rule).
 
+**Permanent download link (for a MOTD etc.).** The version-stamped zip name changes
+every release, so it's a poor link target. Packaging therefore also emits stable-named
+copies — `Mara3-Desktop-latest.zip` and `Mara3-Win7-latest.zip` — alongside the
+versioned zips. Upload them to the same host and link the permanent URL from anywhere,
+e.g. a server MOTD (which renders markdown):
+`[Download the desktop client](https://<host>/<path>/Mara3-Desktop-latest.zip)`.
+
 Build with `MARA_UPDATE_URL=` (empty) to ship with the check disabled. This only
 notifies; to graduate to Tauri's **signed, silent** auto-installer later, see the
 deferred item in the repo `TODO.md` (the signing keypair under `.tauri/` and the

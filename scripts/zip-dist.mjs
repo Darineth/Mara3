@@ -15,6 +15,7 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -34,6 +35,11 @@ const PRODUCT_VERSION = pkg.version;
 
 // Components we know how to ship, in build order. `exe` (when set) is read for its
 // embedded Windows FileVersion. `hasWebBuild` folders carry a web version.json.
+// `flatten` zips the folder's CONTENTS at the archive root (no wrapping folder) — used
+// for the portable desktop clients, which extract straight to where they're unzipped.
+// `latest` also writes a stable-named copy (<name>-latest.zip) so an operator can link
+// the *current* client from a permanent URL (e.g. in a server MOTD) without the
+// version-stamped filename breaking the link each release.
 const COMPONENTS = [
   {
     dir: 'server',
@@ -50,6 +56,8 @@ const COMPONENTS = [
     exe: 'Mara3-Desktop.exe',
     hasWebBuild: false,
     bundlesNode: false,
+    flatten: true,
+    latest: true,
   },
   {
     dir: 'desktop-legacy',
@@ -58,6 +66,8 @@ const COMPONENTS = [
     exe: 'Mara3-Legacy.exe',
     hasWebBuild: false,
     bundlesNode: false,
+    flatten: true,
+    latest: true,
   },
   {
     dir: 'web',
@@ -128,20 +138,29 @@ function fmtSize(bytes) {
 
 const useTar = has('tar');
 
-/** Zip dist/<dirName> into outZip with <dirName>/ as the top-level folder inside. */
-function zip(dirName, outZip) {
+/** Zip dist/<dirName> into outZip. By default the archive holds a top-level <dirName>/
+ *  folder; with flatten=true the folder's CONTENTS sit at the archive root instead
+ *  (no wrapping folder), so extracting drops the files straight where they're unzipped. */
+function zip(dirName, outZip, flatten = false) {
   rmSync(outZip, { force: true });
+  const srcDir = join(dist, dirName);
   if (useTar) {
-    // bsdtar picks zip format from the .zip suffix (-a); -C keeps paths relative.
-    // The bundles are plain real files (the server deploys with node-linker=hoisted,
-    // so there are no pnpm symlink junctions to chase), so no -h/dereference needed.
-    execSync(`tar -a -c -f "${outZip}" -C "${dist}" "${dirName}"`, {
+    // bsdtar picks zip format from the .zip suffix (-a); -C sets the base so stored
+    // paths are relative. Archiving "." from inside the component dir flattens (contents
+    // at root); archiving the dir name from dist/ keeps the wrapping folder. The bundles
+    // are plain real files (server uses node-linker=hoisted, no pnpm symlink junctions),
+    // so no -h/dereference needed.
+    const [base, path] = flatten ? [srcDir, '.'] : [dist, dirName];
+    execSync(`tar -a -c -f "${outZip}" -C "${base}" "${path}"`, {
       cwd: root,
       stdio: 'inherit',
     });
   } else {
+    // Compress-Archive: a folder path wraps it in that folder; a "\*" glob takes its
+    // contents (flatten), preserving any subfolders (e.g. the Win7 webview2-runtime\).
+    const srcPath = flatten ? join(srcDir, '*') : srcDir;
     execSync(
-      `powershell -NoProfile -Command "Compress-Archive -Path '${join(dist, dirName)}' -DestinationPath '${outZip}' -Force"`,
+      `powershell -NoProfile -Command "Compress-Archive -Path '${srcPath}' -DestinationPath '${outZip}' -Force"`,
       { cwd: root, stdio: 'inherit' },
     );
   }
@@ -173,6 +192,7 @@ if (!useTar) console.log('  (tar not found — using PowerShell Compress-Archive
 
 const archives = [];
 const failures = [];
+const latestAliases = [];
 
 for (const comp of COMPONENTS) {
   const compDir = join(dist, comp.dir);
@@ -208,7 +228,7 @@ for (const comp of COMPONENTS) {
   const zipName = `${comp.name}-v${verTag}.zip`;
   const zipPath = join(outDir, zipName);
   try {
-    zip(comp.dir, zipPath);
+    zip(comp.dir, zipPath, comp.flatten);
   } catch (err) {
     rmSync(zipPath, { force: true });
     failures.push(comp.name);
@@ -223,6 +243,15 @@ for (const comp of COMPONENTS) {
   const hash = sha256(zipPath);
   archives.push({ file: zipName, ...info, bytes: size, sha256: hash });
   console.log(`  + ${zipName}  (${fmtSize(size)})`);
+
+  // Stable-named copy for a permanent download link (e.g. a server MOTD). Tracked
+  // separately from the canonical versioned archive above (not in manifest/SHA256SUMS).
+  if (comp.latest) {
+    const latestName = `${comp.name}-latest.zip`;
+    copyFileSync(zipPath, join(outDir, latestName));
+    latestAliases.push({ from: zipName, to: latestName });
+    console.log(`    ↳ ${latestName}  (stable link to the current ${comp.name})`);
+  }
 }
 
 if (archives.length === 0) {
@@ -269,6 +298,12 @@ console.log('\n============================================================');
 console.log(` Done. ${archives.length} archive(s) in: ${outDir}`);
 console.log('   manifest.json    per-archive versions + checksums');
 console.log('   SHA256SUMS.txt   sha256  filename  (verify with sha256sum -c)');
+if (latestAliases.length) {
+  console.log('   *-latest.zip     stable-named copies for permanent download links:');
+  for (const a of latestAliases) console.log(`                      ${a.to}  (= ${a.from})`);
+  console.log('     Upload these next to the versioned zips; link them from a MOTD, e.g.');
+  console.log('     [Desktop client](https://<host>/<path>/Mara3-Desktop-latest.zip)');
+}
 if (failures.length) console.log(` WARNING: ${failures.length} failed: ${failures.join(', ')}`);
 console.log('============================================================');
 

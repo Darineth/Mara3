@@ -61,6 +61,12 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 # --- Presentation ---
 #MARA_SERVER_NAME=Mara 3 Server
 #MARA_MOTD=Welcome to Mara 3.
+# The MOTD is shown to everyone on connect and renders MARKDOWN, so it can include
+# links. For a longer/multi-line message, create a "MOTD.md" file next to this config
+# instead (it takes precedence over MARA_MOTD). To point users at the desktop client,
+# host the stable "Mara3-Desktop-latest.zip" (emitted by packaging) on your download
+# host and link it, e.g.:
+#     [Download the desktop client](https://your-host/path/Mara3-Desktop-latest.zip)
 #MARA_DEFAULT_CHANNEL=Main   # channel everyone auto-joins; leave empty to disable
 
 # --- WebSocket ---
