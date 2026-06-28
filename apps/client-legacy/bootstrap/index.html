@@ -127,6 +127,16 @@
         font-size: 1.1rem;
         line-height: 1;
       }
+      /* Version + update-check status, shown faint under the form. */
+      #appmeta {
+        margin: 0.8rem 0 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        font-size: 0.75rem;
+        opacity: 0.55;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -146,13 +156,14 @@
           list="recent"
           autocomplete="off"
           spellcheck="false"
-          placeholder="http://localhost:5050"
+          placeholder="e.g. chat.example.com"
         />
         <datalist id="recent"></datalist>
         <label class="row"><input id="auto" type="checkbox" /> Auto-connect on launch</label>
         <button id="connect" type="submit">Connect</button>
       </form>
       <p id="status"></p>
+      <p id="appmeta"><span id="appver"></span><span id="upd-status"></span></p>
     </div>
     <script>
       // Server picker for the legacy (Tauri 1) shell. Mirrors the modern shell, but
@@ -204,17 +215,25 @@
       // browser. (The host must serve latest-win7.json with CORS allowing this origin.)
       async function checkForUpdate() {
         const info = window.__MARA_UPDATE__;
-        if (!info || !info.manifestUrl) return;
+        const out = document.getElementById('upd-status');
+        const setStatus = (t) => {
+          if (out) out.textContent = t;
+        };
+        if (!info || !info.manifestUrl) return setStatus('Update check off');
+        setStatus('Checking for updates…');
         let manifest;
         try {
           const res = await fetch(info.manifestUrl, { cache: 'no-store' });
-          if (!res.ok) return;
+          if (!res.ok) throw 0;
           manifest = await res.json();
         } catch {
-          return;
+          return setStatus('Update check failed');
         }
-        if (!manifest || !manifest.version) return;
-        if (cmpVersion(manifest.version, info.current) <= 0) return;
+        if (!manifest || !manifest.version) return setStatus('Update check failed');
+        if (cmpVersion(manifest.version, info.current) <= 0) {
+          return setStatus(`Up to date (v${info.current})`);
+        }
+        setStatus(`Update available: v${manifest.version}`);
 
         const notes =
           typeof manifest.notes === 'string' && manifest.notes ? ` ${manifest.notes}` : '';
@@ -323,10 +342,17 @@
       });
 
       async function init() {
-        // Fire-and-forget; must not delay the picker or auto-connect.
+        // Show the client version (under the form + in the titlebar — this overrides
+        // the static <title> once the page loads), then fire the update check
+        // (fire-and-forget; must not delay the picker or auto-connect).
+        const current = (window.__MARA_UPDATE__ && window.__MARA_UPDATE__.current) || '';
+        if (current) {
+          document.getElementById('appver').textContent = 'v' + current;
+          document.title = 'Mara 3 v' + current;
+        }
         checkForUpdate();
         let settings = window.__MARA_SETTINGS__ || {
-          serverUrl: 'http://localhost:5050',
+          serverUrl: '',
           recent: [],
           autoConnect: false,
         };

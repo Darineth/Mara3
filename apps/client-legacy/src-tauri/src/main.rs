@@ -13,8 +13,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_URL: &str = "http://localhost:5050";
-
 /// Self-hosted `latest.json` the picker polls for newer Win7 builds, baked in at
 /// build time via `MARA_UPDATE_URL` (this client points at its OWN manifest —
 /// `latest-win7.json` — not the modern desktop's, since it's a separate download).
@@ -25,8 +23,11 @@ const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
     None => "",
 };
 
+/// First-run seed for the server address. No built-in default (the picker starts
+/// empty so the client never suggests a server the user didn't pick); `MARA_URL`, if
+/// set, seeds it.
 fn seed_url() -> String {
-    std::env::var("MARA_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
+    std::env::var("MARA_URL").unwrap_or_default()
 }
 
 /// Persisted client settings — kept in settings.json next to the executable
@@ -140,7 +141,7 @@ fn main() {
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
             );
             tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
-                .title("Mara 3")
+                .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
                 .inner_size(980.0, 720.0)
                 .min_inner_size(480.0, 400.0)
                 .initialization_script(&init)

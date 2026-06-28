@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkDesktopUpdate, cmpVersion, updateConfig } from './update.js';
+import {
+  cmpVersion,
+  desktopVersion,
+  getUpdateStatus,
+  resetUpdateStatus,
+  updateConfig,
+  updateStatusText,
+} from './update.js';
 
 type G = {
   __MARA_UPDATE__?: { current: string; manifestUrl: string };
@@ -8,6 +15,7 @@ type G = {
 
 afterEach(() => {
   delete (globalThis as G).__MARA_UPDATE__;
+  resetUpdateStatus(); // getUpdateStatus is memoized — clear between cases
   vi.restoreAllMocks();
 });
 
@@ -38,42 +46,82 @@ describe('updateConfig', () => {
   });
 });
 
-describe('checkDesktopUpdate', () => {
-  it('returns null outside the shell (no config)', async () => {
-    await expect(checkDesktopUpdate()).resolves.toBeNull();
+describe('desktopVersion', () => {
+  it('is null in a plain browser, the shell version in the client', () => {
+    expect(desktopVersion()).toBeNull();
+    (globalThis as G).__MARA_UPDATE__ = { current: '3.0.1', manifestUrl: '' };
+    expect(desktopVersion()).toBe('3.0.1');
+  });
+});
+
+describe('getUpdateStatus', () => {
+  it('is "disabled" outside the shell / with no manifest URL', async () => {
+    await expect(getUpdateStatus()).resolves.toEqual({ state: 'disabled' });
+    resetUpdateStatus();
+    (globalThis as G).__MARA_UPDATE__ = { current: '3.0.1', manifestUrl: '' };
+    await expect(getUpdateStatus()).resolves.toEqual({ state: 'disabled' });
   });
 
-  it('returns the newer build with a valid download URL', async () => {
+  it('is "available" with the newer build when one exists', async () => {
     (globalThis as G).__MARA_UPDATE__ = { current: '3.0.0', manifestUrl: 'https://h/latest.json' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ version: '3.0.1', url: 'https://h/x.zip', notes: 'fixes' })),
     );
-    await expect(checkDesktopUpdate()).resolves.toEqual({
-      version: '3.0.1',
-      url: 'https://h/x.zip',
-      notes: 'fixes',
+    await expect(getUpdateStatus()).resolves.toEqual({
+      state: 'available',
+      current: '3.0.0',
+      update: { version: '3.0.1', url: 'https://h/x.zip', notes: 'fixes' },
     });
   });
 
-  it('returns null when the manifest is not newer', async () => {
+  it('is "uptodate" when the manifest is not newer', async () => {
     (globalThis as G).__MARA_UPDATE__ = { current: '3.0.1', manifestUrl: 'https://h/latest.json' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ version: '3.0.1', url: 'https://h/x.zip' })),
     );
-    await expect(checkDesktopUpdate()).resolves.toBeNull();
+    await expect(getUpdateStatus()).resolves.toEqual({ state: 'uptodate', current: '3.0.1' });
   });
 
-  it('drops a non-http download URL but still reports the version', async () => {
+  it('drops a non-http download URL but still reports available', async () => {
     (globalThis as G).__MARA_UPDATE__ = { current: '3.0.0', manifestUrl: 'https://h/latest.json' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ version: '3.0.1', url: 'javascript:alert(1)' })),
     );
-    await expect(checkDesktopUpdate()).resolves.toEqual({ version: '3.0.1', url: '', notes: '' });
+    await expect(getUpdateStatus()).resolves.toEqual({
+      state: 'available',
+      current: '3.0.0',
+      update: { version: '3.0.1', url: '', notes: '' },
+    });
   });
 
-  it('swallows fetch/parse failures', async () => {
+  it('is "error" on fetch/parse failure', async () => {
     (globalThis as G).__MARA_UPDATE__ = { current: '3.0.0', manifestUrl: 'https://h/latest.json' };
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
-    await expect(checkDesktopUpdate()).resolves.toBeNull();
+    await expect(getUpdateStatus()).resolves.toEqual({ state: 'error', current: '3.0.0' });
+  });
+
+  it('memoizes — one fetch shared across calls until reset', async () => {
+    (globalThis as G).__MARA_UPDATE__ = { current: '3.0.0', manifestUrl: 'https://h/latest.json' };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ version: '3.0.0' })));
+    await getUpdateStatus();
+    await getUpdateStatus();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('updateStatusText', () => {
+  it('formats each state', () => {
+    expect(updateStatusText({ state: 'disabled' })).toBe('Update check off');
+    expect(updateStatusText({ state: 'error', current: '3.0.0' })).toBe('Update check failed');
+    expect(updateStatusText({ state: 'uptodate', current: '3.0.1' })).toBe('Up to date (v3.0.1)');
+    expect(
+      updateStatusText({
+        state: 'available',
+        current: '3.0.0',
+        update: { version: '3.0.2', url: '', notes: '' },
+      }),
+    ).toBe('Update available: v3.0.2');
   });
 });

@@ -5,6 +5,7 @@
   remounted (fresh state) whenever the client instance changes.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
@@ -12,6 +13,7 @@
   import { isDesktop, nativeLog, switchServer } from './lib/native.js';
   import type { MaraSettings } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
+  import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
   import { uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
 
@@ -55,6 +57,13 @@
   // code and should be reloaded. Silent when the server doesn't report a build
   // (dev, or an older server).
   const stale = $derived(!!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId);
+
+  // Desktop-only: the result of the launch update check (shared/memoized with the
+  // UpdateBanner), shown in the menu so the user can see a check ran and its outcome.
+  let updateStatus = $state<UpdateStatus | null>(null);
+  onMount(async () => {
+    if (isDesktop()) updateStatus = await getUpdateStatus();
+  });
 
   // Active view: a channel token, a private-message peer token, or neither
   // (placeholder). Mutually exclusive — at most one is non-null at a time;
@@ -454,6 +463,11 @@
               {#if $serverInfo}
                 <span>server {$serverInfo.version} · proto {$serverInfo.protocol}</span>
               {/if}
+              {#if updateStatus}
+                <span class:warn={updateStatus.state === 'available'}
+                  >{updateStatusText(updateStatus)}</span
+                >
+              {/if}
             </div>
           </div>
         {/if}
@@ -467,6 +481,7 @@
         {#if $connection !== 'active'}
           <img class="splash-logo" src="logo.png" alt="Mara 3" />
           <p>Connecting…</p>
+          <p class="splash-ver">v{clientBuild.version}</p>
         {:else}
           <p>Join a channel with the + button to start chatting.</p>
         {/if}
@@ -821,6 +836,11 @@
     height: auto;
     display: block;
     margin: 0 auto 0.75rem;
+  }
+  .splash-ver {
+    margin: 0.25rem 0 0;
+    font-size: 0.75rem;
+    opacity: 0.6;
   }
   @media (max-width: 640px) {
     .convo.with-users {

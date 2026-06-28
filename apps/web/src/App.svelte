@@ -15,6 +15,7 @@
     type MaraSettings,
   } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
+  import { desktopVersion } from './lib/update.js';
   import ChatApp from './ChatApp.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
 
@@ -89,6 +90,10 @@
     // Log the build to the console so a stale page is identifiable even without
     // opening the in-app menu (e.g. when debugging a client that didn't refresh).
     console.info(`Mara 3 web client ${clientBuild.version} · build ${clientBuild.buildId}`);
+    // In the desktop shell, put the client version in the titlebar (the native window
+    // title is overridden by this page's document.title on load). No-op in a browser.
+    const dv = desktopVersion();
+    if (dv) document.title = `Mara 3 v${dv}`;
     void loadServerName();
     if (settings.name.trim()) connect();
   });

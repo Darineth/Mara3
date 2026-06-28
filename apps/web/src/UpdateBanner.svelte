@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { checkDesktopUpdate, downloadUpdate, type AvailableUpdate } from './lib/update.js';
+  import { getUpdateStatus, downloadUpdate, type AvailableUpdate } from './lib/update.js';
 
   const DISMISS_KEY = 'mara.dismissedUpdate';
 
@@ -32,8 +32,8 @@
   }
 
   onMount(async () => {
-    const found = await checkDesktopUpdate();
-    if (found && !dismissed(found.version)) update = found;
+    const status = await getUpdateStatus();
+    if (status.state === 'available' && !dismissed(status.update.version)) update = status.update;
   });
 </script>
 

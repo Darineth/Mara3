@@ -5,10 +5,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// Default server the client points at before the user picks one; the `MARA_URL`
-/// env var overrides this seed on first run (after that, the saved choice wins).
-const DEFAULT_URL: &str = "http://localhost:5050";
-
 /// Static JSON manifest the picker polls to learn about newer desktop builds, baked
 /// in at build time via the `MARA_UPDATE_URL` env var (self-hosted). Empty — the
 /// default — disables the check entirely (no banner ever shows). The manifest is
@@ -21,9 +17,12 @@ const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
     None => "",
 };
 
-/// The value used to seed settings the first time (no settings file yet).
+/// The value used to seed the server address the first time (no settings file yet).
+/// There is **no** built-in default — the picker starts empty so the client never
+/// suggests a server the user didn't choose; `MARA_URL`, if set, seeds it (after that
+/// the saved choice wins).
 fn seed_url() -> String {
-    std::env::var("MARA_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
+    std::env::var("MARA_URL").unwrap_or_default()
 }
 
 /// Persisted client settings — a small JSON file kept **next to the executable**
@@ -201,7 +200,7 @@ pub fn run() {
             );
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("Mara 3")
+                    .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
                     .inner_size(980.0, 720.0)
                     .min_inner_size(480.0, 400.0)
                     .initialization_script(&init)
