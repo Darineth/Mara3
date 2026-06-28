@@ -23,6 +23,12 @@ const args = new Set(process.argv.slice(2));
 const skipTests = args.has('--skip-tests');
 const skipDesktop = args.has('--skip-desktop');
 
+// Default self-hosted folder for the desktop "update available" nudge. The client is
+// built to poll <base>/latest.json and zip-dist.mjs writes the manifest pointing at
+// <base>/<zip>. Override per-build with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL= to
+// disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
+const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+
 const LAUNCHER = `@echo off
 cd /d "%~dp0"
 set NODE_ENV=production
@@ -215,6 +221,15 @@ if (!skipDesktop) {
     if (existsSync(keyFile) && !env.TAURI_SIGNING_PRIVATE_KEY) {
       env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyFile, 'utf8').trim();
       env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? '';
+    }
+    // The "update available" nudge: one self-hosted folder URL (MARA_UPDATE_BASE_URL,
+    // defaulting to UPDATE_BASE_URL below) drives the whole pipeline — the client polls
+    // <base>/latest.json (baked in here) and the manifest written by zip-dist.mjs points
+    // its download at <base>/<zip>. Set MARA_UPDATE_URL= (empty) to bake in nothing →
+    // the client never shows an update banner.
+    if (env.MARA_UPDATE_URL === undefined) {
+      const base = (env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+      env.MARA_UPDATE_URL = `${base}/latest.json`;
     }
     run('pnpm --filter @mara/shell tauri:build', env);
   }

@@ -111,7 +111,9 @@ function readWebBuildId(componentDir) {
 /** The exe's embedded Windows FileVersion resource (Tauri stamps it from its config). */
 function readFileVersion(exePath) {
   if (process.platform !== 'win32' || !existsSync(exePath)) return null;
-  return tryExec(`powershell -NoProfile -Command "(Get-Item '${exePath}').VersionInfo.FileVersion"`);
+  return tryExec(
+    `powershell -NoProfile -Command "(Get-Item '${exePath}').VersionInfo.FileVersion"`,
+  );
 }
 
 function sha256(file) {
@@ -237,6 +239,31 @@ writeFileSync(
   join(outDir, 'SHA256SUMS.txt'),
   archives.map((a) => `${a.sha256}  ${a.file}`).join('\n') + '\n',
 );
+
+// "Update available" nudge manifests: each portable client polls its OWN latest*.json
+// (separate downloads), comparing the manifest `version` to its build's and showing a
+// Download banner when this is newer. Host these alongside the matching zip at
+// MARA_UPDATE_BASE_URL. Keep UPDATE_BASE_URL in sync with package.mjs / package-legacy.mjs
+// (which bake <base>/<manifest> into each client). Override per-build with
+// MARA_UPDATE_BASE_URL. Each is emitted only when its archive was built this run.
+const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+for (const { component, manifest, label } of [
+  { component: 'Mara3-Desktop', manifest: 'latest.json', label: 'desktop' },
+  { component: 'Mara3-Win7', manifest: 'latest-win7.json', label: 'Win7' },
+]) {
+  const archive = archives.find((a) => a.component === component);
+  if (!archive) continue;
+  const latest = {
+    version: PRODUCT_VERSION,
+    url: `${updateBase}/${archive.file}`,
+    notes: '',
+    pub_date: builtAt,
+    sha256: archive.sha256,
+  };
+  writeFileSync(join(outDir, manifest), `${JSON.stringify(latest, null, 2)}\n`);
+  console.log(`   ${manifest.padEnd(16)} ${label} update manifest -> ${latest.url}`);
+}
 
 console.log('\n============================================================');
 console.log(` Done. ${archives.length} archive(s) in: ${outDir}`);

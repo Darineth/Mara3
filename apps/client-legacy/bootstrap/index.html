@@ -87,9 +87,54 @@
         width: auto;
         margin: 0;
       }
+      /* "Update available" nudge — a non-blocking top bar shown only when the
+         configured manifest reports a newer Win7 build. */
+      #update {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.5rem 0.8rem;
+        background: #2a2f45;
+        color: #e6e6e6;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #3a3a3a;
+        box-sizing: border-box;
+      }
+      #update[hidden] {
+        display: none;
+      }
+      #update-text {
+        flex: 1;
+      }
+      #update-link {
+        padding: 0.25rem 0.6rem;
+        border-radius: 5px;
+        background: #7aa2f7;
+        color: #15161e;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #update-dismiss {
+        padding: 0.1rem 0.4rem;
+        background: transparent;
+        color: #aaa;
+        font-size: 1.1rem;
+        line-height: 1;
+      }
     </style>
   </head>
   <body>
+    <div id="update" hidden>
+      <span id="update-text"></span>
+      <a id="update-link" href="#" role="button">Download</a>
+      <button id="update-dismiss" type="button" title="Dismiss" aria-label="Dismiss">×</button>
+    </div>
     <div class="box">
       <img class="logo" src="logo.png" alt="Mara 3" />
       <div class="title">Mara 3</div>
@@ -128,6 +173,71 @@
       function status(text, isError) {
         statusEl.textContent = text;
         statusEl.className = isError ? 'error' : '';
+      }
+
+      // Open a URL in the system browser. Tauri 1 exposes shell.open (the shell.open
+      // allowlist is enabled in tauri.conf.json); fall back to window.open otherwise.
+      function openExternal(url) {
+        if (T && T.shell && typeof T.shell.open === 'function') {
+          Promise.resolve(T.shell.open(url)).catch(() => window.open(url, '_blank'));
+        } else {
+          window.open(url, '_blank');
+        }
+      }
+
+      // Numeric dotted-version compare: -1 / 0 / 1 for a < / == / > b. Tolerant of
+      // missing/extra segments and non-numeric junk (treated as 0).
+      function cmpVersion(a, b) {
+        const pa = String(a).split('.');
+        const pb = String(b).split('.');
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (parseInt(pa[i], 10) || 0) - (parseInt(pb[i], 10) || 0);
+          if (d) return d < 0 ? -1 : 1;
+        }
+        return 0;
+      }
+
+      // If built with an update-manifest URL, fetch it and show a dismissible "update
+      // available" banner when it reports a newer Win7 build. Best-effort and isolated:
+      // any network/parse failure is swallowed so the picker is never disrupted. This
+      // only NOTIFIES — the client stays a portable exe; Download opens the system
+      // browser. (The host must serve latest-win7.json with CORS allowing this origin.)
+      async function checkForUpdate() {
+        const info = window.__MARA_UPDATE__;
+        if (!info || !info.manifestUrl) return;
+        let manifest;
+        try {
+          const res = await fetch(info.manifestUrl, { cache: 'no-store' });
+          if (!res.ok) return;
+          manifest = await res.json();
+        } catch {
+          return;
+        }
+        if (!manifest || !manifest.version) return;
+        if (cmpVersion(manifest.version, info.current) <= 0) return;
+
+        const notes =
+          typeof manifest.notes === 'string' && manifest.notes ? ` ${manifest.notes}` : '';
+        document.getElementById('update-text').textContent =
+          `Mara 3 (Windows 7) ${manifest.version} is available.${notes}`;
+
+        const link = document.getElementById('update-link');
+        const url = typeof manifest.url === 'string' ? manifest.url : '';
+        if (/^https?:\/\//i.test(url)) {
+          link.href = url;
+          link.addEventListener('click', (e) => {
+            e.preventDefault();
+            openExternal(url);
+          });
+        } else {
+          link.hidden = true;
+        }
+
+        const bar = document.getElementById('update');
+        document.getElementById('update-dismiss').addEventListener('click', () => {
+          bar.hidden = true;
+        });
+        bar.hidden = false;
       }
 
       // Ensure exactly one trailing slash: required for a server hosted under a
@@ -213,6 +323,8 @@
       });
 
       async function init() {
+        // Fire-and-forget; must not delay the picker or auto-connect.
+        checkForUpdate();
         let settings = window.__MARA_SETTINGS__ || {
           serverUrl: 'http://localhost:5050',
           recent: [],

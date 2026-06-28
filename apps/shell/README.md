@@ -105,6 +105,33 @@ log directory. The hosted web UI calls it via `apps/web/src/lib/native.ts`
 no-op, so the same web build works everywhere. Add further native functions the
 same way: a `#[tauri::command]` in `lib.rs` + a wrapper in `native.ts`.
 
+## Updates (portable "update available" nudge)
+
+The client stays a **portable single exe** and never self-installs — but it can
+_notify_ when a newer build exists. One self-hosted folder drives it:
+`MARA_UPDATE_BASE_URL` (default `https://mara.pretoast.com/mara3-updates`). The
+packaging scripts:
+
+- bake `MARA_UPDATE_URL = <base>/latest.json` into the exe (`scripts/package.mjs`), and
+- write a ready-to-host `latest.json` pointing at the desktop zip (`scripts/zip-dist.mjs`).
+
+To publish an update: upload the new `Mara3-Desktop-*.zip` **and** the generated
+`latest.json` to that folder. On launch the client compares `latest.json`'s `version`
+to its own and, if newer, shows a dismissible **"update available"** banner with a
+**Download** link (opens the host in the system browser). The banner shows in two
+places: the launch picker, and — because `lib.rs` injects the update context on every
+page — the live web UI itself (so it persists after auto-connect navigates past the
+picker; a plain browser, with nothing to update, never shows it).
+
+> **Host requirement:** serve `latest.json` with `Access-Control-Allow-Origin: *`
+> (it's fetched cross-origin from both the picker and the web UI). On a static host
+> that's one header (nginx `add_header`, Apache `Header set`, S3/CDN CORS rule).
+
+Build with `MARA_UPDATE_URL=` (empty) to ship with the check disabled. This only
+notifies; to graduate to Tauri's **signed, silent** auto-installer later, see the
+deferred item in the repo `TODO.md` (the signing keypair under `.tauri/` and the
+embedded pubkey in `tauri.conf.json` are already in place).
+
 ## Security — important
 
 A thin client that loads **remote** content and grants it **native** capabilities

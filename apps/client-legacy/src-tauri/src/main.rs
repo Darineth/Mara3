@@ -15,6 +15,16 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_URL: &str = "http://localhost:5050";
 
+/// Self-hosted `latest.json` the picker polls for newer Win7 builds, baked in at
+/// build time via `MARA_UPDATE_URL` (this client points at its OWN manifest —
+/// `latest-win7.json` — not the modern desktop's, since it's a separate download).
+/// Empty (the default) disables the check. Mirrors the modern shell's nudge; see
+/// `bootstrap/index.html`. Only NOTIFIES — the client stays a portable exe.
+const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
+    Some(u) => u,
+    None => "",
+};
+
 fn seed_url() -> String {
     std::env::var("MARA_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
 }
@@ -123,8 +133,11 @@ fn main() {
             // asks open_app to navigate to the live UI. Seed it with saved settings.
             let settings = load_settings();
             let init = format!(
-                "window.__MARA_SETTINGS__ = {};",
-                serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string())
+                "window.__MARA_SETTINGS__ = {settings}; \
+                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }};",
+                settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
+                current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
+                url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
             );
             tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
                 .title("Mara 3")

@@ -35,6 +35,18 @@ const root = resolve(import.meta.dirname, '..');
 const out = join(root, 'dist', 'desktop-legacy');
 const skipBuild = process.argv.includes('--skip-build');
 
+// "Update available" nudge: bake the Win7 client's OWN manifest URL into the build.
+// It's a separate download from the modern desktop, so it polls latest-win7.json (not
+// latest.json). One folder URL drives the pipeline — keep UPDATE_BASE_URL in sync with
+// package.mjs / zip-dist.mjs. Override with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL=
+// (empty) to disable. zip-dist.mjs emits the matching latest-win7.json.
+const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+const buildEnv = { ...process.env };
+if (buildEnv.MARA_UPDATE_URL === undefined) {
+  const base = (buildEnv.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+  buildEnv.MARA_UPDATE_URL = `${base}/latest-win7.json`;
+}
+
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
   execSync(cmd, { cwd: root, stdio: 'inherit', shell: true, ...opts });
@@ -91,7 +103,7 @@ function grabRuntime() {
 //    Mara3-Legacy.exe itself (via copy-client). Clean first so the build repopulates.
 if (!skipBuild) {
   rmSync(out, { recursive: true, force: true });
-  run('pnpm --filter @mara/client-legacy tauri:build');
+  run('pnpm --filter @mara/client-legacy tauri:build', { env: buildEnv });
 }
 mkdirSync(out, { recursive: true });
 const exe = join(out, 'Mara3-Legacy.exe');

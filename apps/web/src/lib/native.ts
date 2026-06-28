@@ -9,6 +9,8 @@ interface TauriCore {
 }
 interface TauriGlobal {
   core: TauriCore;
+  /** Tauri 1 shell API (present in the Win7 legacy client, not the modern shell). */
+  shell?: { open(url: string): Promise<void> };
 }
 
 function tauri(): TauriGlobal | null {
@@ -41,4 +43,31 @@ export async function switchServer(): Promise<void> {
   const t = tauri();
   if (!t) return;
   await t.core.invoke('switch_server');
+}
+
+/**
+ * Open a URL in the system browser via the shell's opener plugin (so it doesn't
+ * navigate this window away from the chat). Falls back to a new tab in a plain
+ * browser. Used for the desktop update-download link.
+ */
+export async function openExternal(url: string): Promise<void> {
+  const t = tauri();
+  if (!t) {
+    window.open(url, '_blank', 'noopener');
+    return;
+  }
+  try {
+    // Modern shell (Tauri 2): opener plugin. Win7 legacy (Tauri 1): shell.open.
+    if (t.core?.invoke) {
+      await t.core.invoke('plugin:opener|open_url', { url });
+      return;
+    }
+    if (t.shell?.open) {
+      await t.shell.open(url);
+      return;
+    }
+    throw new Error('no native opener');
+  } catch {
+    window.open(url, '_blank', 'noopener');
+  }
 }

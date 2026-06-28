@@ -9,6 +9,18 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 /// env var overrides this seed on first run (after that, the saved choice wins).
 const DEFAULT_URL: &str = "http://localhost:5050";
 
+/// Static JSON manifest the picker polls to learn about newer desktop builds, baked
+/// in at build time via the `MARA_UPDATE_URL` env var (self-hosted). Empty — the
+/// default — disables the check entirely (no banner ever shows). The manifest is
+/// `{ "version": "3.0.1", "url": "https://…/Mara3-Desktop-….zip", "notes": "…" }`;
+/// the bootstrap picker compares `version` to this build's version and, if newer,
+/// shows a non-blocking "update available" banner linking to `url`. We deliberately
+/// keep the portable single-exe model — this only *notifies*; it never self-installs.
+const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
+    Some(u) => u,
+    None => "",
+};
+
 /// The value used to seed settings the first time (no settings file yet).
 fn seed_url() -> String {
     std::env::var("MARA_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
@@ -177,9 +189,15 @@ pub fn run() {
             // the chosen server, and asks us to navigate to the live UI once it is
             // reachable. Seed the picker with the saved settings.
             let settings = load_settings();
+            // Seed the picker with the saved settings and the update-check context
+            // (this build's version + the configured manifest URL). The picker does
+            // the actual fetch/compare/banner in JS — see bootstrap/index.html.
             let init = format!(
-                "window.__MARA_SETTINGS__ = {};",
-                serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string())
+                "window.__MARA_SETTINGS__ = {settings}; \
+                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }};",
+                settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
+                current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
+                url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
             );
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

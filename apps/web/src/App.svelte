@@ -16,6 +16,7 @@
   } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import ChatApp from './ChatApp.svelte';
+  import UpdateBanner from './UpdateBanner.svelte';
 
   // Build-time plugin registry (CSP-safe for web/mobile). Add plugins here.
   const plugins = createPipeline([shrugPlugin]);
@@ -92,6 +93,10 @@
     if (settings.name.trim()) connect();
   });
 </script>
+
+<!-- Desktop update nudge: persists across the connect screen and the live chat;
+     a no-op in a plain browser (nothing to update). -->
+<UpdateBanner />
 
 {#if client}
   <ChatApp {client} {settings} onDisconnect={disconnect} persist={() => saveSettings(settings)} />

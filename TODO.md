@@ -88,6 +88,42 @@ backlog.
     could be off → links). Privacy-friendly gating, but on its own doesn't solve opaque
     detection. Could pair with any of the above.
 
+## Updates / distribution
+
+- [x] **Desktop client update nudge.** Because the shell is a thin Tauri wrapper that
+      loads the server's hosted web UI, the bulk of every release (web UI, features, bug
+      fixes) already reaches clients on the next load with no client rebuild — only the
+      native shell binary (Rust commands, picker page, Tauri/webview version bumps) needs
+      a real push, and that's rare. Chose a lightweight, portable-preserving nudge over
+      Tauri's silent self-installer: the client stays a portable single exe. Build it with
+      `MARA_UPDATE_BASE_URL=https://<host>/<path>` (self-hosted); `package.mjs` bakes
+      `MARA_UPDATE_URL=<base>/latest.json` (default base
+      `https://mara.pretoast.com/mara3-updates`) into the binary and `zip-dist.mjs`
+      writes a ready-to-host `latest.json` pointing at the desktop zip. `lib.rs` injects
+      `window.__MARA_UPDATE__` on every page, so the nudge shows in **two** places:
+      the launch picker (`bootstrap/index.html`) and the live web UI itself
+      (`apps/web` `UpdateBanner.svelte` / `lib/update.ts`), the latter persisting after
+      auto-connect navigates past the picker. Both fetch the manifest, semver-compare,
+      and show a dismissible "update available" banner with a Download link (opens in the
+      system browser; web-UI dismissal remembered per version). The update host must send
+      `Access-Control-Allow-Origin: *` (cross-origin fetch). Build with `MARA_UPDATE_URL=`
+      empty to disable. The **Win7 legacy client** (Tauri 1) has the same nudge on its
+      picker (opening the download via `shell.open`), but polls its **own**
+      `latest-win7.json` since it's a separate download. _(Done 2026-06-28 in
+      `apps/shell/src-tauri/src/lib.rs`, `apps/shell/bootstrap/index.html`,
+      `apps/client-legacy/src-tauri/{src/main.rs,Cargo.toml,build.rs,tauri.conf.json}`,
+      `apps/client-legacy/bootstrap/index.html`, `apps/web/src/{App.svelte,
+      UpdateBanner.svelte,lib/update.ts,lib/native.ts}`, `scripts/package.mjs`,
+      `scripts/package-legacy.mjs`, `scripts/zip-dist.mjs`.)_
+
+- [ ] **Full Tauri auto-update (deferred).** Graduate the nudge to silent
+      download-verify-install when wanted: flip `bundle.active`/`createUpdaterArtifacts`
+      in `tauri.conf.json`, switch to NSIS installer output, point `plugins.updater.endpoints`
+      at the host, and produce signed update artifacts. The signing keypair
+      (`apps/shell/.tauri/mara-update.key` + `.pub`), embedded pubkey, and key-passthrough
+      in `package.mjs` are already in place; the tradeoff is giving up the portable single-exe
+      model and taking on CI signing.
+
 ## Polish
 
 - [ ] **Mobile / small-display layout pass.** The web UI has not been tested on small

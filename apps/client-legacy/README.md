@@ -21,6 +21,20 @@ It behaves like the modern shell: a server **picker** (address + recent + an
 > - Everything here depends on **end-of-life** components (Win7, an EOL WebView2
 >   runtime). Use only where Win7 support is genuinely required.
 
+## Updates (portable "update available" nudge)
+
+Mirrors the modern shell's nudge — the exe stays portable and never self-installs,
+but the picker shows an **"update available"** banner (with a **Download** link that
+opens the system browser via Tauri 1's `shell.open`) when a newer build exists. Because
+this is a **separate download** from the modern desktop client, it polls its **own**
+manifest: `MARA_UPDATE_BASE_URL/latest-win7.json` (default base
+`https://mara.pretoast.com/mara3-updates`, baked in by `scripts/package-legacy.mjs`),
+which `scripts/zip-dist.mjs` writes pointing at the `Mara3-Win7-*.zip`. To publish a
+Win7 update: upload the new zip **and** `latest-win7.json` to that folder; serve the
+JSON with `Access-Control-Allow-Origin: *` (cross-origin fetch). Build with
+`MARA_UPDATE_URL=` empty to disable. See [`../shell/README.md`](../shell/README.md#updates-portable-update-available-nudge)
+for the shared design.
+
 ## Building for Windows 7
 
 ### 1. Build the exe (toolchain handled for you)
