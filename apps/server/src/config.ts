@@ -119,12 +119,20 @@ export function loadConfigFile(
     const key = line.slice(0, eq).trim();
     if (!/^MARA_[A-Z0-9_]+$/.test(key)) continue; // only our namespace
     let value = line.slice(eq + 1).trim();
-    if (
-      value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'")))
-    ) {
-      value = value.slice(1, -1); // strip one layer of matching quotes
+    if (value.startsWith('"') || value.startsWith("'")) {
+      // Quoted value: take the contents up to the matching closing quote; anything
+      // after it (e.g. an inline comment) is ignored, and a literal '#' inside is
+      // kept.
+      const quote = value.startsWith('"') ? '"' : "'";
+      const close = value.indexOf(quote, 1);
+      value = (close >= 0 ? value.slice(1, close) : value.slice(1)).trim();
+    } else {
+      // Unquoted value: strip an inline comment introduced by whitespace + '#'
+      // (`KEY=val   # note` → `val`), so uncommenting an annotated example line
+      // works. A '#' with no leading whitespace stays part of the value (paths,
+      // colours, …); quote the value to keep a space-prefixed '#'.
+      const hash = value.search(/\s#/);
+      if (hash >= 0) value = value.slice(0, hash).trim();
     }
     if (env[key] === undefined) {
       env[key] = value; // real environment wins; only fill what's unset

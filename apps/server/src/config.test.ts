@@ -62,6 +62,21 @@ describe('loadConfigFile', () => {
     expect(env.MARA_SERVER_NAME).toBe('My Server');
   });
 
+  it('strips inline comments from values, but quotes protect a literal #', () => {
+    const path = writeConfig(
+      [
+        'MARA_PORT=6000   # the listen port',
+        'MARA_MOTD="welcome #1 fans"   # a greeting',
+        'MARA_UPLOAD_DIR=/srv/a#b', // bare # (no leading space) is part of the value
+      ].join('\n'),
+    );
+    const env: NodeJS.ProcessEnv = { MARA_CONFIG: path };
+    loadConfigFile(env);
+    expect(env.MARA_PORT).toBe('6000');
+    expect(env.MARA_MOTD).toBe('welcome #1 fans');
+    expect(env.MARA_UPLOAD_DIR).toBe('/srv/a#b');
+  });
+
   it('feeds through to loadConfig so the file shapes the final config', () => {
     const path = writeConfig('MARA_PORT=6000\nMARA_SERVER_NAME=Edited\n');
     const env: NodeJS.ProcessEnv = { MARA_CONFIG: path };
