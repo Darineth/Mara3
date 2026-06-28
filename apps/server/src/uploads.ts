@@ -38,6 +38,33 @@ const EXT_TYPE: Record<string, string> = {
 /** Our generated names only: 32 hex chars + a known extension. */
 const SAFE_NAME_RE = /^[0-9a-f]{32}\.(png|jpg|gif|webp|avif|bmp)$/;
 
+/**
+ * Verify the body's leading bytes match the declared image type, so a client can't
+ * store arbitrary bytes by lying in `Content-Type`. Defense-in-depth: stored files
+ * are already served with a fixed type + `nosniff` + sandbox CSP, so a mismatch was
+ * never an XSS vector — this just refuses to cache non-images.
+ */
+function sniffMatches(buf: Buffer, ext: string): boolean {
+  const at = (offset: number, bytes: number[]): boolean =>
+    bytes.every((b, i) => buf[offset + i] === b);
+  switch (ext) {
+    case 'png':
+      return at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case 'jpg':
+      return at(0, [0xff, 0xd8, 0xff]);
+    case 'gif':
+      return at(0, [0x47, 0x49, 0x46, 0x38]); // "GIF8"
+    case 'webp':
+      return at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50]); // "RIFF"…"WEBP"
+    case 'bmp':
+      return at(0, [0x42, 0x4d]); // "BM"
+    case 'avif':
+      return at(4, [0x66, 0x74, 0x79, 0x70]); // ISO-BMFF "ftyp" box
+    default:
+      return false;
+  }
+}
+
 function send(res: ServerResponse, status: number, body: string, contentType = 'text/plain') {
   // The client may have already hung up (e.g. after an early 413); swallow the
   // resulting socket error rather than letting it crash the process.
@@ -167,6 +194,11 @@ export async function handleUpload(
   }
   if (body.length === 0) {
     send(res, 400, 'Empty upload');
+    return;
+  }
+  // The bytes must actually look like the declared image type (not just the header).
+  if (!sniffMatches(body, ext)) {
+    send(res, 415, 'Upload does not look like a valid image');
     return;
   }
 

@@ -209,6 +209,69 @@ describe('setProfile (mid-session rename / recolor)', () => {
   });
 });
 
+describe('rate limiting (flood control)', () => {
+  it('drops over-limit messages and closes a persistent flooder', async () => {
+    const s2 = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        msgRate: 1, // ~no refill on the timescale of a tight send loop
+        msgBurst: 3,
+        msgFloodKick: 8,
+      },
+      createLogger('silent'),
+    );
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      await login(c, 'alice');
+      // Flood well past burst + kick: the server drops the excess and then closes
+      // the socket with 1008 (policy violation).
+      for (let i = 0; i < 40; i++) c.send({ type: 'ping', id: i });
+      const close = await Promise.race([
+        c.closed,
+        new Promise<{ code: number }>((_, reject) =>
+          setTimeout(() => reject(new Error('socket was not closed')), 2000),
+        ),
+      ]);
+      expect(close.code).toBe(1008);
+    } finally {
+      await s2.close();
+    }
+  });
+
+  it('does not throttle normal traffic (msgRate disabled)', async () => {
+    const s2 = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        msgRate: 0, // disabled
+      },
+      createLogger('silent'),
+    );
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      await login(c, 'alice');
+      for (let i = 0; i < 50; i++) c.send({ type: 'ping', id: i });
+      // All pings answered, nothing dropped or closed.
+      for (let i = 0; i < 50; i++) {
+        const pong = await c.waitFor('pong');
+        expect(pong.id).toBeGreaterThanOrEqual(0);
+      }
+      c.close();
+    } finally {
+      await s2.close();
+    }
+  });
+});
+
 describe('channels and chat', () => {
   it('delivers a channel roster on join and notifies existing members', async () => {
     const a = await TestClient.connect(url);

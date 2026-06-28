@@ -25,6 +25,13 @@ export interface ServerConfig {
   maxCacheBytes: number;
   /** Recent messages retained per channel and replayed as backlog on join. */
   historyLimit: number;
+  /** Per-connection message rate limit (sustained msgs/sec, token bucket). `<= 0`
+   *  disables flood control entirely (e.g. a trusted LAN). */
+  msgRate: number;
+  /** Token-bucket capacity: how many messages a connection may send in a quick burst. */
+  msgBurst: number;
+  /** Consecutive over-limit (dropped) messages before the flooding socket is closed. */
+  msgFloodKick: number;
   /**
    * File the per-channel message history is persisted to (so backlog survives a
    * restart). On by default (`apps/server/data/history.json`); set
@@ -95,6 +102,9 @@ const DEFAULTS = {
   maxUploadMb: 10,
   maxCacheMb: 512,
   historyLimit: 100,
+  msgRate: 15,
+  msgBurst: 30,
+  msgFloodKick: 300,
 };
 
 // Parse a numeric env var, falling back on missing/blank/non-finite input
@@ -183,6 +193,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
+    msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),
+    msgBurst: Math.max(1, num(env.MARA_MSG_BURST, DEFAULTS.msgBurst)),
+    msgFloodKick: Math.max(1, num(env.MARA_MSG_FLOOD_KICK, DEFAULTS.msgFloodKick)),
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
     historyFile: (env.MARA_HISTORY_FILE ?? join(base, 'data', 'history.json')).trim(),
     identityFile: (env.MARA_IDENTITY_FILE ?? join(base, 'data', 'identity.json')).trim(),

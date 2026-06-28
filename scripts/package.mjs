@@ -72,6 +72,11 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 # --- WebSocket ---
 #MARA_WS_PATH=/ws            # must match what a reverse proxy forwards
 
+# --- Flood control (per-connection message rate limit) ---
+#MARA_MSG_RATE=15           # sustained messages/sec allowed; 0 disables the limit
+#MARA_MSG_BURST=30          # how many messages may be sent in a quick burst
+#MARA_MSG_FLOOD_KICK=300    # consecutive over-limit messages before the socket is closed
+
 # --- Uploads ---
 #MARA_MAX_UPLOAD_MB=10       # per-file cap
 #MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)

@@ -63,9 +63,13 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
         `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, options)}</em></span></div>`
       );
     case 'system':
+      // System notices (join/leave/disconnect/connection) embed a user-chosen display
+      // name in their text, so they render as ESCAPED TEXT ONLY — no markdown, links,
+      // or inline images. Otherwise a name like `http://evil.com` or `![](/uploads/x)`
+      // would become a clickable link / image inside everyone's "X joined" line.
       return (
         `<div class="mara-line mara-system">${ts(line)}` +
-        `<span class="mara-body mara-text"><em>${renderText(line.text, options)}</em></span></div>`
+        `<span class="mara-body mara-text"><em>${renderText(line.text, { links: false, images: false, markdown: false })}</em></span></div>`
       );
     case 'notice':
       // Prominent server notice (MOTD): default text colour, no dim/italic.

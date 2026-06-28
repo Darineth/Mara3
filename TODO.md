@@ -52,10 +52,15 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       _(Done — `IMG_MD_RE` pass: `![alt](url)` forces the URL inline as an image (any extension)
       with escaped alt text, same http(s)/upload allowlist, honoring the images/links toggles.)_
 
-- [ ] **Security review and fixes.** A focused pre-release security pass over the server and
+- [x] **Security review and fixes.** A focused pre-release security pass over the server and
       clients, fixing what it finds. Cross-check [SECURITY-TODO.md](SECURITY-TODO.md) (TLS / M4,
       upload handling, HTML/URL escaping, rate limits, identity-token handling, and the desktop
       shells' remote-IPC capability surface).
+      _(Done 2026-06-28 — focused pass: added per-connection flood control (M3), escaped-text
+      system notices (L5), and upload magic-byte sniff (L6); reviewed the new update-nudge /
+      `setProfile` / Markdown-image surfaces (clean). Deferred in [SECURITY-TODO.md](SECURITY-TODO.md):
+      built-in TLS (M4 — reverse proxy covers v1), WS Origin allowlist (L3 — low, no ambient
+      auth), real accounts (L4 — by design).)_
 
 ## Bugs
 

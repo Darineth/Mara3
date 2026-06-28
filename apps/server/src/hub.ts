@@ -52,6 +52,21 @@ export class Hub {
   }
 
   onMessage(conn: Connection, raw: string): void {
+    // Flood control: a token bucket per connection. Over-limit frames are dropped
+    // (so one client can't make every other client re-render a flood), the user is
+    // notified once per throttled run, and a persistent flooder is disconnected.
+    // `msgRate <= 0` disables it (trusted-LAN escape hatch).
+    if (this.cfg.msgRate > 0 && !conn.rateAllow(this.now(), this.cfg.msgRate, this.cfg.msgBurst)) {
+      if (conn.dropStreak === 1) {
+        conn.send({ type: 'error', message: 'You are sending messages too quickly.' });
+      }
+      if (conn.dropStreak >= this.cfg.msgFloodKick) {
+        this.log.warn({ conn: conn.id }, 'rate limit: closing flooding connection');
+        conn.close(1008, 'rate limit exceeded'); // 1008 = policy violation
+      }
+      return;
+    }
+
     const parsed = safeParseClientMessage(raw);
     if (!parsed.success) {
       conn.send({ type: 'error', message: parsed.error.message });

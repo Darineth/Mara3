@@ -362,6 +362,23 @@ describe('renderLine', () => {
     ).toContain('mara-system');
   });
 
+  it('renders a system line as escaped text only — no link/image/markdown from a name', () => {
+    // A user-chosen name embedded in a join notice must not become a link, image, or
+    // formatted text (L5). renderText still escapes, so it is never an XSS vector —
+    // this asserts it is also not a clickable/inline-media vector.
+    const html = renderLine({
+      kind: 'system',
+      authorName: '',
+      authorColor: '',
+      text: '![](/uploads/x.png) http://evil.com **bold** joined',
+    });
+    expect(html).toContain('mara-system');
+    expect(html).not.toContain('<img'); // no inline image from the name
+    expect(html).not.toContain('<a '); // no auto-link
+    expect(html).not.toContain('<strong>'); // no markdown
+    expect(html).toContain('joined');
+  });
+
   it('renders a notice line at default colour (no dim/italic wrapper) with markdown', () => {
     const html = renderLine({
       kind: 'notice',

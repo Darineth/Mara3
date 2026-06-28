@@ -1,7 +1,9 @@
 # Security TODO
 
 Backlog of security findings for Mara 3, focused on the communication
-(WebSocket/HTTP) and HTML-rendering paths. From the review on **2026-06-19**.
+(WebSocket/HTTP) and HTML-rendering paths. From the review on **2026-06-19**;
+release-prep pass **2026-06-28** (resolved M3/L5/L6; reviewed the new
+update-nudge / `setProfile` / Markdown-image surfaces).
 
 ## Threat model (context)
 
@@ -23,19 +25,27 @@ reach the server."
   (`apps/server/src/uploads.ts`)
 - `POST /upload` requires a valid WS session token (`Authorization: Bearer`). _(commit 84b907e)_
 - WebSocket `maxPayload` 256 KB; `pluginData` capped at 16 KB. _(commit 84b907e)_
+- **Per-connection flood control** (was M3): a token bucket per socket
+  (`MARA_MSG_RATE`/`MARA_MSG_BURST`, default 15/s, burst 30); over-limit frames are
+  dropped, the user is notified once per run, and a persistent flooder is closed
+  (`MARA_MSG_FLOOD_KICK`). `MARA_MSG_RATE=0` disables it. (`connection.ts`, `hub.ts`) _(2026-06-28)_
+- **System notices render as escaped text** (was L5): join/leave/disconnect/connection
+  lines disable markdown/links/images, so a display name like `http://evil.com` or
+  `![](/uploads/x)` can't become a link/image in everyone's notices. (`render.ts`) _(2026-06-28)_
+- **Upload magic-byte sniff** (was L6): the body's leading bytes must match the declared
+  image type, so a lying `Content-Type` can't cache arbitrary bytes. (`uploads.ts`) _(2026-06-28)_
+
+## Reviewed 2026-06-28 (release-prep pass) — clean
+
+- Mid-session `setProfile` (name/colour): name is escaped wherever rendered (and only
+  shown as plain text in system lines per L5); colour is re-validated against
+  `#rrggbb` at render; the name is deduped server-side. No injection path.
+- Markdown `![alt](url)` images: alt text is HTML-escaped into the `alt` attribute;
+  the URL goes through the same `http(s)`/`/uploads/` scheme allowlist as `[img]`.
+- Desktop update nudge: manifest fetched read-only; the Download link only opens
+  `http(s)` URLs in the system browser. Update host is operator-controlled.
 
 ## Open items
-
-### M3 — No per-connection rate limiting / flood control · _Medium_
-
-A client can send messages as fast as it likes; the server faithfully
-re-broadcasts to all channel members, and each recipient renders with
-backtracking markdown regexes — so one client can degrade every client.
-
-- **Where:** `apps/server/src/hub.ts` (`onMessage`), `apps/server/src/connection.ts`
-- **Fix:** token-bucket per connection (e.g. N msgs/sec with a small burst);
-  on exceed, drop or send a throttling `error` and optionally disconnect repeat
-  offenders. Consider a separate, tighter bucket for `/upload`.
 
 ### M4 — Plaintext transport · _Medium (deployment)_
 
@@ -70,31 +80,13 @@ so visual impersonation by name remains possible.
 - **Fix (if desired):** real authentication (accounts, or signed identity keys)
   if the deployment needs verified identities.
 
-### L5 — Display names run through full markdown/linkify in system lines · _Low_
-
-A name like `http://phish.com` or `/uploads/<id>.png` becomes a clickable link
-or inline image inside everyone's "X joined / left / disconnected" notices.
-Escaped (not XSS), but a spoofing/annoyance vector.
-
-- **Where:** `packages/client-core/src/client.ts` (`systemLine`), rendered via
-  `renderText` for `kind: 'system'` in `packages/chat-render/src/render.ts`
-- **Fix:** render display names as escaped-text-only — e.g. compose system lines
-  from a pre-escaped name with links/images/markdown disabled for that segment.
-
-### L6 — Upload content-type trusted from the header · _Low (defense-in-depth)_
-
-`/upload` keys off the `Content-Type` header, not the bytes. Mitigated by
-`nosniff` + sandbox CSP + fixed served type, so it is not an XSS vector — the
-image just won't render if the bytes lie.
-
-- **Where:** `apps/server/src/uploads.ts` (`handleUpload`)
-- **Fix:** sniff magic bytes and reject mismatches (e.g. PNG/JPEG/GIF/WebP/BMP
-  signatures).
-
 ## Notes
 
-- Client-side markdown regexes backtrack; input is capped at 8192 chars, but a
-  flood of pathological text burns CPU on every rendering client — another
-  reason to land **M3**.
+- Client-side markdown regexes backtrack; input is capped at 8192 chars. The
+  per-connection flood control (above) bounds how fast one client can make every
+  other client re-render, which was the main amplification concern.
 - Unbounded channel creation per client is a minor memory vector
   (`getOrCreateChannel`); revisit if abuse is seen.
+- `/upload` is gated by a live WS session + per-file/cache caps + magic-byte sniff,
+  but has no separate per-connection rate bucket; the cache cap bounds the blast
+  radius. Add a tighter upload bucket if abuse is seen.

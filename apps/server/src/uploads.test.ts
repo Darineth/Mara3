@@ -77,10 +77,19 @@ function upload(bytes: Uint8Array, type = 'image/png', auth = token) {
   });
 }
 
+const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** Bytes that pass the PNG magic-byte sniff, padded to `size` (>= the 8-byte signature). */
+function png(size = PNG_SIG.length): Uint8Array {
+  const buf = new Uint8Array(Math.max(size, PNG_SIG.length));
+  buf.set(PNG_SIG);
+  return buf;
+}
+
 describe('upload endpoint', () => {
   it('stores an image and serves it back', async () => {
     await start();
-    const res = await upload(new Uint8Array([1, 2, 3, 4]));
+    const body = png(12);
+    const res = await upload(body);
     expect(res.status).toBe(200);
     const { url } = (await res.json()) as { url: string };
     expect(url).toMatch(/^\/uploads\/[0-9a-f]{32}\.png$/);
@@ -89,7 +98,7 @@ describe('upload endpoint', () => {
     expect(fetched.status).toBe(200);
     expect(fetched.headers.get('content-type')).toBe('image/png');
     expect(fetched.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(body);
   });
 
   it('rejects uploads without a valid session token', async () => {
@@ -103,7 +112,15 @@ describe('upload endpoint', () => {
   it('rejects non-image and oversize uploads', async () => {
     await start();
     expect((await upload(new Uint8Array([1]), 'text/plain')).status).toBe(415);
-    expect((await upload(new Uint8Array(2048))).status).toBe(413);
+    expect((await upload(png(2048))).status).toBe(413);
+  });
+
+  it('rejects bytes that do not match the declared image type (magic-byte sniff)', async () => {
+    await start();
+    // Declared image/png but the bytes are not a PNG → 415, nothing stored.
+    expect((await upload(new Uint8Array([1, 2, 3, 4]), 'image/png')).status).toBe(415);
+    // A real PNG signature passes.
+    expect((await upload(png(16), 'image/png')).status).toBe(200);
   });
 
   it('refuses to serve a path outside its naming scheme', async () => {
@@ -114,9 +131,9 @@ describe('upload endpoint', () => {
 
   it('evicts the oldest file when a new upload exceeds the cache cap', async () => {
     await start({ maxCacheBytes: 150 });
-    const a = (await (await upload(new Uint8Array(100))).json()) as { url: string };
+    const a = (await (await upload(png(100))).json()) as { url: string };
     await delay(20); // guarantee distinct mtimes
-    const b = (await (await upload(new Uint8Array(100))).json()) as { url: string };
+    const b = (await (await upload(png(100))).json()) as { url: string };
 
     expect((await fetch(base + a.url)).status).toBe(404); // evicted
     expect((await fetch(base + b.url)).status).toBe(200); // kept

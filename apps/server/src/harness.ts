@@ -18,8 +18,13 @@ import {
 export class TestClient {
   private readonly queue: ServerMessage[] = [];
   private waiter: ((m: ServerMessage) => void) | null = null;
+  /** Resolves when the server (or we) close the socket — with the close code. */
+  readonly closed: Promise<{ code: number; reason: string }>;
 
   private constructor(private readonly ws: WebSocket) {
+    this.closed = new Promise((resolve) =>
+      ws.once('close', (code, reason) => resolve({ code, reason: reason.toString() })),
+    );
     ws.on('message', (data) => {
       const msg = parseServerMessage(data.toString());
       // Hand directly to a pending next() if one is waiting; otherwise buffer.
