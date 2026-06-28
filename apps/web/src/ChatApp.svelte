@@ -11,12 +11,13 @@
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import { isDesktop, nativeLog, switchServer } from './lib/native.js';
-  import type { MaraSettings } from './lib/settings.js';
+  import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
   import { uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
   import FormattingHelp from './FormattingHelp.svelte';
+  import OptionsDialog from './OptionsDialog.svelte';
 
   let {
     client,
@@ -32,6 +33,7 @@
 
   let showMacros = $state(false);
   let showFormatting = $state(false);
+  let showOptions = $state(false);
   let menuOpen = $state(false);
   let showUsers = $state(true);
   let menuEl = $state<HTMLElement | null>(null);
@@ -304,6 +306,21 @@
     }
   }
 
+  // Apply in-session options: broadcast a name/colour change (server dedupes + tells
+  // everyone via userProfile, which updates our own roster/self), apply the theme via
+  // the shared settings (App's $effect re-applies it), and persist.
+  function applyOptions(next: { name: string; color: string; theme: Theme }) {
+    const newName = next.name.trim();
+    const update: { name?: string; color?: string } = {};
+    if (newName && newName !== settings.name) update.name = newName;
+    if (next.color !== settings.color) update.color = next.color;
+    if (update.name || update.color) client.setProfile(update);
+    if (newName) settings.name = newName;
+    settings.color = next.color;
+    settings.theme = next.theme;
+    persist();
+  }
+
   function join() {
     const name = joinName.trim();
     if (!name) return;
@@ -470,17 +487,12 @@
             <button class="item" onclick={() => ((showFormatting = true), (menuOpen = false))}
               >Formatting help…</button
             >
+            <button class="item" onclick={() => ((showOptions = true), (menuOpen = false))}
+              >Options…</button
+            >
             {#if isDesktop()}
               <button class="item" onclick={onSwitchServer}>Switch server…</button>
             {/if}
-            <label class="item theme-row">
-              Theme
-              <select bind:value={settings.theme} onchange={persist}>
-                <option value="system">System</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
-            </label>
             <div class="sep"></div>
             <button class="item danger" onclick={onDisconnect}>Disconnect</button>
             <div class="who" data-state={$connection}>
@@ -551,6 +563,10 @@
 
 {#if showFormatting}
   <FormattingHelp onClose={() => (showFormatting = false)} />
+{/if}
+
+{#if showOptions}
+  <OptionsDialog {settings} onApply={applyOptions} onClose={() => (showOptions = false)} />
 {/if}
 
 <!-- Single shared lightbox for chat images and attachment tiles. -->
@@ -790,25 +806,6 @@
   }
   .item.danger {
     color: var(--mara-danger);
-  }
-  .theme-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    cursor: default;
-  }
-  .theme-row:hover {
-    background: none;
-  }
-  .theme-row select {
-    font: inherit;
-    background: var(--mara-input-bg);
-    color: var(--mara-fg);
-    border: 1px solid var(--mara-border);
-    border-radius: 4px;
-    padding: 0.1rem 0.3rem;
-    cursor: pointer;
   }
   .sep {
     height: 1px;

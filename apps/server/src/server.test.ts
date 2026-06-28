@@ -150,6 +150,65 @@ describe('default channel', () => {
   });
 });
 
+describe('setProfile (mid-session rename / recolor)', () => {
+  it('broadcasts a name + colour change to others and back to the user', async () => {
+    const a = await TestClient.connect(url);
+    const b = await TestClient.connect(url);
+    const alice = await login(a, 'alice');
+    await login(b, 'bob');
+
+    a.send({ type: 'setProfile', name: 'Alice Cooper', color: '#ff0000' });
+
+    const onB = await b.waitFor('userProfile');
+    expect(onB.user.token).toBe(alice.token);
+    expect(onB.user.name).toBe('Alice Cooper');
+    expect(onB.user.color).toBe('#ff0000');
+    // The user gets the update too (so a deduped name reaches their own client).
+    const onA = await a.waitFor('userProfile');
+    expect(onA.user.name).toBe('Alice Cooper');
+
+    a.close();
+    b.close();
+  });
+
+  it('dedupes a rename to a name another user holds (suffixes it)', async () => {
+    const a = await TestClient.connect(url);
+    const b = await TestClient.connect(url);
+    await login(a, 'alice');
+    await login(b, 'bob');
+
+    a.send({ type: 'setProfile', name: 'bob' }); // taken -> bob2
+    const upd = await a.waitFor('userProfile');
+    expect(upd.user.name).toBe('bob2');
+
+    a.close();
+    b.close();
+  });
+
+  it('does not clash a rename against the user’s own current name', async () => {
+    const a = await TestClient.connect(url);
+    await login(a, 'alice');
+
+    a.send({ type: 'setProfile', name: 'Alice' }); // case change, otherwise free
+    const upd = await a.waitFor('userProfile');
+    expect(upd.user.name).toBe('Alice'); // not "Alice2"
+
+    a.close();
+  });
+
+  it('a colour-only change keeps the name', async () => {
+    const a = await TestClient.connect(url);
+    await login(a, 'alice');
+
+    a.send({ type: 'setProfile', color: '#00ff00' });
+    const upd = await a.waitFor('userProfile');
+    expect(upd.user.name).toBe('alice');
+    expect(upd.user.color).toBe('#00ff00');
+
+    a.close();
+  });
+});
+
 describe('channels and chat', () => {
   it('delivers a channel roster on join and notifies existing members', async () => {
     const a = await TestClient.connect(url);

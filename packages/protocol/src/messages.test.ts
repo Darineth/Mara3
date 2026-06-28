@@ -25,6 +25,7 @@ const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
   emote: { type: 'emote', channelToken: 12345, text: 'waves' },
   privateMessage: { type: 'privateMessage', to: 999, text: 'psst' },
   away: { type: 'away', text: 'brb' },
+  setProfile: { type: 'setProfile', name: 'alice', color: '#3366cc' },
   ping: { type: 'ping', id: 1 },
 };
 
@@ -48,6 +49,7 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
   chat: { type: 'chat', from: 678, channelToken: 12345, text: 'hello', at: 1700000001 },
   emote: { type: 'emote', from: 678, channelToken: 12345, text: 'waves', at: 1700000002 },
   away: { type: 'away', token: 678, text: 'brb' },
+  userProfile: { type: 'userProfile', user },
   privateMessage: { type: 'privateMessage', from: 678, text: 'psst' },
   pong: { type: 'pong', id: 1 },
   error: { type: 'error', message: 'bad' },

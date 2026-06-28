@@ -67,6 +67,14 @@ const clientAway = z.object({
   text: z.string().max(512),
 });
 
+const clientSetProfile = z.object({
+  type: z.literal('setProfile'),
+  /** New display name (deduped server-side on a clash). Omit to leave unchanged. */
+  name: z.string().min(1).max(64).optional(),
+  /** New display colour. Omit to leave unchanged. */
+  color: colorSchema.optional(),
+});
+
 const ping = z.object({
   type: z.literal('ping'),
   /** Client-chosen id echoed back in `pong`, for liveness + RTT. */
@@ -81,6 +89,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   clientEmote,
   clientPrivateMessage,
   clientAway,
+  clientSetProfile,
   ping,
 ]);
 /** Any validated client→server message. */
@@ -201,6 +210,12 @@ const serverAway = z.object({
   text: z.string().max(512),
 });
 
+/** Broadcast when a user changes their display name and/or colour mid-session. */
+const serverUserProfile = z.object({
+  type: z.literal('userProfile'),
+  user: userInfoSchema,
+});
+
 const serverPrivateMessage = z.object({
   type: z.literal('privateMessage'),
   from: tokenSchema,
@@ -229,6 +244,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   serverChat,
   serverEmote,
   serverAway,
+  serverUserProfile,
   serverPrivateMessage,
   pong,
   errorMessage,

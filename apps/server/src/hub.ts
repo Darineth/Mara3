@@ -108,6 +108,8 @@ export class Hub {
         return this.handleChannelText(session, conn, msg.channelToken, msg.text, 'emote');
       case 'away':
         return this.handleAway(session, msg);
+      case 'setProfile':
+        return this.handleSetProfile(session, msg);
       case 'privateMessage':
         return this.handlePrivateMessage(session, conn, msg);
       case 'ping':
@@ -281,6 +283,30 @@ export class Hub {
     this.broadcastAll({ type: 'away', token: session.info.token, text: msg.text });
   }
 
+  // Change a user's display name and/or colour mid-session and broadcast the result
+  // to everyone (the user included, so their own client picks up a deduped name).
+  private handleSetProfile(
+    session: Session,
+    msg: Extract<ClientMessage, { type: 'setProfile' }>,
+  ): void {
+    let changed = false;
+    if (msg.color !== undefined && msg.color !== session.info.color) {
+      session.info.color = msg.color;
+      changed = true;
+    }
+    if (msg.name !== undefined) {
+      const requested = msg.name.trim();
+      // Dedupe against *other* users (excluding ourselves, or our own name would
+      // always "clash"); a no-op rename leaves the name untouched.
+      const unique = requested && this.uniqueName(requested, session.info.token);
+      if (unique && unique !== session.info.name) {
+        session.info.name = unique;
+        changed = true;
+      }
+    }
+    if (changed) this.broadcastAll({ type: 'userProfile', user: session.info });
+  }
+
   private handlePrivateMessage(
     session: Session,
     conn: Connection,
@@ -316,17 +342,19 @@ export class Hub {
   }
 
   // Resolve a free display name, suffixing "2", "3"… on a case-insensitive clash.
-  private uniqueName(requested: string): string {
+  // `exceptToken` skips that user (a rename must not clash with its own current name).
+  private uniqueName(requested: string, exceptToken?: Token): string {
     const base = requested.trim() || 'guest';
     let name = base;
     let suffix = 2;
-    while (this.nameClashes(name)) name = `${base}${suffix++}`;
+    while (this.nameClashes(name, exceptToken)) name = `${base}${suffix++}`;
     return name;
   }
 
-  private nameClashes(name: string): boolean {
+  private nameClashes(name: string, exceptToken?: Token): boolean {
     const lower = name.toLowerCase();
     for (const session of this.state.sessions.values()) {
+      if (session.info.token === exceptToken) continue;
       if (session.info.name.toLowerCase() === lower) return true;
     }
     return false;

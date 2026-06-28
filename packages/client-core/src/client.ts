@@ -4,6 +4,7 @@ import {
   safeParseServerMessage,
   type ChannelHistoryEntry,
   type ClientMessage,
+  type Color,
   type ServerInfo,
   type ServerMessage,
   type Token,
@@ -168,6 +169,15 @@ export class MaraClient {
 
   sendAway(text: string): void {
     this.send({ type: 'away', text });
+  }
+
+  /**
+   * Change our display name and/or colour mid-session. The server dedupes the name
+   * on a clash and broadcasts the result to everyone (including us) as `userProfile`,
+   * so our own `self`/roster reflect the actual applied name. Pass only what changed.
+   */
+  setProfile(update: { name?: string; color?: Color }): void {
+    this.send({ type: 'setProfile', ...update });
   }
 
   /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
@@ -440,6 +450,17 @@ export class MaraClient {
         const user = get(this._users).get(msg.token);
         if (user) this.upsertUser({ ...user, away: msg.text });
         this.events.emit('away', { token: msg.token, text: msg.text });
+        return;
+      }
+
+      case 'userProfile': {
+        // A name/colour change. Update the roster + directory; if it's us, reflect
+        // the (possibly server-deduped) name in `self` too.
+        this.upsertUser(msg.user);
+        const me = get(this._self);
+        if (me && msg.user.token === me.token)
+          this._self.set({ token: me.token, name: msg.user.name });
+        this.events.emit('userProfile', msg.user);
         return;
       }
 

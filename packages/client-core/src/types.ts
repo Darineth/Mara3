@@ -84,6 +84,8 @@ export interface ClientEvents {
   channelLeft: { channelToken: Token };
   userJoinedChannel: { token: Token; channelToken: Token };
   userLeftChannel: { token: Token; channelToken: Token };
+  /** A user changed their display name and/or colour mid-session. */
+  userProfile: UserInfo;
   chat: { from: Token; channelToken: Token; text: string };
   emote: { from: Token; channelToken: Token; text: string };
   away: { token: Token; text: string };

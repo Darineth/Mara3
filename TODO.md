@@ -27,11 +27,15 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       text markdown, links/images incl. `![alt](url)`/`!url`/`[img]`, and the legacy
       `[b]/[i]/[u]/[s]/[spoiler]` tags. Emoticons omitted — they render off by default.)_
 
-- [ ] **Options menu (name / color / preferences).** An in-session settings dialog to change
+- [x] **Options menu (name / color / preferences).** An in-session settings dialog to change
       display name, color, theme, and other preferences without disconnecting (today name and
       color are only settable on the connect screen). The overflow menu already has Theme; grow
       it into a proper options panel. A mid-session name/color change likely needs a
       roster-update broadcast — check protocol support.
+      _(Done — `OptionsDialog.svelte` (⋯ → Options…) with name/colour/theme; Theme moved out of
+      the inline menu. Name/colour changes broadcast via a new protocol `setProfile`→`userProfile`
+      (PROTOCOL_VERSION → 2): the server dedupes the name (excluding self) and tells everyone, and
+      the changer's own self/roster update from the same broadcast.)_
 
 - [x] **Inline-URL images stay in place.** Images attached by pasting (uploads) work as-is;
       but an image inlined from a URL should render **in place** — at the URL's position in the

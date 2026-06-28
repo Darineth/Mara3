@@ -245,6 +245,28 @@ describe('presence system messages', () => {
 
     b.disconnect();
   });
+
+  it('updates the roster and own self on a setProfile broadcast', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    const alice = await connected(a);
+    await connected(b);
+
+    const onB = waitEvent(b, 'userProfile');
+    a.setProfile({ name: 'Alice2', color: '#112233' });
+    const profile = await onB;
+    expect(profile.token).toBe(alice.token);
+    expect(profile.name).toBe('Alice2');
+    expect(profile.color).toBe('#112233');
+
+    // The broadcast upserts the (renamed) user into b's roster, and a's own self
+    // reflects the applied name.
+    expect(get(b.users).get(alice.token)?.name).toBe('Alice2');
+    expect(get(a.self)?.name).toBe('Alice2');
+
+    a.disconnect();
+    b.disconnect();
+  });
 });
 
 describe('private messages + ping', () => {
