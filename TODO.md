@@ -25,6 +25,16 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       it into a proper options panel. A mid-session name/color change likely needs a
       roster-update broadcast — check protocol support.
 
+- [ ] **Inline-URL images stay in place.** Images attached by pasting (uploads) work as-is;
+      but an image inlined from a URL should render **in place** — at the URL's position in the
+      message text — rather than being moved or collected elsewhere. (Render-position behavior
+      in `@mara/chat-render`.)
+
+- [ ] **Full Markdown image syntax `![alt](url)`.** Support standard Markdown image syntax in
+      addition to the existing simplified handling (bare-URL auto-detect, the `!<url>` force
+      marker, and the legacy `[img]` tag). Honor the same http(s)/upload scheme allowlist and
+      the images toggle. (`@mara/chat-render`.)
+
 - [ ] **Security review and fixes.** A focused pre-release security pass over the server and
       clients, fixing what it finds. Cross-check [SECURITY-TODO.md](SECURITY-TODO.md) (TLS / M4,
       upload handling, HTML/URL escaping, rate limits, identity-token handling, and the desktop
