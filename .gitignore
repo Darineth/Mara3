@@ -9,6 +9,9 @@ build/
 .turbo/
 *.tsbuildinfo
 
+# Logo/brand working files & concept art (the canonical sources live in resources/)
+references/
+
 # Runtime upload cache (server-local image hosting)
 apps/server/uploads/
 
