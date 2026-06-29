@@ -12,6 +12,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
   copyFileSync,
@@ -194,7 +195,16 @@ if (!skipTests) {
 }
 
 step(4, total, 'Cleaning dist/');
-if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
+// Wipe last run's output, but PRESERVE dist/prebuilt/ — a cross-platform build staged
+// by `pnpm package:linux` (built in WSL) that the later zip-dist folds in. Otherwise the
+// only working order would be package -> package:linux -> zip; preserving it lets you
+// stage the Linux client once and re-run packaging freely.
+if (existsSync(dist)) {
+  for (const entry of readdirSync(dist)) {
+    if (entry === 'prebuilt') continue;
+    rmSync(join(dist, entry), { recursive: true, force: true });
+  }
+}
 mkdirSync(dist, { recursive: true });
 
 step(5, total, 'Packaging self-contained Node server');

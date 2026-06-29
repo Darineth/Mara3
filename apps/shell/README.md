@@ -111,9 +111,12 @@ into the release:
 
 ```bash
 pnpm package:linux     # builds in WSL -> dist/prebuilt/Mara3-linux-x64.tar.gz
-pnpm package:zip       # -> Mara3-linux-x64-*.tar.gz + latest-linux-x64.json (or package:all)
+pnpm package:all       # builds the Windows/server/web artifacts + folds in the Linux one
+#   (or just pnpm package:zip if you only want to (re)assemble dist/zips/)
 ```
 
+The staged tarball lives in `dist/prebuilt/`, which `pnpm package` deliberately preserves
+across its `dist/` clean — so stage the Linux client once and re-run the rest freely.
 Needs WSL2 with the toolchain + `rsync` installed. Config via env: `MARA_WSL_DISTRO`
 (default distro), `MARA_WSL_DIR` (default `$HOME/mara-linux-build`), `MARA_UPDATE_BASE_URL`.
 Run `pnpm package:linux --dry-run` to print the generated build script without executing.
