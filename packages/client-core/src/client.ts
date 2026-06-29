@@ -455,11 +455,17 @@ export class MaraClient {
 
       case 'userProfile': {
         // A name/colour change. Update the roster + directory; if it's us, reflect
-        // the (possibly server-deduped) name in `self` too.
+        // the (possibly server-deduped) name in `self`, and persist the applied
+        // name/colour as our login identity so an auto-reconnect (e.g. after the
+        // server restarts) re-logs in as the new name — not the one we first
+        // connected with, which the server no longer remembers.
         this.upsertUser(msg.user);
         const me = get(this._self);
-        if (me && msg.user.token === me.token)
+        if (me && msg.user.token === me.token) {
           this._self.set({ token: me.token, name: msg.user.name });
+          this.opts.name = msg.user.name;
+          this.opts.color = msg.user.color;
+        }
         this.events.emit('userProfile', msg.user);
         return;
       }

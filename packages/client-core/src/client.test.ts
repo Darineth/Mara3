@@ -377,4 +377,41 @@ describe('reconnect', () => {
 
     client.disconnect();
   });
+
+  it('keeps a mid-session rename across an auto-reconnect (server restart)', async () => {
+    const client = makeClient('alice', { autoReconnect: true, reconnectBaseDelayMs: 50 });
+    const first = await connected(client);
+    expect(first.name).toBe('alice');
+
+    // Rename mid-session and wait for the server-confirmed profile.
+    const renamed = waitEvent(client, 'userProfile');
+    client.setProfile({ name: 'Alice2' });
+    await renamed;
+    expect(get(client.self)?.name).toBe('Alice2');
+
+    // Restart the server on the same port (it loses all session state); the client
+    // auto-reconnects and re-logs in.
+    const port = server.port;
+    const reconnected = waitEvent(client, 'connected');
+    await server.close();
+    server = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+      },
+      createLogger('silent'),
+    );
+
+    // It re-logs in as the renamed identity — not the original 'alice', which the
+    // restarted server no longer remembers.
+    const again = await reconnected;
+    expect(again.name).toBe('Alice2');
+    expect(get(client.self)?.name).toBe('Alice2');
+
+    client.disconnect();
+  });
 });
