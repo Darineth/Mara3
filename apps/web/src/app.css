@@ -9,3 +9,7 @@ body {
   height: 100%;
   font-family: var(--mara-font);
 }
+/* Themed page background so scrolling/overscroll past a panel never flashes white. */
+body {
+  background: var(--mara-bg);
+}

@@ -136,9 +136,14 @@
 
 <style>
   .connect {
-    height: 100vh;
-    display: grid;
-    place-content: center;
+    /* min-height (not height) so a panel taller than the viewport grows the box —
+       the themed background then covers it (no white strip) — and the page scrolls.
+       Flex centring doesn't clip the top here because the box grows to the content. */
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
     background: var(--mara-bg);
     color: var(--mara-fg);
   }
@@ -153,8 +158,12 @@
     border-radius: 10px;
   }
   .logo {
-    width: min(256px, 100%);
+    /* Cap by width on tall screens, but by viewport height on short ones, so the
+       logo shrinks to make room rather than pushing the form off-screen. */
+    width: auto;
     height: auto;
+    max-width: min(256px, 100%);
+    max-height: 26vh;
     display: block;
     margin: 0 auto 0.5rem;
   }
@@ -201,5 +210,20 @@
     text-align: center;
     font-size: 0.7rem;
     opacity: 0.4;
+  }
+  /* Short viewports: tighten spacing (the logo already shrinks via max-height) so the
+     panel fits; on a very small screen it still scrolls via the page. */
+  @media (max-height: 560px) {
+    form {
+      gap: 0.5rem;
+      padding: 1.25rem;
+    }
+    .logo {
+      margin-bottom: 0.25rem;
+    }
+    h1 {
+      font-size: 1.25rem;
+      margin-bottom: 0.25rem;
+    }
   }
 </style>
