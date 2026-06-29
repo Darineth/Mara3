@@ -117,6 +117,10 @@ pnpm package:all       # builds the Windows/server/web artifacts + folds in the 
 
 The staged tarball lives in `dist/prebuilt/`, which `pnpm package` deliberately preserves
 across its `dist/` clean — so stage the Linux client once and re-run the rest freely.
+`package:linux` records the version/commit it was built from beside the tarball, and
+`zip-dist` **refuses to fold in a staged build that no longer matches the release** (so a
+stale binary can't silently ship under a newer version) — re-run `package:linux` after a
+bump. Override with `MARA_ALLOW_STALE_PREBUILT=1` if you really mean it.
 Needs WSL2 with the toolchain + `rsync` installed. Config via env: `MARA_WSL_DISTRO`
 (default distro), `MARA_WSL_DIR` (default `$HOME/mara-linux-build`), `MARA_UPDATE_BASE_URL`.
 Run `pnpm package:linux --dry-run` to print the generated build script without executing.

@@ -175,6 +175,36 @@ function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
+/** A staged prebuilt archive (dist/prebuilt/…, the Linux client) is preserved across
+ *  `pnpm package`'s clean, so it can outlive the build it came from. package-linux.mjs
+ *  drops a `<archive>.build.json` beside it recording the version/commit/dirty it was
+ *  built from; bail if that doesn't match THIS release rather than silently stamping a
+ *  stale binary with the wrong version. Override with MARA_ALLOW_STALE_PREBUILT=1. */
+function assertPrebuiltFresh(comp, prebuiltPath) {
+  const want = { version: componentVersion(comp), commit: gitCommit, dirty: !!gitDirty };
+  const tag = (m) => `v${m.version} ${m.commit ?? '?'}${m.dirty ? '-dirty' : ''}`;
+  let meta = null;
+  try {
+    meta = JSON.parse(readFileSync(`${prebuiltPath}.build.json`, 'utf8'));
+  } catch {
+    /* no sidecar metadata */
+  }
+  if (!meta) {
+    console.warn(
+      `    ! ${comp.name}: staged build has no .build.json — can't verify it matches ${tag(want)}`,
+    );
+    return;
+  }
+  const stale =
+    meta.version !== want.version || meta.commit !== want.commit || !!meta.dirty !== want.dirty;
+  if (stale && process.env.MARA_ALLOW_STALE_PREBUILT !== '1') {
+    throw new Error(
+      `staged build is ${tag(meta)} (built ${meta.builtAt ?? '?'}) but this release is ${tag(want)} — ` +
+        're-run `pnpm package:linux` (or set MARA_ALLOW_STALE_PREBUILT=1 to override)',
+    );
+  }
+}
+
 // Synchronous sleep (no async machinery in this top-to-bottom script).
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -317,8 +347,11 @@ for (const comp of COMPONENTS) {
       archive(comp.dir, zipPath, { flatten: comp.flatten, format: comp.archive });
     } else {
       // Prebuilt: a finished archive authored on its own platform (the Linux tarball,
-      // made in WSL so its +x survives — Windows can't author that). Fold it in under
-      // the release name; copy-verified in case AV scans the source mid-read.
+      // made in WSL so its +x survives — Windows can't author that). It's preserved
+      // across `pnpm package`'s clean, so it can outlive the build it came from — verify
+      // it was built from THIS release before stamping it, or we'd silently ship a stale
+      // binary under the wrong version. Then fold it in (copy-verified vs AV mid-read).
+      assertPrebuiltFresh(comp, prebuiltPath);
       console.log(`    (folding in prebuilt ${comp.name})`);
       copyVerified(prebuiltPath, zipPath, sha256(prebuiltPath));
     }

@@ -19,7 +19,7 @@
 //   MARA_UPDATE_BASE_URL  update-nudge host (default below); MARA_UPDATE_URL= to disable
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -130,6 +130,35 @@ if (!existsSync(staged)) {
   console.error(`\npackage:linux: expected staged tarball missing: ${staged}`);
   process.exit(1);
 }
+
+// Bind the staged tarball to the release it was built from, so zip-dist refuses to fold
+// a stale one into a later release (it's preserved across `pnpm package`'s clean). The
+// version is the shell's own (client) track — the same value zip-dist names it by.
+function tryExec(cmd) {
+  try {
+    return execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+let version = null;
+try {
+  version = JSON.parse(
+    readFileSync(join(root, 'apps/shell/src-tauri/tauri.conf.json'), 'utf8'),
+  ).version;
+} catch {
+  /* leave null; zip-dist will warn it can't verify */
+}
+const porcelain = tryExec('git status --porcelain');
+const meta = {
+  version,
+  commit: tryExec('git rev-parse --short HEAD'),
+  dirty: porcelain == null ? null : porcelain.length > 0,
+  builtAt: new Date().toISOString(),
+};
+writeFileSync(`${staged}.build.json`, `${JSON.stringify(meta, null, 2)}\n`);
 
 console.log('\n============================================================');
 console.log(` Done. Staged Linux client: dist/prebuilt/${stagedName}`);
