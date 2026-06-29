@@ -30,6 +30,25 @@ fn seed_url() -> String {
     std::env::var("MARA_URL").unwrap_or_default()
 }
 
+/// Saved window geometry (physical pixels), so the client reopens where you left it.
+/// Position is in virtual-desktop coordinates, which inherently encodes the monitor;
+/// on restore we recenter if it no longer overlaps any display (e.g. a monitor was
+/// unplugged). When maximized we keep the last *restored* bounds here so un-maximizing
+/// returns to the right place. Mirrors the modern shell's WindowState.
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct WindowState {
+    #[serde(default)]
+    x: Option<i32>,
+    #[serde(default)]
+    y: Option<i32>,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    #[serde(default)]
+    maximized: bool,
+}
+
 /// Persisted client settings — kept in settings.json next to the executable
 /// (portable), matching the modern shell.
 #[derive(Serialize, Deserialize, Clone)]
@@ -40,6 +59,9 @@ struct Settings {
     recent: Vec<String>,
     #[serde(rename = "autoConnect", default)]
     auto_connect: bool,
+    /// Window position/size/maximized state, restored on the next launch.
+    #[serde(default)]
+    window: WindowState,
 }
 
 impl Default for Settings {
@@ -48,6 +70,7 @@ impl Default for Settings {
             server_url: seed_url(),
             recent: Vec::new(),
             auto_connect: false,
+            window: WindowState::default(),
         }
     }
 }
@@ -79,6 +102,57 @@ fn save_settings(settings: &Settings) -> Result<(), String> {
     }
     let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+/// Merge the window geometry into settings.json without disturbing the rest. Window
+/// state is non-critical, so failures are swallowed (we never block close on it).
+fn save_window_state(window: &WindowState) {
+    let mut s = load_settings();
+    s.window = window.clone();
+    let _ = save_settings(&s);
+}
+
+/// True if the window has any visible overlap with a connected monitor. Guards against
+/// restoring onto a display that's since been unplugged or rearranged (which would
+/// strand the window off-screen). Unknown geometry/monitors → assume on-screen.
+fn window_on_screen(window: &tauri::Window) -> bool {
+    let (Ok(pos), Ok(size), Ok(monitors)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.available_monitors(),
+    ) else {
+        return true;
+    };
+    if monitors.is_empty() {
+        return true;
+    }
+    let (wl, wt) = (pos.x, pos.y);
+    let (wr, wb) = (pos.x + size.width as i32, pos.y + size.height as i32);
+    monitors.iter().any(|m| {
+        let mp = m.position();
+        let ms = m.size();
+        let overlap_x = wr.min(mp.x + ms.width as i32) - wl.max(mp.x);
+        let overlap_y = wb.min(mp.y + ms.height as i32) - wt.max(mp.y);
+        overlap_x > 0 && overlap_y > 0
+    })
+}
+
+/// Apply saved geometry to the freshly-built (still hidden) window: size, then
+/// position (recentering if it lands off-screen), then maximize. Setting the restored
+/// bounds before maximizing means un-maximizing later returns to them.
+fn apply_window_state(window: &tauri::Window, ws: &WindowState) {
+    if let (Some(w), Some(h)) = (ws.width, ws.height) {
+        let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+    }
+    if let (Some(x), Some(y)) = (ws.x, ws.y) {
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        if !window_on_screen(window) {
+            let _ = window.center();
+        }
+    }
+    if ws.maximized {
+        let _ = window.maximize();
+    }
 }
 
 #[tauri::command]
@@ -140,12 +214,47 @@ fn main() {
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
             );
-            tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
-                .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
-                .inner_size(980.0, 720.0)
-                .min_inner_size(480.0, 400.0)
-                .initialization_script(&init)
-                .build()?;
+            let window =
+                tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
+                    .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
+                    .inner_size(980.0, 720.0)
+                    .min_inner_size(480.0, 400.0)
+                    .visible(false) // restore saved geometry first, then show (no flash)
+                    .initialization_script(&init)
+                    .build()?;
+            apply_window_state(&window, &settings.window);
+            let _ = window.show();
+
+            // Persist position/size/maximized so the next launch reopens here. Track
+            // the live geometry in-session — ignoring maximized/minimized frames so the
+            // stored bounds stay the *restored* ones — and write it back on close.
+            let tracked = std::sync::Arc::new(std::sync::Mutex::new(settings.window.clone()));
+            let ev_window = window.clone();
+            window.on_window_event(move |event| {
+                use tauri::WindowEvent;
+                match event {
+                    WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                        let maximized = ev_window.is_maximized().unwrap_or(false);
+                        let minimized = ev_window.is_minimized().unwrap_or(false);
+                        let mut t = tracked.lock().unwrap();
+                        t.maximized = maximized;
+                        if !maximized && !minimized {
+                            if let Ok(p) = ev_window.outer_position() {
+                                (t.x, t.y) = (Some(p.x), Some(p.y));
+                            }
+                            if let Ok(s) = ev_window.inner_size() {
+                                if s.width > 0 && s.height > 0 {
+                                    (t.width, t.height) = (Some(s.width), Some(s.height));
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                        save_window_state(&tracked.lock().unwrap());
+                    }
+                    _ => {}
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
