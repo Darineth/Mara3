@@ -323,7 +323,7 @@ export class MaraClient {
         // same rejection (e.g. protocol mismatch).
         this.setStatus('denied');
         this.intentionalClose = true;
-        this.events.emit('loginDenied', { reason: msg.reason });
+        this.events.emit('loginDenied', { reason: msg.reason, code: msg.code });
         this.socket?.close(1000, 'denied');
         return;
 

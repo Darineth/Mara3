@@ -134,6 +134,11 @@ const welcome = z.object({
 const loginDenied = z.object({
   type: z.literal('loginDenied'),
   reason: z.string().max(512),
+  /** Machine-readable cause so the client can react beyond showing `reason`.
+   *  Known value: 'protocol' — the client is too old for this server's wire format,
+   *  so reloading to fetch a newer web build resolves it. A free-form string (not an
+   *  enum) so an older client tolerates future codes instead of failing to parse. */
+  code: z.string().max(32).optional(),
 });
 
 const userConnect = z.object({

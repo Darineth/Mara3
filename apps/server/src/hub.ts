@@ -140,7 +140,11 @@ export class Hub {
       return;
     }
     if (msg.protocol !== PROTOCOL_VERSION) {
-      conn.send({ type: 'loginDenied', reason: 'protocol version mismatch — please update' });
+      conn.send({
+        type: 'loginDenied',
+        reason: 'protocol version mismatch — please update',
+        code: 'protocol',
+      });
       // 4001: app-defined WS close code (4000–4999) meaning "must update".
       conn.close(4001, 'protocol mismatch');
       return;

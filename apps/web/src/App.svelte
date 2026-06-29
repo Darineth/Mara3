@@ -25,6 +25,9 @@
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);
   let error = $state('');
+  // Set when login is denied for a protocol mismatch: this web build predates the
+  // server's wire format, so reloading (to fetch a newer build) is what fixes it.
+  let needsReload = $state(false);
   // The operator-set server name, shown under the logo on the connect screen.
   // Fetched from the public /info endpoint (no login needed); falls back to the
   // app name if the server is unreachable or doesn't report one.
@@ -63,6 +66,10 @@
     c.events.on('loginDenied', (d) => {
       error = d.reason;
       client = null;
+      // A protocol mismatch means this build is older than the server — reloading
+      // fetches one that speaks the new wire format. (Fall back to matching the
+      // reason for servers that predate the `code` field.)
+      if (d.code === 'protocol' || /protocol/i.test(d.reason)) onProtocolMismatch();
     });
     c.events.on('error', (e) => {
       // Only surface errors before we're fully connected; once active, transient
@@ -82,6 +89,24 @@
   function disconnect() {
     client?.disconnect();
     client = null;
+  }
+
+  // Handle a protocol-mismatch denial. Auto-reload to pick up a newer build, but
+  // guard against a loop: if a caching layer keeps serving the stale build, reloading
+  // would just mismatch again. Only auto-reload if we haven't already very recently —
+  // otherwise leave the manual "Reload" button so the user is never stuck looping.
+  function onProtocolMismatch() {
+    needsReload = true;
+    try {
+      const KEY = 'mara:protocol-reload';
+      const last = Number(sessionStorage.getItem(KEY) || '0');
+      if (Date.now() - last > 30_000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
+        location.reload();
+      }
+    } catch {
+      /* sessionStorage blocked — the manual button still works */
+    }
   }
 
   // Auto-connect on page load when we already have a display name (returning
@@ -127,7 +152,16 @@
           <option value="light">Light</option>
         </select>
       </label>
-      {#if error}<p class="error">{error}</p>{/if}
+      {#if needsReload}
+        <div class="reload-note">
+          <p>This app is out of date — the server was updated.</p>
+          <button type="button" class="reload" onclick={() => location.reload()}>
+            Reload to update
+          </button>
+        </div>
+      {:else if error}
+        <p class="error">{error}</p>
+      {/if}
       <button type="submit">Connect</button>
       <p class="build">v{clientBuild.version} · build {shortBuild(clientBuild.buildId)}</p>
     </form>
@@ -195,6 +229,30 @@
     color: var(--mara-danger);
     margin: 0;
     font-size: 0.85rem;
+  }
+  /* Protocol-mismatch prompt — stands out via the accent border so the reload action
+     is obvious when an auto-reload was suppressed (loop guard). */
+  .reload-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--mara-accent);
+    border-radius: 6px;
+    text-align: center;
+  }
+  .reload-note p {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+  .reload {
+    padding: 0.55rem;
+    border: none;
+    border-radius: 6px;
+    background: var(--mara-accent);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
   }
   button[type='submit'] {
     padding: 0.6rem;

@@ -76,7 +76,7 @@ export interface ClientOptions {
 export interface ClientEvents {
   statusChanged: ConnectionState;
   connected: { token: Token; name: string };
-  loginDenied: { reason: string };
+  loginDenied: { reason: string; code?: string };
   error: { message: string };
   userConnect: UserInfo;
   userDisconnect: { token: Token };

@@ -102,6 +102,8 @@ describe('handshake', () => {
     client.send({ type: 'login', protocol: PROTOCOL_VERSION + 1, name: 'alice', color: '#ffffff' });
     const denied = await client.waitFor('loginDenied');
     expect(denied.reason).toMatch(/protocol/i);
+    // Machine-readable cause so the client can auto-reload to a newer build.
+    expect(denied.code).toBe('protocol');
     client.close();
   });
 
