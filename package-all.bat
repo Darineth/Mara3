@@ -1,12 +1,17 @@
 @echo off
 :: Build EVERY Mara 3 distributable into dist\ (self-contained server, web build,
-:: desktop client if Rust is installed, and the Win7 legacy client), then zip each
-:: into version-stamped archives under dist\zips\ with BUILD-INFO + SHA256SUMS.
-:: Win7 legacy needs the WebView2 fixed runtime once (see scripts\package-legacy.mjs).
+:: Windows desktop client if Rust is installed, the Win7 legacy client, and the Linux
+:: client via WSL), then zip each into version-stamped archives under dist\zips\ with
+:: BUILD-INFO + SHA256SUMS.
+:: - Win7 legacy needs the WebView2 fixed runtime once (see scripts\package-legacy.mjs).
+:: - Linux builds in WSL (scripts\package-linux.mjs); --optional means it SKIPS with a
+::   warning if WSL isn't available, so this still works on a machine without it.
 cd /d "%~dp0"
 node scripts\package.mjs %*
 if errorlevel 1 goto fail
 node scripts\package-legacy.mjs
+if errorlevel 1 goto fail
+node scripts\package-linux.mjs --optional
 if errorlevel 1 goto fail
 node scripts\zip-dist.mjs
 if errorlevel 1 goto fail

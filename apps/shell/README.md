@@ -104,26 +104,30 @@ can't cross-compile from Windows (it links the native webview), so the binary is
 on Linux** with Rust + `webkit2gtk-4.1`, `librsvg`, `patchelf` (see the repo root
 README's prerequisites). Two ways to drive it:
 
-**From the Windows dev box, via WSL** (`pnpm package:linux`). This mirrors the working
-tree into a WSL build dir, builds the shell there, and tars the binary **on Linux** (so
-its `+x` survives) into `dist/prebuilt/`. A later `package:zip` folds that staged tarball
-into the release:
+**From the Windows dev box, via WSL.** `pnpm package:all` builds everything including the
+Linux client — it runs `package:linux` (which mirrors the working tree into a WSL build
+dir, builds the shell there, and tars the binary **on Linux** so its `+x` survives into
+`dist/prebuilt/`), then folds that tarball into the release. So the one command is:
 
 ```bash
-pnpm package:linux     # builds in WSL -> dist/prebuilt/Mara3-linux-x64.tar.gz
-pnpm package:all       # builds the Windows/server/web artifacts + folds in the Linux one
-#   (or just pnpm package:zip if you only want to (re)assemble dist/zips/)
+pnpm package:all       # server + web + Windows + Win7 + Linux, all zipped
 ```
 
-The staged tarball lives in `dist/prebuilt/`, which `pnpm package` deliberately preserves
-across its `dist/` clean — so stage the Linux client once and re-run the rest freely.
-`package:linux` records the version/commit it was built from beside the tarball, and
-`zip-dist` **refuses to fold in a staged build that no longer matches the release** (so a
-stale binary can't silently ship under a newer version) — re-run `package:linux` after a
-bump. Override with `MARA_ALLOW_STALE_PREBUILT=1` if you really mean it.
-Needs WSL2 with the toolchain + `rsync` installed. Config via env: `MARA_WSL_DISTRO`
-(default distro), `MARA_WSL_DIR` (default `$HOME/mara-linux-build`), `MARA_UPDATE_BASE_URL`.
-Run `pnpm package:linux --dry-run` to print the generated build script without executing.
+`package:linux` is also runnable on its own to (re)stage just the Linux tarball, e.g. while
+iterating; `--dry-run` prints the generated build script without executing.
+
+A few specifics:
+
+- Within `package:all` the Linux step runs as `package:linux --optional`, so on a machine
+  **without WSL** it **skips with a warning** (the release just omits Linux) rather than
+  failing. A present-but-broken WSL (e.g. `rsync` missing) or a build error still hard-fails.
+- The staged tarball lives in `dist/prebuilt/`, which `pnpm package` deliberately preserves
+  across its `dist/` clean. `package:linux` records the version/commit it was built from
+  beside it, and `zip-dist` **refuses to fold in a staged build that no longer matches the
+  release** (so a stale binary can't silently ship under a newer version) — re-run
+  `package:linux` after a bump. Override with `MARA_ALLOW_STALE_PREBUILT=1` if you mean it.
+- Needs WSL2 with the toolchain + `rsync`. Config via env: `MARA_WSL_DISTRO` (default
+  distro), `MARA_WSL_DIR` (default `$HOME/mara-linux-build`), `MARA_UPDATE_BASE_URL`.
 
 **Natively on a Linux host/CI runner** — build and zip in one place:
 

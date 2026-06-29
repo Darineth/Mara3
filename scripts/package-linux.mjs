@@ -9,7 +9,10 @@
 //
 //   pnpm package:linux              build + stage the Linux client via WSL
 //   pnpm package:linux --dry-run    print the plan + the WSL build script, run nothing
-//   then: pnpm package:zip          (or pnpm package:all) assembles dist/zips/
+//   pnpm package:linux --optional   skip (don't fail) when WSL is unavailable — package:all
+//                                   runs this form so a no-WSL machine still packages
+// `pnpm package:all` runs this step itself (before zip-dist); on its own, follow with
+// `pnpm package:zip` to assemble dist/zips/.
 //
 // Requires WSL2 with the Linux toolchain already installed (Rust + webkit2gtk-4.1 +
 // librsvg + patchelf + rsync; see apps/shell/README.md). Config via env:
@@ -27,6 +30,9 @@ const dist = join(root, 'dist');
 const prebuiltDir = join(dist, 'prebuilt');
 const stagedName = 'Mara3-linux-x64.tar.gz';
 const dryRun = process.argv.includes('--dry-run');
+// --optional (used by package:all): skip with a warning when WSL itself is unavailable,
+// instead of failing the whole release. A present-but-broken WSL still hard-fails.
+const optional = process.argv.includes('--optional');
 
 // Keep in sync with package.mjs / zip-dist.mjs. The Linux client polls its own manifest.
 const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
@@ -98,15 +104,38 @@ if (dryRun) {
   process.exit(0);
 }
 
-// Preflight: WSL reachable + rsync present (the one non-obvious dependency; cargo/pnpm
-// errors surface from the build itself, which sources the user's profile for PATH).
+// Preflight. Distinguish "no WSL" (skippable under --optional, e.g. a CI/non-Windows
+// box) from "WSL present but its toolchain is broken" (always a hard fail, so a setup
+// problem isn't silently swallowed into a release with no Linux client).
+function wslAvailable() {
+  try {
+    execSync(`wsl ${distroArg} bash -lc "true"`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+if (!wslAvailable()) {
+  const msg = 'WSL not available — cannot build the Linux client';
+  if (optional) {
+    console.warn(
+      `package:linux: ${msg}; skipping. The release will omit the Linux client\n` +
+        '  unless a valid one is already staged in dist/prebuilt/.',
+    );
+    process.exit(0);
+  }
+  console.error(
+    `package:linux: ${msg}.\n` +
+      '  - Install WSL2 (https://aka.ms/wsl) + a distro, or build on a Linux host.\n' +
+      '  - Set MARA_WSL_DISTRO if it is not your default distro.',
+  );
+  process.exit(1);
+}
 try {
-  wsl('bash -lc "command -v rsync >/dev/null"');
+  wsl('bash -lc "command -v rsync >/dev/null"'); // the one non-obvious dependency
 } catch {
   console.error(
-    'package:linux: WSL not reachable, or rsync is missing in the distro.\n' +
-      '  - Install WSL2 (https://aka.ms/wsl) and a distro, then inside it: sudo apt install rsync\n' +
-      '  - Set MARA_WSL_DISTRO if it is not your default distro.',
+    'package:linux: WSL is present but rsync is missing — inside it: sudo apt install rsync',
   );
   process.exit(1);
 }
