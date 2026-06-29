@@ -283,6 +283,26 @@
         }
       }
 
+      // The webview hides WHY a probe failed (security), but the scheme narrows it down:
+      // an https failure is very often an untrusted certificate — the usual Linux gotcha,
+      // where the webview validates against the OS trust store (a self-signed/unknown-CA
+      // cert that "works" elsewhere is rejected here) — which http can't hit. So point at
+      // the likely cause instead of a one-size-fits-all "couldn't reach".
+      function unreachableMessage(url) {
+        let https = false;
+        try {
+          https = new URL(url).protocol === 'https:';
+        } catch {}
+        if (https) {
+          return (
+            `Couldn't securely connect to ${url}. It may be unreachable, or its HTTPS ` +
+            `certificate isn't trusted (self-signed or an unknown authority) — trust the ` +
+            `certificate on this machine, or use http:// if the server is unencrypted.`
+          );
+        }
+        return `Couldn't reach ${url}. Check the address and that the server is running.`;
+      }
+
       async function go(url) {
         status('Connected. Loading…');
         if (invoke) {
@@ -308,7 +328,7 @@
           await go(url);
         } else {
           button.disabled = false;
-          status(`Couldn't reach ${url}. Check the address and that the server is running.`, true);
+          status(unreachableMessage(url), true);
         }
       }
 
@@ -320,10 +340,14 @@
         const tick = async () => {
           if (cancelled) return;
           attempt += 1;
-          status(`Connecting to ${url}… (attempt ${attempt})`);
+          // Show the live counter while it might just be a server still starting; once
+          // it's clearly stuck, surface the likely cause (an untrusted HTTPS cert won't
+          // recover by retrying) and keep showing it as we go on retrying.
+          if (attempt < 4) status(`Connecting to ${url}… (attempt ${attempt})`);
           if (await reachable(url)) {
             if (!cancelled) await go(url);
           } else if (!cancelled) {
+            if (attempt === 3) status(unreachableMessage(url), true);
             auto = setTimeout(tick, 1500);
           }
         };
