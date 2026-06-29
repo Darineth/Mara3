@@ -153,6 +153,23 @@ function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
+// Synchronous sleep (no async machinery in this top-to-bottom script).
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// copyFileSync of a large archive can return BYTE-CORRUPT — same size, wrong bytes —
+// when an on-access AV scanner (Windows Defender) is mid-scan of the just-written
+// source (these zips bundle .exe/.dll, which trigger a scan). So verify each copy
+// against the known-good source hash and retry, backing off to let the scan finish.
+function copyVerified(src, dst, expectedHash) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    copyFileSync(src, dst);
+    if (sha256(dst) === expectedHash) return;
+    console.warn(`    (copy verification failed — retry ${attempt}/4)`);
+    sleep(750 * attempt); // give an in-flight AV scan of the source time to complete
+  }
+  throw new Error(`copy verification failed after retries: ${dst}`);
+}
+
 function fmtSize(bytes) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -169,12 +186,15 @@ function zip(dirName, outZip, flatten = false) {
   const srcDir = join(dist, dirName);
   if (useTar) {
     // bsdtar picks zip format from the .zip suffix (-a); -C sets the base so stored
-    // paths are relative. Archiving "." from inside the component dir flattens (contents
-    // at root); archiving the dir name from dist/ keeps the wrapping folder. The bundles
-    // are plain real files (server uses node-linker=hoisted, no pnpm symlink junctions),
-    // so no -h/dereference needed.
-    const [base, path] = flatten ? [srcDir, '.'] : [dist, dirName];
-    execSync(`tar -a -c -f "${outZip}" -C "${base}" "${path}"`, {
+    // paths are relative. For flatten, list the component's top-level entries BY NAME
+    // (not "." — that stores a leading "./" the explorer surfaces as a stray "." folder)
+    // so the contents land at the archive root; otherwise archive the dir name from
+    // dist/ to keep the wrapping folder. The bundles are plain real files (server uses
+    // node-linker=hoisted, no pnpm symlink junctions), so no -h/dereference needed.
+    const base = flatten ? srcDir : dist;
+    const paths = flatten ? readdirSync(srcDir) : [dirName];
+    const quoted = paths.map((p) => `"${p}"`).join(' ');
+    execSync(`tar -a -c -f "${outZip}" -C "${base}" ${quoted}`, {
       cwd: root,
       stdio: 'inherit',
     });
@@ -274,7 +294,7 @@ for (const comp of COMPONENTS) {
   // separately from the canonical versioned archive above (not in manifest/SHA256SUMS).
   if (comp.latest) {
     const latestName = `${comp.name}-latest.zip`;
-    copyFileSync(zipPath, join(outDir, latestName));
+    copyVerified(zipPath, join(outDir, latestName), hash);
     latestAliases.push({ from: zipName, to: latestName });
     console.log(`    ↳ ${latestName}  (stable link to the current ${comp.name})`);
   }
