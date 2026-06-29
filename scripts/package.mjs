@@ -1,6 +1,7 @@
 // Builds all Mara 3 distributables into dist/:
 //   dist/server/   a self-contained Node server (bundled node.exe + server + web)
 //   dist/desktop/  portable Mara3.exe (Windows 10/11 x64; only if Rust is available)
+//                  (on Linux: dist/desktop-linux/Mara3 — needs system webkit2gtk-4.1)
 //   dist/web/      the raw web build, for hosting elsewhere
 //
 // Run via package.bat, or: node scripts/package.mjs [--skip-tests] [--skip-desktop]
@@ -24,10 +25,15 @@ const skipTests = args.has('--skip-tests');
 const skipDesktop = args.has('--skip-desktop');
 
 // Default self-hosted folder for the desktop "update available" nudge. The client is
-// built to poll <base>/latest-windows-x64.json and zip-dist.mjs writes the manifest
-// pointing at <base>/<zip>. Override per-build with MARA_UPDATE_BASE_URL, or
-// MARA_UPDATE_URL= to disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
+// built to poll <base>/<manifest> and zip-dist.mjs writes the manifest pointing at
+// <base>/<archive>. Override per-build with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL=
+// to disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
 const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+
+// The shell builds for the host OS, so it polls that OS's manifest (matching the name
+// zip-dist.mjs emits). Build the Linux client on Linux, the Windows one on Windows.
+const CLIENT_MANIFEST =
+  process.platform === 'linux' ? 'latest-linux-x64.json' : 'latest-windows-x64.json';
 
 const LAUNCHER = `@echo off
 cd /d "%~dp0"
@@ -235,12 +241,12 @@ if (!skipDesktop) {
     }
     // The "update available" nudge: one self-hosted folder URL (MARA_UPDATE_BASE_URL,
     // defaulting to UPDATE_BASE_URL below) drives the whole pipeline — the client polls
-    // <base>/latest-windows-x64.json (baked in here) and the manifest written by
-    // zip-dist.mjs points its download at <base>/<zip>. Set MARA_UPDATE_URL= (empty)
+    // <base>/<CLIENT_MANIFEST> (baked in here, OS-specific) and the manifest written by
+    // zip-dist.mjs points its download at <base>/<archive>. Set MARA_UPDATE_URL= (empty)
     // to bake in nothing → the client never shows an update banner.
     if (env.MARA_UPDATE_URL === undefined) {
       const base = (env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
-      env.MARA_UPDATE_URL = `${base}/latest-windows-x64.json`;
+      env.MARA_UPDATE_URL = `${base}/${CLIENT_MANIFEST}`;
     }
     run('pnpm --filter @mara/shell tauri:build', env);
   }
@@ -250,5 +256,10 @@ console.log('\n============================================================');
 console.log(` Done. Distributables in: ${dist}`);
 console.log('   server\\   self-contained server — run Mara3-Server.bat');
 console.log('   web\\      raw web build for custom hosting');
-if (!skipDesktop) console.log('   desktop\\  portable Mara3.exe (if Rust was available)');
+if (!skipDesktop)
+  console.log(
+    process.platform === 'linux'
+      ? '   desktop-linux/  portable Mara3 (if Rust was available; needs webkit2gtk-4.1)'
+      : '   desktop\\  portable Mara3.exe (if Rust was available)',
+  );
 console.log('============================================================');

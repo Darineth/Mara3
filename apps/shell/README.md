@@ -97,6 +97,33 @@ so a Mara server must be reachable at that address.
 There is **no `beforeBuildCommand`** — the shell no longer bundles the web app, so
 it builds independently of `@mara/web`.
 
+### Linux
+
+The same crate builds on Linux (it's plain Tauri 2 — no Windows-specific code). Tauri
+can't cross-compile from Windows (it links the native webview), so **build on Linux**: a
+machine/VM/WSL2 or an `ubuntu` CI runner with Rust + `webkit2gtk-4.1`, `librsvg`,
+`patchelf` installed (see the repo root README's prerequisites). Then:
+
+```bash
+pnpm --filter @mara/shell tauri:build      # -> src-tauri/target/release/mara-shell
+#   (copy-client deploys it to dist/desktop-linux/Mara3)
+pnpm package:zip                            # -> Mara3-linux-x64-*.tar.gz + latest-linux-x64.json
+```
+
+`package`/`package:zip` build + bundle the Linux client automatically (the packaging
+scripts pick the OS by `process.platform`). Two Linux-specific notes:
+
+- It ships as a **`.tar.gz`**, not a `.zip`, so the binary keeps its executable bit —
+  so build **and** zip on Linux (zipping it on Windows would lose `+x`).
+- Unlike Windows (bundled/evergreen WebView2), the binary uses the **system
+  `webkit2gtk-4.1`**, so it's not a single-file portable — the target machine needs that
+  library (present or a one-line install on most desktops). For a self-contained
+  artifact instead, enable Tauri's AppImage bundler.
+
+The self-contained _server_ bundle (`dist/server/`) is still Windows-shaped
+(`node.exe` + `.bat`); a Linux server bundle isn't produced yet. The server itself
+runs on Linux via `pnpm --filter @mara/server start`.
+
 ## Native logging
 
 `mara_log(line)` (in `src-tauri/src/lib.rs`) appends to `mara.log` in the OS app
@@ -112,8 +139,9 @@ _notify_ when a newer build exists. One self-hosted folder drives it:
 `MARA_UPDATE_BASE_URL` (default `https://mara.pretoast.com/mara3-updates`). The
 packaging scripts:
 
-- bake `MARA_UPDATE_URL = <base>/latest-windows-x64.json` into the exe (`scripts/package.mjs`), and
-- write a ready-to-host `latest-windows-x64.json` pointing at the zip (`scripts/zip-dist.mjs`).
+- bake `MARA_UPDATE_URL = <base>/latest-<os>.json` into the binary (`scripts/package.mjs`,
+  OS-specific: `latest-windows-x64.json` / `latest-linux-x64.json`), and
+- write a ready-to-host `latest-<os>.json` pointing at the archive (`scripts/zip-dist.mjs`).
 
 To publish an update: upload the new `Mara3-windows-x64-*.zip` **and** the generated
 `latest-windows-x64.json` to that folder. On launch the client compares its `version`

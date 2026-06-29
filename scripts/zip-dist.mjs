@@ -37,9 +37,12 @@ const PRODUCT_VERSION = pkg.version;
 // embedded Windows FileVersion. `hasWebBuild` folders carry a web version.json.
 // `flatten` zips the folder's CONTENTS at the archive root (no wrapping folder) — used
 // for the portable desktop clients, which extract straight to where they're unzipped.
-// `latest` also writes a stable-named copy (<name>-latest.zip) so an operator can link
+// `latest` also writes a stable-named copy (<name>-latest.<ext>) so an operator can link
 // the *current* client from a permanent URL (e.g. in a server MOTD) without the
 // version-stamped filename breaking the link each release.
+// `archive: 'tar.gz'` ships a gzipped tar instead of a zip — used for the Linux client
+// so the binary keeps its Unix executable bit (a .zip strips it). Build + zip it on
+// Linux so the mode survives. Components without it default to a .zip.
 // `versionFrom` makes a component version itself off the CLIENT track (read from its
 // tauri.conf.json) rather than the app/product version — so its zip name + update
 // manifest reflect the client's own version, and an app-only release never bumps it or
@@ -62,6 +65,19 @@ const COMPONENTS = [
     bundlesNode: false,
     flatten: true,
     latest: true,
+    versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
+  },
+  {
+    dir: 'desktop-linux',
+    name: 'Mara3-linux-x64',
+    desc: 'Portable desktop client, Linux x64 (Tauri 2; needs system webkit2gtk-4.1)',
+    exe: null, // no embedded Windows FileVersion to read
+    hasWebBuild: false,
+    bundlesNode: false,
+    flatten: true,
+    latest: true,
+    archive: 'tar.gz', // preserve the binary's executable bit
+    // Same shell crate as the Windows desktop client → same client version track.
     versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
   },
   {
@@ -176,36 +192,48 @@ function fmtSize(bytes) {
   return `${bytes} B`;
 }
 
-const useTar = has('tar');
+const tarVersion = tryExec('tar --version') || '';
+const hasTar = has('tar');
+const isBsdTar = /bsdtar|libarchive/i.test(tarVersion); // bsdtar authors zips; GNU tar can't
+const hasZipCli = has('zip');
 
-/** Zip dist/<dirName> into outZip. By default the archive holds a top-level <dirName>/
- *  folder; with flatten=true the folder's CONTENTS sit at the archive root instead
- *  (no wrapping folder), so extracting drops the files straight where they're unzipped. */
-function zip(dirName, outZip, flatten = false) {
-  rmSync(outZip, { force: true });
+/** Archive dist/<dirName> into outPath. `format` is 'zip' (default) or 'tar.gz' (the
+ *  Linux client — keeps the binary's Unix executable bit, which a .zip strips). With
+ *  flatten=true the folder's CONTENTS sit at the archive root (no wrapping folder), so
+ *  a portable client extracts straight where it lands; otherwise the wrapping <dirName>/
+ *  is kept. Top-level entries are listed BY NAME (not "." — that stores a leading "./"
+ *  the file explorer surfaces as a stray "." folder). Bundles are plain real files
+ *  (the server uses node-linker=hoisted, no pnpm symlink junctions), so no -h needed. */
+function archive(dirName, outPath, { flatten = false, format = 'zip' } = {}) {
+  rmSync(outPath, { force: true });
   const srcDir = join(dist, dirName);
-  if (useTar) {
-    // bsdtar picks zip format from the .zip suffix (-a); -C sets the base so stored
-    // paths are relative. For flatten, list the component's top-level entries BY NAME
-    // (not "." — that stores a leading "./" the explorer surfaces as a stray "." folder)
-    // so the contents land at the archive root; otherwise archive the dir name from
-    // dist/ to keep the wrapping folder. The bundles are plain real files (server uses
-    // node-linker=hoisted, no pnpm symlink junctions), so no -h/dereference needed.
-    const base = flatten ? srcDir : dist;
-    const paths = flatten ? readdirSync(srcDir) : [dirName];
-    const quoted = paths.map((p) => `"${p}"`).join(' ');
-    execSync(`tar -a -c -f "${outZip}" -C "${base}" ${quoted}`, {
-      cwd: root,
-      stdio: 'inherit',
-    });
-  } else {
-    // Compress-Archive: a folder path wraps it in that folder; a "\*" glob takes its
-    // contents (flatten), preserving any subfolders (e.g. the Win7 webview2-runtime\).
+  const base = flatten ? srcDir : dist;
+  const entries = flatten ? readdirSync(srcDir) : [dirName];
+  const quoted = entries.map((p) => `"${p}"`).join(' ');
+  // -a makes tar pick the format/compression from the suffix (.zip via bsdtar, .tar.gz
+  // via any tar); -C sets the base so stored paths are relative.
+  const tarCmd = `tar -a -c -f "${outPath}" -C "${base}" ${quoted}`;
+
+  if (format === 'tar.gz') {
+    if (!hasTar) throw new Error('tar not found — required to build a .tar.gz');
+    execSync(tarCmd, { cwd: root, stdio: 'inherit' });
+    return;
+  }
+  // format === 'zip'
+  if (isBsdTar) {
+    execSync(tarCmd, { cwd: root, stdio: 'inherit' });
+  } else if (hasZipCli) {
+    // GNU tar can't create zips; the zip CLI can. Run from `base` so stored paths match.
+    execSync(`zip -r -q -X "${outPath}" ${quoted}`, { cwd: base, stdio: 'inherit' });
+  } else if (process.platform === 'win32') {
+    // No bsdtar: PowerShell. A "\*" glob flattens; a folder path keeps the wrapper.
     const srcPath = flatten ? join(srcDir, '*') : srcDir;
     execSync(
-      `powershell -NoProfile -Command "Compress-Archive -Path '${srcPath}' -DestinationPath '${outZip}' -Force"`,
+      `powershell -NoProfile -Command "Compress-Archive -Path '${srcPath}' -DestinationPath '${outPath}' -Force"`,
       { cwd: root, stdio: 'inherit' },
     );
+  } else {
+    throw new Error('no zip tool found — install bsdtar (libarchive) or the zip CLI');
   }
 }
 
@@ -234,7 +262,7 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
 console.log(`Zipping Mara 3 distributables  (version tag: ${verTag})`);
-if (!useTar) console.log('  (tar not found — using PowerShell Compress-Archive)');
+if (!isBsdTar) console.log('  (no bsdtar — zips via the zip CLI / PowerShell Compress-Archive)');
 
 const archives = [];
 const failures = [];
@@ -271,10 +299,11 @@ for (const comp of COMPONENTS) {
       .join('\n') + '\n',
   );
 
-  const zipName = `${comp.name}-v${verTagFor(componentVersion(comp))}.zip`;
+  const ext = comp.archive === 'tar.gz' ? '.tar.gz' : '.zip';
+  const zipName = `${comp.name}-v${verTagFor(componentVersion(comp))}${ext}`;
   const zipPath = join(outDir, zipName);
   try {
-    zip(comp.dir, zipPath, comp.flatten);
+    archive(comp.dir, zipPath, { flatten: comp.flatten, format: comp.archive });
   } catch (err) {
     rmSync(zipPath, { force: true });
     failures.push(comp.name);
@@ -293,7 +322,7 @@ for (const comp of COMPONENTS) {
   // Stable-named copy for a permanent download link (e.g. a server MOTD). Tracked
   // separately from the canonical versioned archive above (not in manifest/SHA256SUMS).
   if (comp.latest) {
-    const latestName = `${comp.name}-latest.zip`;
+    const latestName = `${comp.name}-latest${ext}`;
     copyVerified(zipPath, join(outDir, latestName), hash);
     latestAliases.push({ from: zipName, to: latestName });
     console.log(`    ↳ ${latestName}  (stable link to the current ${comp.name})`);
@@ -326,18 +355,19 @@ const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace
 for (const { component, manifest, label } of [
   { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
   { component: 'Mara3-windows7-x64', manifest: 'latest-windows7-x64.json', label: 'windows7-x64' },
+  { component: 'Mara3-linux-x64', manifest: 'latest-linux-x64.json', label: 'linux-x64' },
 ]) {
-  const archive = archives.find((a) => a.component === component);
-  if (!archive) continue;
+  const built = archives.find((a) => a.component === component);
+  if (!built) continue;
   // The manifest version is the CLIENT version (not the product version), so the nudge
   // compares like-for-like against the installed shell's baked version — an app-only
   // release never makes installed clients think a new client exists.
   const latest = {
     version: componentVersion(COMPONENTS.find((c) => c.name === component)),
-    url: `${updateBase}/${archive.file}`,
+    url: `${updateBase}/${built.file}`,
     notes: '',
     pub_date: builtAt,
-    sha256: archive.sha256,
+    sha256: built.sha256,
   };
   writeFileSync(join(outDir, manifest), `${JSON.stringify(latest, null, 2)}\n`);
   console.log(`   ${manifest.padEnd(25)} ${label} update manifest -> ${latest.url}`);
@@ -348,9 +378,9 @@ console.log(` Done. ${archives.length} archive(s) in: ${outDir}`);
 console.log('   manifest.json    per-archive versions + checksums');
 console.log('   SHA256SUMS.txt   sha256  filename  (verify with sha256sum -c)');
 if (latestAliases.length) {
-  console.log('   *-latest.zip     stable-named copies for permanent download links:');
+  console.log('   *-latest.*       stable-named copies for permanent download links:');
   for (const a of latestAliases) console.log(`                      ${a.to}  (= ${a.from})`);
-  console.log('     Upload these next to the versioned zips; link them from a MOTD, e.g.');
+  console.log('     Upload these next to the versioned archives; link them from a MOTD, e.g.');
   console.log('     [Mara 3 for Windows](https://<host>/<path>/Mara3-windows-x64-latest.zip)');
 }
 if (failures.length) console.log(` WARNING: ${failures.length} failed: ${failures.join(', ')}`);

@@ -26,7 +26,13 @@ const releaseDir = target
   ? join(root, crateDir, 'src-tauri', 'target', target, 'release')
   : join(root, crateDir, 'src-tauri', 'target', 'release');
 const src = join(releaseDir, `${srcBase}${ext}`);
-const destDir = join(root, 'dist', distSubdir);
+// The modern shell builds once per OS into a generic 'desktop' subdir; route it to an
+// OS-specific folder so Windows and Linux builds don't overwrite each other and zip-dist
+// can name each (Mara3-windows-x64 vs Mara3-linux-x64). Other subdirs (desktop-legacy)
+// are literal — that client is Windows-only.
+const subdir =
+  distSubdir === 'desktop' && process.platform === 'linux' ? 'desktop-linux' : distSubdir;
+const destDir = join(root, 'dist', subdir);
 const dest = join(destDir, `${destBase}${ext}`);
 
 if (!existsSync(src)) {
