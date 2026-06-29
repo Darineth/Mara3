@@ -5,7 +5,7 @@ A separate build target for **Windows 7** (also runs on 8/8.1/10/11). The modern
 evergreen WebView2 runtime — neither available on Win7. This client uses **Tauri 1.x**,
 the tier-3 **`x86_64-win7-windows-msvc`** Rust target, and a **bundled fixed-version
 WebView2 runtime** so it can render the same hosted web UI on legacy machines. The
-deliverable is a **portable** `Mara3-Legacy.exe` + the runtime folder + a launcher.
+deliverable is a **portable** `Mara3.exe` + the runtime folder + a launcher.
 
 It behaves like the modern shell: a server **picker** (address + recent + an
 **Auto-connect on launch** checkbox, off by default) that persists to
@@ -27,10 +27,10 @@ Mirrors the modern shell's nudge — the exe stays portable and never self-insta
 but the picker shows an **"update available"** banner (with a **Download** link that
 opens the system browser via Tauri 1's `shell.open`) when a newer build exists. Because
 this is a **separate download** from the modern desktop client, it polls its **own**
-manifest: `MARA_UPDATE_BASE_URL/latest-win7.json` (default base
+manifest: `MARA_UPDATE_BASE_URL/latest-windows7-x64.json` (default base
 `https://mara.pretoast.com/mara3-updates`, baked in by `scripts/package-legacy.mjs`),
-which `scripts/zip-dist.mjs` writes pointing at the `Mara3-Win7-*.zip`. To publish a
-Win7 update: upload the new zip **and** `latest-win7.json` to that folder; serve the
+which `scripts/zip-dist.mjs` writes pointing at the `Mara3-windows7-x64-*.zip`. To publish a
+Win7 update: upload the new zip **and** `latest-windows7-x64.json` to that folder; serve the
 JSON with `Access-Control-Allow-Origin: *` (cross-origin fetch). Build with
 `MARA_UPDATE_URL=` empty to disable. See [`../shell/README.md`](../shell/README.md#updates-portable-update-available-nudge)
 for the shared design.
@@ -48,8 +48,8 @@ build script passes `--target` and `-Z build-std`. You only need `rustup` instal
 
 ```bash
 pnpm --filter @mara/client-legacy tauri:build
-#   -> src-tauri/target/x86_64-win7-windows-msvc/release/Mara3-Legacy.exe
-#      (also copied to dist/desktop-legacy/Mara3-Legacy.exe)
+#   -> src-tauri/target/x86_64-win7-windows-msvc/release/mara-client-legacy.exe
+#      (copied to dist/desktop-legacy/Mara3.exe)
 ```
 
 This builds a real Win7-target exe via raw `cargo` (not the Tauri CLI, which won't
@@ -75,15 +75,15 @@ The built exe's import table is verified to reference **only Win7-available DLLs
 ### 2. Add the fixed-version WebView2 runtime + launcher
 
 Win7 has no evergreen WebView2, so ship a **Fixed Version** runtime beside the exe.
-Download it from Microsoft's WebView2 distribution page (last Win7-capable ≈ Chromium 109) and extract it into a `webview2-runtime` folder next to `Mara3-Legacy.exe`. Then
-launch via [`Run-Mara3-Legacy.bat`](Run-Mara3-Legacy.bat) (ship it too), which points
+Download it from Microsoft's WebView2 distribution page (last Win7-capable ≈ Chromium 109) and extract it into a `webview2-runtime` folder next to `Mara3.exe`. Then
+launch via [`Run-Mara3.bat`](Run-Mara3.bat) (ship it too), which points
 `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` at that folder so WebView2 uses the fixed runtime.
 
 So a Win7 deployment folder is:
 
 ```
-Mara3-Legacy.exe
-Run-Mara3-Legacy.bat      <- run this
+Mara3.exe
+Run-Mara3.bat             <- run this
 webview2-runtime\         <- the extracted fixed runtime (msedgewebview2.exe, ~120 MB)
 settings.json             <- created on first run (portable, next to the exe)
 ```

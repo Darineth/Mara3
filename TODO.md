@@ -148,9 +148,9 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       a real push, and that's rare. Chose a lightweight, portable-preserving nudge over
       Tauri's silent self-installer: the client stays a portable single exe. Build it with
       `MARA_UPDATE_BASE_URL=https://<host>/<path>` (self-hosted); `package.mjs` bakes
-      `MARA_UPDATE_URL=<base>/latest.json` (default base
+      `MARA_UPDATE_URL=<base>/latest-windows-x64.json` (default base
       `https://mara.pretoast.com/mara3-updates`) into the binary and `zip-dist.mjs`
-      writes a ready-to-host `latest.json` pointing at the desktop zip. `lib.rs` injects
+      writes a ready-to-host `latest-windows-x64.json` pointing at the zip. `lib.rs` injects
       `window.__MARA_UPDATE__` on every page, so the nudge shows in **two** places:
       the launch picker (`bootstrap/index.html`) and the live web UI itself
       (`apps/web` `UpdateBanner.svelte` / `lib/update.ts`), the latter persisting after
@@ -160,7 +160,7 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       `Access-Control-Allow-Origin: *` (cross-origin fetch). Build with `MARA_UPDATE_URL=`
       empty to disable. The **Win7 legacy client** (Tauri 1) has the same nudge on its
       picker (opening the download via `shell.open`), but polls its **own**
-      `latest-win7.json` since it's a separate download. _(Done 2026-06-28 in
+      `latest-windows7-x64.json` since it's a separate download. _(Done 2026-06-28 in
       `apps/shell/src-tauri/src/lib.rs`, `apps/shell/bootstrap/index.html`,
       `apps/client-legacy/src-tauri/{src/main.rs,Cargo.toml,build.rs,tauri.conf.json}`,
       `apps/client-legacy/bootstrap/index.html`, `apps/web/src/{App.svelte,

@@ -55,9 +55,9 @@ const COMPONENTS = [
   },
   {
     dir: 'desktop',
-    name: 'Mara3-Desktop',
-    desc: 'Portable desktop client (Tauri 2)',
-    exe: 'Mara3-Desktop.exe',
+    name: 'Mara3-windows-x64',
+    desc: 'Portable desktop client, Windows 10/11 x64 (Tauri 2)',
+    exe: 'Mara3.exe',
     hasWebBuild: false,
     bundlesNode: false,
     flatten: true,
@@ -66,9 +66,9 @@ const COMPONENTS = [
   },
   {
     dir: 'desktop-legacy',
-    name: 'Mara3-Win7',
-    desc: 'Windows 7 legacy client (Tauri 1)',
-    exe: 'Mara3-Legacy.exe',
+    name: 'Mara3-windows7-x64',
+    desc: 'Windows 7+ legacy client, x64 (Tauri 1)',
+    exe: 'Mara3.exe',
     hasWebBuild: false,
     bundlesNode: false,
     flatten: true,
@@ -304,8 +304,8 @@ writeFileSync(
 const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
 const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
 for (const { component, manifest, label } of [
-  { component: 'Mara3-Desktop', manifest: 'latest.json', label: 'desktop' },
-  { component: 'Mara3-Win7', manifest: 'latest-win7.json', label: 'Win7' },
+  { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
+  { component: 'Mara3-windows7-x64', manifest: 'latest-windows7-x64.json', label: 'windows7-x64' },
 ]) {
   const archive = archives.find((a) => a.component === component);
   if (!archive) continue;
@@ -320,7 +320,7 @@ for (const { component, manifest, label } of [
     sha256: archive.sha256,
   };
   writeFileSync(join(outDir, manifest), `${JSON.stringify(latest, null, 2)}\n`);
-  console.log(`   ${manifest.padEnd(16)} ${label} update manifest -> ${latest.url}`);
+  console.log(`   ${manifest.padEnd(25)} ${label} update manifest -> ${latest.url}`);
 }
 
 console.log('\n============================================================');
@@ -331,7 +331,7 @@ if (latestAliases.length) {
   console.log('   *-latest.zip     stable-named copies for permanent download links:');
   for (const a of latestAliases) console.log(`                      ${a.to}  (= ${a.from})`);
   console.log('     Upload these next to the versioned zips; link them from a MOTD, e.g.');
-  console.log('     [Desktop client](https://<host>/<path>/Mara3-Desktop-latest.zip)');
+  console.log('     [Mara 3 for Windows](https://<host>/<path>/Mara3-windows-x64-latest.zip)');
 }
 if (failures.length) console.log(` WARNING: ${failures.length} failed: ${failures.join(', ')}`);
 console.log('============================================================');

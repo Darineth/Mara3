@@ -7,7 +7,7 @@
   "scripts": {
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build && node ../../scripts/copy-client.mjs apps/shell mara-shell Mara3-Desktop desktop",
+    "tauri:build": "tauri build && node ../../scripts/copy-client.mjs apps/shell mara-shell Mara3 desktop",
     "icons": "tauri icon src-tauri/icons/icon.png"
   },
   "dependencies": {

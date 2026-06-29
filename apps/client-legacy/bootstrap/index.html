@@ -212,7 +212,7 @@
       // available" banner when it reports a newer Win7 build. Best-effort and isolated:
       // any network/parse failure is swallowed so the picker is never disrupted. This
       // only NOTIFIES — the client stays a portable exe; Download opens the system
-      // browser. (The host must serve latest-win7.json with CORS allowing this origin.)
+      // browser. (The host must serve latest-windows7-x64.json with CORS allowing this origin.)
       async function checkForUpdate() {
         const info = window.__MARA_UPDATE__;
         const out = document.getElementById('upd-status');

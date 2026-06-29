@@ -238,7 +238,7 @@
         const notes =
           typeof manifest.notes === 'string' && manifest.notes ? ` ${manifest.notes}` : '';
         document.getElementById('update-text').textContent =
-          `Mara 3 Desktop ${manifest.version} is available.${notes}`;
+          `Mara 3 ${manifest.version} is available.${notes}`;
 
         const link = document.getElementById('update-link');
         const url = typeof manifest.url === 'string' ? manifest.url : '';

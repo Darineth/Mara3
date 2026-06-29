@@ -1,8 +1,8 @@
 // Assemble the Windows 7 legacy client into dist/desktop-legacy/:
 //
-//   Mara3-Legacy.exe       the portable Win7-target exe
-//   Run-Mara3-Legacy.bat   launcher (points WebView2 at the runtime beside it)
-//   webview2-runtime/      the fixed-version WebView2 runtime (Win7 has no evergreen)
+//   Mara3.exe         the portable Win7-target exe
+//   Run-Mara3.bat     launcher (points WebView2 at the runtime beside it)
+//   webview2-runtime/ the fixed-version WebView2 runtime (Win7 has no evergreen)
 //   README.txt
 //
 // The runtime is grabbed from the first source available:
@@ -36,15 +36,15 @@ const out = join(root, 'dist', 'desktop-legacy');
 const skipBuild = process.argv.includes('--skip-build');
 
 // "Update available" nudge: bake the Win7 client's OWN manifest URL into the build.
-// It's a separate download from the modern desktop, so it polls latest-win7.json (not
-// latest.json). One folder URL drives the pipeline — keep UPDATE_BASE_URL in sync with
-// package.mjs / zip-dist.mjs. Override with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL=
-// (empty) to disable. zip-dist.mjs emits the matching latest-win7.json.
+// It's a separate download from the modern desktop, so it polls latest-windows7-x64.json
+// (not latest-windows-x64.json). One folder URL drives the pipeline — keep UPDATE_BASE_URL
+// in sync with package.mjs / zip-dist.mjs. Override with MARA_UPDATE_BASE_URL, or
+// MARA_UPDATE_URL= (empty) to disable. zip-dist.mjs emits the matching latest-windows7-x64.json.
 const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
 const buildEnv = { ...process.env };
 if (buildEnv.MARA_UPDATE_URL === undefined) {
   const base = (buildEnv.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
-  buildEnv.MARA_UPDATE_URL = `${base}/latest-win7.json`;
+  buildEnv.MARA_UPDATE_URL = `${base}/latest-windows7-x64.json`;
 }
 
 function run(cmd, opts = {}) {
@@ -100,23 +100,20 @@ function grabRuntime() {
 }
 
 // 1. Build the Win7-target exe — tauri:build deploys it to dist/desktop-legacy/
-//    Mara3-Legacy.exe itself (via copy-client). Clean first so the build repopulates.
+//    Mara3.exe itself (via copy-client). Clean first so the build repopulates.
 if (!skipBuild) {
   rmSync(out, { recursive: true, force: true });
   run('pnpm --filter @mara/client-legacy tauri:build', { env: buildEnv });
 }
 mkdirSync(out, { recursive: true });
-const exe = join(out, 'Mara3-Legacy.exe');
+const exe = join(out, 'Mara3.exe');
 if (!existsSync(exe)) {
   console.error(`package-legacy: ${exe} not found — run without --skip-build first.`);
   process.exit(1);
 }
 
 // 2. Add the launcher next to the exe.
-copyFileSync(
-  join(root, 'apps', 'client-legacy', 'Run-Mara3-Legacy.bat'),
-  join(out, 'Run-Mara3-Legacy.bat'),
-);
+copyFileSync(join(root, 'apps', 'client-legacy', 'Run-Mara3.bat'), join(out, 'Run-Mara3.bat'));
 
 // 3. Grab the WebView2 runtime, or leave instructions.
 const runtimeDest = join(out, 'webview2-runtime');
@@ -165,11 +162,11 @@ writeFileSync(
   join(out, 'README.txt'),
   `Mara 3 — Windows 7 client (portable)
 
-Run Run-Mara3-Legacy.bat. It points WebView2 at the webview2-runtime folder beside
-it and launches Mara3-Legacy.exe. Keep all three together:
+Run Run-Mara3.bat. It points WebView2 at the webview2-runtime folder beside
+it and launches Mara3.exe. Keep all three together:
 
-  Mara3-Legacy.exe
-  Run-Mara3-Legacy.bat
+  Mara3.exe
+  Run-Mara3.bat
   webview2-runtime\\        (Microsoft Fixed Version WebView2 runtime)
 
 settings.json is created next to the exe on first run (server picker choice).

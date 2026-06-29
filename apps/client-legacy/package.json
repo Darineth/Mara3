@@ -7,7 +7,7 @@
   "scripts": {
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "cd src-tauri && cargo build --release --target x86_64-win7-windows-msvc --features custom-protocol -Z build-std=std,panic_abort && node ../../../scripts/copy-client.mjs apps/client-legacy mara-client-legacy Mara3-Legacy desktop-legacy x86_64-win7-windows-msvc"
+    "tauri:build": "cd src-tauri && cargo build --release --target x86_64-win7-windows-msvc --features custom-protocol -Z build-std=std,panic_abort && node ../../../scripts/copy-client.mjs apps/client-legacy mara-client-legacy Mara3 desktop-legacy x86_64-win7-windows-msvc"
   },
   "dependencies": {
     "@tauri-apps/api": "^1"

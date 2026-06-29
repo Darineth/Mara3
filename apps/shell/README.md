@@ -89,7 +89,7 @@ src-tauri/target/release/mara-shell.exe
 It's self-contained: the icon and the bootstrap page are compiled into the exe, so
 you can copy that single file anywhere and double-click it. (It still needs the
 system **WebView2** runtime, preinstalled on Windows 11.) `pnpm package` builds the
-same exe and copies it out as `dist/desktop/Mara3-Desktop.exe`.
+same exe and copies it out as `dist/desktop/Mara3.exe`.
 
 On launch it shows the server picker (above), then connects to the chosen server —
 so a Mara server must be reachable at that address.
@@ -112,27 +112,27 @@ _notify_ when a newer build exists. One self-hosted folder drives it:
 `MARA_UPDATE_BASE_URL` (default `https://mara.pretoast.com/mara3-updates`). The
 packaging scripts:
 
-- bake `MARA_UPDATE_URL = <base>/latest.json` into the exe (`scripts/package.mjs`), and
-- write a ready-to-host `latest.json` pointing at the desktop zip (`scripts/zip-dist.mjs`).
+- bake `MARA_UPDATE_URL = <base>/latest-windows-x64.json` into the exe (`scripts/package.mjs`), and
+- write a ready-to-host `latest-windows-x64.json` pointing at the zip (`scripts/zip-dist.mjs`).
 
-To publish an update: upload the new `Mara3-Desktop-*.zip` **and** the generated
-`latest.json` to that folder. On launch the client compares `latest.json`'s `version`
+To publish an update: upload the new `Mara3-windows-x64-*.zip` **and** the generated
+`latest-windows-x64.json` to that folder. On launch the client compares its `version`
 to its own and, if newer, shows a dismissible **"update available"** banner with a
 **Download** link (opens the host in the system browser). The banner shows in two
 places: the launch picker, and — because `lib.rs` injects the update context on every
 page — the live web UI itself (so it persists after auto-connect navigates past the
 picker; a plain browser, with nothing to update, never shows it).
 
-> **Host requirement:** serve `latest.json` with `Access-Control-Allow-Origin: *`
+> **Host requirement:** serve `latest-windows-x64.json` with `Access-Control-Allow-Origin: *`
 > (it's fetched cross-origin from both the picker and the web UI). On a static host
 > that's one header (nginx `add_header`, Apache `Header set`, S3/CDN CORS rule).
 
 **Permanent download link (for a MOTD etc.).** The version-stamped zip name changes
 every release, so it's a poor link target. Packaging therefore also emits stable-named
-copies — `Mara3-Desktop-latest.zip` and `Mara3-Win7-latest.zip` — alongside the
-versioned zips. Upload them to the same host and link the permanent URL from anywhere,
+copies — `Mara3-windows-x64-latest.zip` and `Mara3-windows7-x64-latest.zip` — alongside
+the versioned zips. Upload them to the same host and link the permanent URL from anywhere,
 e.g. a server MOTD (which renders markdown):
-`[Download the desktop client](https://<host>/<path>/Mara3-Desktop-latest.zip)`.
+`[Mara 3 for Windows](https://<host>/<path>/Mara3-windows-x64-latest.zip)`.
 
 Build with `MARA_UPDATE_URL=` (empty) to ship with the check disabled. This only
 notifies; to graduate to Tauri's **signed, silent** auto-installer later, see the

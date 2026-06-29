@@ -1,6 +1,6 @@
 // Builds all Mara 3 distributables into dist/:
 //   dist/server/   a self-contained Node server (bundled node.exe + server + web)
-//   dist/desktop/  portable Mara3-Desktop.exe (only if Rust is available)
+//   dist/desktop/  portable Mara3.exe (Windows 10/11 x64; only if Rust is available)
 //   dist/web/      the raw web build, for hosting elsewhere
 //
 // Run via package.bat, or: node scripts/package.mjs [--skip-tests] [--skip-desktop]
@@ -24,9 +24,9 @@ const skipTests = args.has('--skip-tests');
 const skipDesktop = args.has('--skip-desktop');
 
 // Default self-hosted folder for the desktop "update available" nudge. The client is
-// built to poll <base>/latest.json and zip-dist.mjs writes the manifest pointing at
-// <base>/<zip>. Override per-build with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL= to
-// disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
+// built to poll <base>/latest-windows-x64.json and zip-dist.mjs writes the manifest
+// pointing at <base>/<zip>. Override per-build with MARA_UPDATE_BASE_URL, or
+// MARA_UPDATE_URL= to disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
 const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
 
 const LAUNCHER = `@echo off
@@ -64,9 +64,9 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 # The MOTD is shown to everyone on connect and renders MARKDOWN, so it can include
 # links. For a longer/multi-line message, create a "MOTD.md" file next to this config
 # instead (it takes precedence over MARA_MOTD). To point users at the desktop client,
-# host the stable "Mara3-Desktop-latest.zip" (emitted by packaging) on your download
+# host the stable "Mara3-windows-x64-latest.zip" (emitted by packaging) on your download
 # host and link it, e.g.:
-#     [Download the desktop client](https://your-host/path/Mara3-Desktop-latest.zip)
+#     [Mara 3 for Windows](https://your-host/path/Mara3-windows-x64-latest.zip)
 #MARA_DEFAULT_CHANNEL=Main   # channel everyone auto-joins; leave empty to disable
 
 # --- WebSocket ---
@@ -225,7 +225,7 @@ if (!skipDesktop) {
   } else {
     // The bundler is disabled (tauri.conf.json bundle.active:false), so this just
     // compiles the standalone exe — no MSI/NSIS installer, no updater artifacts. Its
-    // tauri:build script deploys the exe to dist/desktop/Mara3-Desktop.exe itself.
+    // tauri:build script deploys the exe to dist/desktop/Mara3.exe itself.
     // Pass any signing key through anyway, harmlessly, in case bundling is re-enabled.
     const keyFile = join(root, 'apps', 'shell', '.tauri', 'mara-update.key');
     const env = { ...process.env };
@@ -235,12 +235,12 @@ if (!skipDesktop) {
     }
     // The "update available" nudge: one self-hosted folder URL (MARA_UPDATE_BASE_URL,
     // defaulting to UPDATE_BASE_URL below) drives the whole pipeline — the client polls
-    // <base>/latest.json (baked in here) and the manifest written by zip-dist.mjs points
-    // its download at <base>/<zip>. Set MARA_UPDATE_URL= (empty) to bake in nothing →
-    // the client never shows an update banner.
+    // <base>/latest-windows-x64.json (baked in here) and the manifest written by
+    // zip-dist.mjs points its download at <base>/<zip>. Set MARA_UPDATE_URL= (empty)
+    // to bake in nothing → the client never shows an update banner.
     if (env.MARA_UPDATE_URL === undefined) {
       const base = (env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
-      env.MARA_UPDATE_URL = `${base}/latest.json`;
+      env.MARA_UPDATE_URL = `${base}/latest-windows-x64.json`;
     }
     run('pnpm --filter @mara/shell tauri:build', env);
   }
@@ -250,5 +250,5 @@ console.log('\n============================================================');
 console.log(` Done. Distributables in: ${dist}`);
 console.log('   server\\   self-contained server — run Mara3-Server.bat');
 console.log('   web\\      raw web build for custom hosting');
-if (!skipDesktop) console.log('   desktop\\  portable Mara3-Desktop.exe (if Rust was available)');
+if (!skipDesktop) console.log('   desktop\\  portable Mara3.exe (if Rust was available)');
 console.log('============================================================');

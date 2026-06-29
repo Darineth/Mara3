@@ -40,7 +40,7 @@
 {#if update}
   <div class="update" role="status">
     <span class="text">
-      Mara&nbsp;3 Desktop <strong>{update.version}</strong> is available.{#if update.notes}
+      Mara&nbsp;3 <strong>{update.version}</strong> is available.{#if update.notes}
         {update.notes}{/if}
     </span>
     {#if update.url}

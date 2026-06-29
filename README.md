@@ -116,8 +116,8 @@ dist/
   server/          self-contained server — bundled node.exe + server + web build.
                    Copy the folder anywhere and run Mara3-Server.bat; nothing to install.
   web/             the raw web build, for hosting on your own server/CDN.
-  desktop/         Mara3-Desktop.exe — portable client (no installer), if Rust is present.
-  desktop-legacy/  Mara3-Legacy.exe + WebView2 runtime — the Windows 7 client.
+  desktop/         Mara3.exe — portable Windows 10/11 x64 client (no installer), if Rust is present.
+  desktop-legacy/  Mara3.exe + WebView2 runtime — the Windows 7 (x64) client.
   zips/            a version-stamped .zip per component, each with a BUILD-INFO
                    manifest, plus a top-level manifest.json and SHA256SUMS.txt.
 ```

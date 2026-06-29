@@ -13,9 +13,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Self-hosted `latest.json` the picker polls for newer Win7 builds, baked in at
-/// build time via `MARA_UPDATE_URL` (this client points at its OWN manifest —
-/// `latest-win7.json` — not the modern desktop's, since it's a separate download).
+/// Self-hosted manifest the picker polls for newer Win7 builds, baked in at build
+/// time via `MARA_UPDATE_URL` (this client points at its OWN manifest —
+/// `latest-windows7-x64.json` — not the modern desktop's, since it's a separate download).
 /// Empty (the default) disables the check. Mirrors the modern shell's nudge; see
 /// `bootstrap/index.html`. Only NOTIFIES — the client stays a portable exe.
 const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {

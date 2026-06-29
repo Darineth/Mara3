@@ -3,8 +3,8 @@
 // build deploys straight into the dist/ tree alongside the other distributables.
 //
 //   node scripts/copy-client.mjs <crateDir> <srcBase> <destBase> <distSubdir> [target]
-//   e.g. node scripts/copy-client.mjs apps/shell mara-shell Mara3-Desktop desktop
-//        node scripts/copy-client.mjs apps/client-legacy mara-client-legacy Mara3-Legacy desktop-legacy x86_64-win7-windows-msvc
+//   e.g. node scripts/copy-client.mjs apps/shell mara-shell Mara3 desktop
+//        node scripts/copy-client.mjs apps/client-legacy mara-client-legacy Mara3 desktop-legacy x86_64-win7-windows-msvc
 //
 // <srcBase> is the built binary's base name (Tauri 2 names it after the Cargo bin;
 // Tauri 1 after productName). The platform exe extension is appended automatically.

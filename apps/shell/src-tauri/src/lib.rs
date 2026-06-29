@@ -8,7 +8,8 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 /// Static JSON manifest the picker polls to learn about newer desktop builds, baked
 /// in at build time via the `MARA_UPDATE_URL` env var (self-hosted). Empty — the
 /// default — disables the check entirely (no banner ever shows). The manifest is
-/// `{ "version": "3.0.1", "url": "https://…/Mara3-Desktop-….zip", "notes": "…" }`;
+/// `{ "version": "3.0.1", "url": "https://…/Mara3-windows-x64-….zip", "notes": "…" }`
+/// (its own `latest-windows-x64.json`);
 /// the bootstrap picker compares `version` to this build's version and, if newer,
 /// shows a non-blocking "update available" banner linking to `url`. We deliberately
 /// keep the portable single-exe model — this only *notifies*; it never self-installs.
