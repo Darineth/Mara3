@@ -77,6 +77,12 @@ const COMPONENTS = [
     flatten: true,
     latest: true,
     archive: 'tar.gz', // preserve the binary's executable bit
+    // Built on Linux (Tauri can't cross-compile the webview). When zip-dist runs on
+    // Windows, dist/desktop-linux/ won't exist — instead `pnpm package:linux` builds in
+    // WSL and stages a finished tar.gz here (authored on Linux so +x survives), which
+    // this run folds into the release verbatim. On a native Linux run, dist/desktop-linux/
+    // is present and gets archived the normal way instead.
+    prebuilt: 'prebuilt/Mara3-linux-x64.tar.gz',
     // Same shell crate as the Windows desktop client → same client version track.
     versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
   },
@@ -270,47 +276,61 @@ const latestAliases = [];
 
 for (const comp of COMPONENTS) {
   const compDir = join(dist, comp.dir);
-  if (!existsSync(compDir)) {
+  const prebuiltPath = comp.prebuilt ? join(dist, comp.prebuilt) : null;
+  const hasDir = existsSync(compDir);
+  // A folder build takes precedence; otherwise a prebuilt staged archive (the Linux
+  // client, authored in WSL — see package-linux.mjs) is folded in verbatim.
+  const hasPrebuilt = !hasDir && prebuiltPath != null && existsSync(prebuiltPath);
+  if (!hasDir && !hasPrebuilt) {
     console.log(`  - ${comp.dir}/ — absent, skipping (${comp.name})`);
     continue;
   }
 
-  const fileVersion = comp.exe ? readFileVersion(join(compDir, comp.exe)) : null;
+  const fileVersion = hasDir && comp.exe ? readFileVersion(join(compDir, comp.exe)) : null;
   const info = {
     component: comp.name,
     description: comp.desc,
     productVersion: PRODUCT_VERSION,
     ...(protocolVersion != null ? { protocolVersion } : {}),
     ...(fileVersion ? { exeFileVersion: fileVersion } : {}),
-    ...(comp.hasWebBuild ? { webBuildId: readWebBuildId(compDir) } : {}),
+    ...(hasDir && comp.hasWebBuild ? { webBuildId: readWebBuildId(compDir) } : {}),
     ...(comp.bundlesNode ? { bundledNode: nodeVersion } : {}),
     gitCommit,
     gitDirty,
     builtAt,
   };
 
-  // Drop the manifest into the folder so the archive is self-describing.
-  writeFileSync(join(compDir, 'BUILD-INFO.json'), `${JSON.stringify(info, null, 2)}\n`);
-  writeFileSync(
-    join(compDir, 'BUILD-INFO.txt'),
-    Object.entries(info)
-      .filter(([, v]) => v != null)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\n') + '\n',
-  );
-
   const ext = comp.archive === 'tar.gz' ? '.tar.gz' : '.zip';
   const zipName = `${comp.name}-v${verTagFor(componentVersion(comp))}${ext}`;
   const zipPath = join(outDir, zipName);
   try {
-    archive(comp.dir, zipPath, { flatten: comp.flatten, format: comp.archive });
+    if (hasDir) {
+      // Drop the manifest into the folder so the archive is self-describing, then zip.
+      writeFileSync(join(compDir, 'BUILD-INFO.json'), `${JSON.stringify(info, null, 2)}\n`);
+      writeFileSync(
+        join(compDir, 'BUILD-INFO.txt'),
+        Object.entries(info)
+          .filter(([, v]) => v != null)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('\n') + '\n',
+      );
+      archive(comp.dir, zipPath, { flatten: comp.flatten, format: comp.archive });
+    } else {
+      // Prebuilt: a finished archive authored on its own platform (the Linux tarball,
+      // made in WSL so its +x survives — Windows can't author that). Fold it in under
+      // the release name; copy-verified in case AV scans the source mid-read.
+      console.log(`    (folding in prebuilt ${comp.name})`);
+      copyVerified(prebuiltPath, zipPath, sha256(prebuiltPath));
+    }
   } catch (err) {
     rmSync(zipPath, { force: true });
     failures.push(comp.name);
-    console.error(`  ! ${comp.name} — zip failed: ${String(err.message).split('\n')[0]}`);
-    console.error(
-      '    A relocated or stale build leaves dangling node_modules junctions; rebuild with pnpm package.',
-    );
+    const what = hasDir ? 'zip' : 'prebuilt fold-in';
+    console.error(`  ! ${comp.name} — ${what} failed: ${String(err.message).split('\n')[0]}`);
+    if (hasDir)
+      console.error(
+        '    A relocated or stale build leaves dangling node_modules junctions; rebuild with pnpm package.',
+      );
     continue;
   }
 

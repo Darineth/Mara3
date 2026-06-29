@@ -100,21 +100,37 @@ it builds independently of `@mara/web`.
 ### Linux
 
 The same crate builds on Linux (it's plain Tauri 2 — no Windows-specific code). Tauri
-can't cross-compile from Windows (it links the native webview), so **build on Linux**: a
-machine/VM/WSL2 or an `ubuntu` CI runner with Rust + `webkit2gtk-4.1`, `librsvg`,
-`patchelf` installed (see the repo root README's prerequisites). Then:
+can't cross-compile from Windows (it links the native webview), so the binary is **built
+on Linux** with Rust + `webkit2gtk-4.1`, `librsvg`, `patchelf` (see the repo root
+README's prerequisites). Two ways to drive it:
+
+**From the Windows dev box, via WSL** (`pnpm package:linux`). This mirrors the working
+tree into a WSL build dir, builds the shell there, and tars the binary **on Linux** (so
+its `+x` survives) into `dist/prebuilt/`. A later `package:zip` folds that staged tarball
+into the release:
 
 ```bash
-pnpm --filter @mara/shell tauri:build      # -> src-tauri/target/release/mara-shell
-#   (copy-client deploys it to dist/desktop-linux/Mara3)
+pnpm package:linux     # builds in WSL -> dist/prebuilt/Mara3-linux-x64.tar.gz
+pnpm package:zip       # -> Mara3-linux-x64-*.tar.gz + latest-linux-x64.json (or package:all)
+```
+
+Needs WSL2 with the toolchain + `rsync` installed. Config via env: `MARA_WSL_DISTRO`
+(default distro), `MARA_WSL_DIR` (default `$HOME/mara-linux-build`), `MARA_UPDATE_BASE_URL`.
+Run `pnpm package:linux --dry-run` to print the generated build script without executing.
+
+**Natively on a Linux host/CI runner** — build and zip in one place:
+
+```bash
+pnpm --filter @mara/shell tauri:build      # -> dist/desktop-linux/Mara3 (via copy-client)
 pnpm package:zip                            # -> Mara3-linux-x64-*.tar.gz + latest-linux-x64.json
 ```
 
-`package`/`package:zip` build + bundle the Linux client automatically (the packaging
-scripts pick the OS by `process.platform`). Two Linux-specific notes:
+Either way, two Linux-specific notes:
 
-- It ships as a **`.tar.gz`**, not a `.zip`, so the binary keeps its executable bit —
-  so build **and** zip on Linux (zipping it on Windows would lose `+x`).
+- It ships as a **`.tar.gz`**, not a `.zip`, so the binary keeps its executable bit. The
+  tarball must be **authored on Linux** — the WSL flow does this and hands Windows a
+  finished archive (`zip-dist`'s "prebuilt" intake folds it in without re-taring, so `+x`
+  is never lost). A native Linux run zips it directly.
 - Unlike Windows (bundled/evergreen WebView2), the binary uses the **system
   `webkit2gtk-4.1`**, so it's not a single-file portable — the target machine needs that
   library (present or a one-line install on most desktops). For a self-contained
