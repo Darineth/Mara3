@@ -101,11 +101,21 @@
   }
 
   function onPaste(event: ClipboardEvent) {
-    if (!upload) return;
-    const files = [...(event.clipboardData?.files ?? [])];
-    if (files.some((f) => f.type.startsWith('image/'))) {
+    if (!upload || !event.clipboardData) return;
+    const cd = event.clipboardData;
+    // Chromium/WebView2 (Windows) exposes a pasted bitmap via clipboardData.files, but
+    // WebKitGTK (the Linux client's webview) only exposes it via items[].getAsFile() —
+    // so fall back to items when .files has no image, or paste silently does nothing there.
+    let images = [...cd.files].filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) {
+      images = [...cd.items]
+        .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => f != null);
+    }
+    if (images.length > 0) {
       event.preventDefault();
-      void uploadFiles(files);
+      void uploadFiles(images);
     }
   }
 
