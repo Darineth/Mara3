@@ -125,7 +125,8 @@ export function updateStatusText(s: UpdateStatus): string {
     case 'error':
       return 'Update check failed';
     case 'uptodate':
-      return `Up to date (v${s.current})`;
+      // The version is already shown next to this (client line / picker meta) — don't repeat it.
+      return 'Up to date';
     case 'available':
       return `Update available: v${s.update.version}`;
   }

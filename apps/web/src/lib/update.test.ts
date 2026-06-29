@@ -115,7 +115,7 @@ describe('updateStatusText', () => {
   it('formats each state', () => {
     expect(updateStatusText({ state: 'disabled' })).toBe('Update check off');
     expect(updateStatusText({ state: 'error', current: '3.0.0' })).toBe('Update check failed');
-    expect(updateStatusText({ state: 'uptodate', current: '3.0.1' })).toBe('Up to date (v3.0.1)');
+    expect(updateStatusText({ state: 'uptodate', current: '3.0.1' })).toBe('Up to date');
     expect(
       updateStatusText({
         state: 'available',

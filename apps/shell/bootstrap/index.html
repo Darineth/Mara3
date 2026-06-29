@@ -126,12 +126,9 @@
         font-size: 1.1rem;
         line-height: 1;
       }
-      /* Version + update-check status, shown faint under the form. */
+      /* Version + update-check status on one faint line under the form. */
       #appmeta {
         margin: 0.8rem 0 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
         font-size: 0.75rem;
         opacity: 0.55;
         text-align: center;
@@ -162,7 +159,7 @@
         <button id="connect" type="submit">Connect</button>
       </form>
       <p id="status"></p>
-      <p id="appmeta"><span id="appver"></span><span id="upd-status"></span></p>
+      <p id="appmeta"></p>
     </div>
     <script>
       // Server picker. Settings live next to the exe (read via the get_settings
@@ -207,33 +204,36 @@
         return 0;
       }
 
+      // The meta line under the form: the client version shown ONCE, plus the live
+      // update-check outcome — e.g. "v3.0.0 · Up to date" (not the version twice).
+      function setMeta(status) {
+        const el = document.getElementById('appmeta');
+        if (!el) return;
+        const cur = (window.__MARA_UPDATE__ && window.__MARA_UPDATE__.current) || '';
+        el.textContent = [cur ? 'v' + cur : '', status].filter(Boolean).join(' · ');
+      }
+
       // If the build was configured with an update-manifest URL, fetch it and show a
-      // dismissible "update available" banner when it reports a newer desktop build.
-      // Also reports the outcome (checking / up to date / available / failed / off) in
-      // the #upd-status line so the user can see a check ran. Best-effort and fully
-      // isolated: any failure is swallowed so the picker is never disrupted. This only
-      // NOTIFIES — the client stays portable; the Download link opens the system browser.
+      // dismissible "update available" banner when it reports a newer build. Also
+      // appends the outcome (checking / up to date / available / failed) to the meta
+      // line so the user can see a check ran. Best-effort and isolated: any failure is
+      // swallowed so the picker is never disrupted. This only NOTIFIES — the client
+      // stays portable; the Download link opens the system browser.
       async function checkForUpdate() {
         const info = window.__MARA_UPDATE__;
-        const out = document.getElementById('upd-status');
-        const setStatus = (t) => {
-          if (out) out.textContent = t;
-        };
-        if (!info || !info.manifestUrl) return setStatus('Update check off');
-        setStatus('Checking for updates…');
+        if (!info || !info.manifestUrl) return; // updates off → leave the bare version
+        setMeta('Checking for updates…');
         let manifest;
         try {
           const res = await fetch(info.manifestUrl, { cache: 'no-store' });
           if (!res.ok) throw 0;
           manifest = await res.json();
         } catch {
-          return setStatus('Update check failed');
+          return setMeta('Update check failed');
         }
-        if (!manifest || !manifest.version) return setStatus('Update check failed');
-        if (cmpVersion(manifest.version, info.current) <= 0) {
-          return setStatus(`Up to date (v${info.current})`);
-        }
-        setStatus(`Update available: v${manifest.version}`);
+        if (!manifest || !manifest.version) return setMeta('Update check failed');
+        if (cmpVersion(manifest.version, info.current) <= 0) return setMeta('Up to date');
+        setMeta(`Update available: v${manifest.version}`);
 
         const notes =
           typeof manifest.notes === 'string' && manifest.notes ? ` ${manifest.notes}` : '';
@@ -358,10 +358,8 @@
         // the static <title> once the page loads), then fire the update check
         // (fire-and-forget; must not delay the picker or auto-connect).
         const current = (window.__MARA_UPDATE__ && window.__MARA_UPDATE__.current) || '';
-        if (current) {
-          document.getElementById('appver').textContent = 'v' + current;
-          document.title = 'Mara 3 v' + current;
-        }
+        if (current) document.title = 'Mara 3 v' + current;
+        setMeta(''); // "v<version>" immediately; checkForUpdate appends the status
         checkForUpdate();
         let settings = window.__MARA_SETTINGS__ || {
           serverUrl: '',
