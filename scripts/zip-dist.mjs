@@ -55,6 +55,7 @@ const COMPONENTS = [
     exe: null,
     hasWebBuild: true,
     bundlesNode: true,
+    latest: true, // also emit Mara3-Server-latest.zip (stable link for a download page)
   },
   {
     dir: 'desktop',
