@@ -88,7 +88,7 @@ export class Hub {
     if (result?.lastClosed) {
       this.log.info({ user: result.session.info.name }, 'disconnected');
       this.broadcastAll(
-        { type: 'userDisconnect', token: result.session.info.token },
+        { type: 'userDisconnect', token: result.session.info.token, at: this.now() },
         result.session.info.token,
       );
     } else if (result) {
@@ -169,6 +169,7 @@ export class Hub {
         sessionToken,
         motd: this.cfg.motd,
         server: this.serverInfo,
+        at: this.now(),
       });
       for (const channelToken of live.channels) {
         const channel = this.state.channelsByToken.get(channelToken);
@@ -189,6 +190,7 @@ export class Hub {
       sessionToken,
       motd: this.cfg.motd,
       server: this.serverInfo,
+      at: this.now(),
     });
     this.broadcastAll({ type: 'userConnect', user: info }, token);
 
@@ -217,7 +219,12 @@ export class Hub {
     if (!alreadyMember) {
       this.broadcastChannel(
         channel.token,
-        { type: 'userJoinedChannel', token: session.info.token, channelToken: channel.token },
+        {
+          type: 'userJoinedChannel',
+          token: session.info.token,
+          channelToken: channel.token,
+          at: this.now(),
+        },
         session.info.token,
       );
     }
@@ -239,6 +246,7 @@ export class Hub {
       channel: channel.name,
       users,
       history: this.history.get(channel.name),
+      at: this.now(),
     });
   }
 
@@ -256,6 +264,7 @@ export class Hub {
       type: 'userLeftChannel',
       token: session.info.token,
       channelToken: channel.token,
+      at: this.now(),
     });
     this.state.pruneChannel(channel.token);
   }

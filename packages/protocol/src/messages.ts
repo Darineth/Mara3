@@ -129,6 +129,9 @@ const welcome = z.object({
   motd: z.string().max(MOTD_MAX_LEN).default(''),
   /** Server + build identity. Optional so a newer client tolerates an older server. */
   server: serverInfoSchema.optional(),
+  /** Server clock at login (epoch ms). The client anchors a server-time estimate to it
+   *  so session/connect notices order consistently with chat. Optional (older servers). */
+  at: z.number().int().nonnegative().optional(),
 });
 
 const loginDenied = z.object({
@@ -146,9 +149,14 @@ const userConnect = z.object({
   user: userInfoSchema,
 });
 
+/** Server send time (epoch ms) for the system line a client derives from this event, so
+ *  join/leave notices order and display on the same clock as chat. Optional (older servers). */
+const serverEventAt = z.number().int().nonnegative().optional();
+
 const userDisconnect = z.object({
   type: z.literal('userDisconnect'),
   token: tokenSchema,
+  at: serverEventAt,
 });
 
 /** A past channel message replayed as backlog when joining. */
@@ -173,6 +181,7 @@ const channelJoined = z.object({
   users: z.array(userInfoSchema),
   /** Recent messages (oldest first) so the joiner sees backlog. */
   history: z.array(channelHistoryEntrySchema).default([]),
+  at: serverEventAt,
 });
 
 const channelLeft = z.object({
@@ -184,12 +193,14 @@ const userJoinedChannel = z.object({
   type: z.literal('userJoinedChannel'),
   token: tokenSchema,
   channelToken: tokenSchema,
+  at: serverEventAt,
 });
 
 const userLeftChannel = z.object({
   type: z.literal('userLeftChannel'),
   token: tokenSchema,
   channelToken: tokenSchema,
+  at: serverEventAt,
 });
 
 const serverChat = z.object({

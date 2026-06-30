@@ -73,6 +73,9 @@ export class MaraClient {
   private _sessionToken: string | null = null;
   /** Monotonic counter for ChatLine ids (stable list keys across re-renders). */
   private lineSeq = 0;
+  /** Server-minus-local clock offset (ms), anchored to `welcome.at` each connect, so
+   *  `serverNow()` can estimate the server clock for locally-generated lines. */
+  private serverClockOffset = 0;
   private pingSeq = 0;
   /** pingId -> sentAt timestamp, so a matching pong can compute RTT. */
   private readonly pendingPings = new Map<number, number>();
@@ -196,6 +199,16 @@ export class MaraClient {
     this.send({ type: 'ping', id });
   }
 
+  /**
+   * Estimated server clock (epoch ms): local time shifted by the offset anchored to the
+   * last `welcome.at`. Use it for client-generated lines that have no server timestamp of
+   * their own (connect/drop/reconnect notices) so they order on the same clock as chat.
+   * Falls back to local time against an older server that doesn't send `welcome.at`.
+   */
+  serverNow(): number {
+    return this.now() + this.serverClockOffset;
+  }
+
   private send(message: ClientMessage): void {
     this.socket?.send(JSON.stringify(message));
   }
@@ -301,6 +314,9 @@ export class MaraClient {
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
         this._motd.set(msg.motd ?? '');
+        // Anchor the server-clock estimate to login time (0 = older server with no `at`,
+        // so serverNow() == now()), keeping client-stamped notices on the server's clock.
+        this.serverClockOffset = typeof msg.at === 'number' ? msg.at - this.now() : 0;
         this.reconnectAttempts = 0;
         this._self.set({ token: msg.self.token, name: msg.self.name });
         // Seed our own roster/directory entry (colour, away) from `self`.
@@ -340,7 +356,7 @@ export class MaraClient {
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) {
             channelTokens.push(channelToken);
-            this.systemLine(channelToken, `${name} disconnected`);
+            this.systemLine(channelToken, `${name} disconnected`, msg.at);
           }
         }
         // Also note it in any private conversation with them, so a PM clearly
@@ -350,6 +366,7 @@ export class MaraClient {
             kind: 'system',
             from: null,
             text: `${name} disconnected`,
+            at: msg.at,
           });
         }
         this.removeUser(msg.token);
@@ -398,7 +415,7 @@ export class MaraClient {
         // migrateLog rather than adding a fresh one).
         if (!this.joinAnnounced.has(channel.name)) {
           this.joinAnnounced.add(channel.name);
-          this.systemLine(channel.token, `You joined #${channel.name}`);
+          this.systemLine(channel.token, `You joined #${channel.name}`, msg.at);
         }
         this.events.emit('channelJoined', channel);
         return;
@@ -423,13 +440,13 @@ export class MaraClient {
 
       case 'userJoinedChannel':
         this.mutateMembers(msg.channelToken, (m) => m.add(msg.token));
-        this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} joined`);
+        this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} joined`, msg.at);
         this.events.emit('userJoinedChannel', { token: msg.token, channelToken: msg.channelToken });
         return;
 
       case 'userLeftChannel':
         // Emit the system line before removing the member so nameOf still resolves.
-        this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} left`);
+        this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} left`, msg.at);
         this.mutateMembers(msg.channelToken, (m) => m.delete(msg.token));
         this.events.emit('userLeftChannel', { token: msg.token, channelToken: msg.channelToken });
         return;
@@ -594,8 +611,8 @@ export class MaraClient {
     });
   }
 
-  private systemLine(channelToken: Token, text: string): void {
-    this.pushLine(this._channelMessages, channelToken, { kind: 'system', from: null, text });
+  private systemLine(channelToken: Token, text: string, at?: number): void {
+    this.pushLine(this._channelMessages, channelToken, { kind: 'system', from: null, text, at });
   }
 
   /**

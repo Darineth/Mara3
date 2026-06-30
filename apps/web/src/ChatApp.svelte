@@ -133,7 +133,9 @@
     // Negative, decreasing ids keep system lines distinct from server message ids
     // (which are non-negative) and stably ordered among themselves. Cap at the
     // last 50 so a long flaky session doesn't grow this unbounded.
-    const line: ChatLine = { id: --sysSeq, kind, from: null, text, at: Date.now() };
+    // Stamp on the server-clock estimate so these notices interleave with chat (server
+    // time) consistently, even when the local machine clock is skewed.
+    const line: ChatLine = { id: --sysSeq, kind, from: null, text, at: client.serverNow() };
     connectionLines = [...connectionLines, line].slice(-50);
   }
 
@@ -148,7 +150,7 @@
       // Mark where the backlog ends and this session begins (ChatView draws a rule
       // at the boundary). Captured before the first notice so all session lines
       // (Connected/joined/MOTD/live) sort at or after it.
-      sessionStart = Date.now();
+      sessionStart = client.serverNow();
       pushSystem(`Connected to ${$serverInfo.name}.`);
       // The MOTD is pushed later, on the first channel join, so it reads
       // Connected → joined → MOTD.
@@ -421,18 +423,29 @@
         : [],
   );
 
-  // Interleave connection notices with the conversation, in time order. At equal
-  // timestamps, rank conversation lines (positive ids) before connection notices
-  // (negative ids), each group in push order — so e.g. "You joined" precedes a MOTD
-  // notice pushed at the same instant.
-  const lineRank = (id: number) => (id >= 0 ? id : 1e15 - id);
-  const activeLines = $derived(
-    connectionLines.length === 0
-      ? baseLines
-      : [...baseLines, ...connectionLines].sort(
-          (a, b) => a.at - b.at || lineRank(a.id) - lineRank(b.id),
-        ),
-  );
+  // Interleave the global connection notices into the conversation WITHOUT disturbing
+  // its order. baseLines is already chronological (backlog sorted by server time, then
+  // live messages in arrival order), so we must not re-sort it by `at`: client-generated
+  // lines like "You joined" carry local machine time while chat carries server time, and
+  // sorting across those two clocks can float a just-typed message above the join line.
+  // Instead, keep baseLines as-is and splice each notice in by timestamp (connectionLines
+  // are already in push/time order). At an equal timestamp the conversation line wins, so
+  // "You joined" still precedes a MOTD notice stamped the same instant.
+  const activeLines = $derived.by(() => {
+    if (connectionLines.length === 0) return baseLines;
+    const out: ChatLine[] = [];
+    let i = 0;
+    for (const line of baseLines) {
+      let notice = connectionLines[i];
+      while (notice && notice.at < line.at) {
+        out.push(notice);
+        notice = connectionLines[++i];
+      }
+      out.push(line);
+    }
+    if (i < connectionLines.length) out.push(...connectionLines.slice(i));
+    return out;
+  });
 </script>
 
 <div class="app">
