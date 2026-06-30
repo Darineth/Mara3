@@ -299,6 +299,11 @@
         ? `#${$channels.get(activeChannel)?.name ?? ''}`
         : 'Mara 3',
   );
+  // Identity of the active conversation (type-tagged so a channel and a PM with the same
+  // numeric token stay distinct). Drives the chat input's refocus on join/switch.
+  const activeKey = $derived(
+    activePm !== null ? `pm:${activePm}` : activeChannel !== null ? `ch:${activeChannel}` : null,
+  );
 
   function membersOf(token: Token): UserInfo[] {
     const channel = $channels.get(token);
@@ -590,6 +595,7 @@
         placeholder={`Message ${title}`}
         macros={settings.macros}
         upload={(file) => uploadImage(file, client.sessionToken)}
+        focusKey={activeKey}
       />
     {/if}
   </main>

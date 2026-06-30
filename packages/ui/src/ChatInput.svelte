@@ -12,6 +12,7 @@
     disabled = false,
     macros = [],
     upload,
+    focusKey = null,
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -21,6 +22,10 @@
     macros?: string[];
     /** Upload an image and resolve its hosted URL; enables drag-drop & paste. */
     upload?: (file: File) => Promise<string>;
+    /** An opaque identity for the active conversation. Whenever it changes (and on first
+     *  mount), the textarea grabs focus — so joining or switching a channel/PM lands the
+     *  cursor in the field, ready to type. `null` (no conversation) doesn't focus. */
+    focusKey?: string | null;
   } = $props();
 
   /** A pending image attachment shown as a tile above the input. */
@@ -41,6 +46,15 @@
   let dragOver = $state(false);
   let uploadError = $state('');
   let nextAttachId = 0;
+
+  // Land the cursor in the field whenever the active conversation changes (and on first
+  // mount), so joining or switching a channel/PM is ready to type into without a click. A
+  // disabled field can't take focus — harmless, and by the time a conversation is open the
+  // connection is active anyway.
+  $effect(() => {
+    focusKey; // tracked: re-focus on every change
+    if (focusKey != null) textarea?.focus();
+  });
 
   // An attachment with no resolved `url` yet is still uploading; block send until
   // all resolve so we never emit a message referencing a not-yet-hosted image.
