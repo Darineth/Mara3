@@ -9,9 +9,12 @@
 mod win7_compat;
 
 use std::fs::create_dir_all;
+use std::io::Write;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tauri::scope::ipc::RemoteDomainAccessScope;
+use tauri::Manager;
 
 /// Self-hosted manifest the picker polls for newer Win7 builds, baked in at build
 /// time via `MARA_UPDATE_URL` (this client points at its OWN manifest —
@@ -22,6 +25,14 @@ const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
     Some(u) => u,
     None => "",
 };
+
+/// Log line terminator. Windows text viewers (notably old Notepad on Win7) need CRLF — a
+/// lone LF shows the whole file as one line — and Rust file writes are byte-exact (no
+/// text-mode translation), so emit it explicitly.
+#[cfg(windows)]
+const LINE_END: &str = "\r\n";
+#[cfg(not(windows))]
+const LINE_END: &str = "\n";
 
 /// First-run seed for the server address. No built-in default (the picker starts
 /// empty so the client never suggests a server the user didn't pick); `MARA_URL`, if
@@ -59,6 +70,12 @@ struct Settings {
     recent: Vec<String>,
     #[serde(rename = "autoConnect", default)]
     auto_connect: bool,
+    /// Where logs are written. Absent/`null` → `logs/` relative to the current working
+    /// directory (where the client is launched from). A relative path resolves against
+    /// the working directory; an absolute path is used as-is. An explicit blank string
+    /// (`""`) disables disk logging. Mirrors the modern shell's `logDir`.
+    #[serde(rename = "logDir", default)]
+    log_dir: Option<String>,
     /// Window position/size/maximized state, restored on the next launch.
     #[serde(default)]
     window: WindowState,
@@ -70,17 +87,129 @@ impl Default for Settings {
             server_url: seed_url(),
             recent: Vec::new(),
             auto_connect: false,
+            log_dir: None,
             window: WindowState::default(),
         }
     }
 }
 
-fn settings_path() -> Result<PathBuf, String> {
+/// Directory of the running executable — the portable storage root for `settings.json`
+/// and, by default, the `logs/` folder. Mirrors the modern shell.
+fn exe_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "cannot resolve executable directory".to_string())?;
-    Ok(dir.join("settings.json"))
+    exe.parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "cannot resolve executable directory".to_string())
+}
+
+fn settings_path() -> Result<PathBuf, String> {
+    Ok(exe_dir()?.join("settings.json"))
+}
+
+/// Resolve the directory the local log file lives in, or `None` when disk logging is
+/// switched off. Defaults to `logs/` relative to the **current working directory** (the
+/// directory the client is launched from) — a plain relative `PathBuf`, so the OS
+/// resolves it per-platform. The `logDir` setting overrides it: an absolute path is used
+/// as-is, a relative one (like the default) resolves against the working directory.
+/// **Only an explicit blank string (`""`) disables logging** — a missing or `null`
+/// `logDir` keeps the default. Mirrors the modern shell's resolver.
+fn log_dir() -> Option<PathBuf> {
+    match load_settings().log_dir {
+        Some(d) if d.trim().is_empty() => None,
+        Some(d) => Some(PathBuf::from(d.trim())),
+        None => Some(PathBuf::from("logs")),
+    }
+}
+
+/// JSON the picker's startup screen uses to tell the user where logs go, or that logging
+/// is off: `{"enabled":false}` or `{"enabled":true,"path":"<absolute dir>"}`. A relative
+/// `logDir` is resolved against the current working directory so the shown path matches
+/// where files actually land. Purely informational — nothing is created here. Mirrors the
+/// modern shell.
+fn log_location_json() -> String {
+    match log_dir() {
+        None => serde_json::json!({ "enabled": false }).to_string(),
+        Some(dir) => {
+            let abs = if dir.is_absolute() {
+                dir
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(&dir))
+                    .unwrap_or(dir)
+            };
+            serde_json::json!({ "enabled": true, "path": abs.to_string_lossy() }).to_string()
+        }
+    }
+}
+
+/// Reduce a channel name to one safe path segment for its log sub-folder: maps path
+/// separators and characters illegal in Windows filenames to `_`, trims leading/trailing
+/// dots and whitespace, and falls back to `unknown` — so an empty or odd channel token
+/// can never break the path or escape the log root (e.g. `..`). Mirrors the modern shell.
+fn sanitize_segment(name: &str) -> String {
+    let cleaned: String = name
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.trim_matches('.').trim();
+    if cleaned.is_empty() {
+        "unknown".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+/// Current local time as `(YYYY-MM, YYYY-MM-DD HH:MM:SS)` — the first for the monthly log
+/// file name, the second for each line's timestamp prefix. The legacy client is
+/// Windows-only and deliberately avoids a date crate (`chrono`'s `clock` feature pulls
+/// `iana-time-zone`, whose Windows path uses WinRT — absent on Win7), so we read the wall
+/// clock via Win32 `GetLocalTime` directly (one call → both strings stay consistent).
+#[cfg(windows)]
+fn local_now() -> (String, String) {
+    #[repr(C)]
+    struct SystemTime {
+        w_year: u16,
+        w_month: u16,
+        w_day_of_week: u16,
+        w_day: u16,
+        w_hour: u16,
+        w_minute: u16,
+        w_second: u16,
+        w_milliseconds: u16,
+    }
+    extern "system" {
+        fn GetLocalTime(lp_system_time: *mut SystemTime);
+    }
+    let mut st = SystemTime {
+        w_year: 0,
+        w_month: 0,
+        w_day_of_week: 0,
+        w_day: 0,
+        w_hour: 0,
+        w_minute: 0,
+        w_second: 0,
+        w_milliseconds: 0,
+    };
+    // SAFETY: GetLocalTime (kernel32, present since Win2000) only writes the struct.
+    unsafe { GetLocalTime(&mut st) };
+    let month = format!("{:04}-{:02}", st.w_year, st.w_month);
+    let full = format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        st.w_year, st.w_month, st.w_day, st.w_hour, st.w_minute, st.w_second
+    );
+    (month, full)
+}
+
+/// Non-Windows fallback (the legacy client only ships on Windows; this keeps `cargo
+/// check` on a dev host compiling).
+#[cfg(not(windows))]
+fn local_now() -> (String, String) {
+    ("0000-00".to_string(), "0000-00-00 00:00:00".to_string())
 }
 
 fn load_settings() -> Settings {
@@ -155,6 +284,33 @@ fn apply_window_state(window: &tauri::Window, ws: &WindowState) {
     }
 }
 
+/// Native capability exposed to the hosted web UI: append a line to the local log,
+/// split per `channel` into its own sub-folder and per-month file
+/// (`<logDir>/<channel>/Mara3_YYYY-MM.log`). `logDir` defaults to `logs/`; a blank
+/// `logDir` disables logging, so this becomes a silent no-op. Only the loaded server's
+/// page can reach it — the origin is granted IPC at runtime (see `grant_remote_ipc`).
+/// Mirrors the modern shell's `mara_log`.
+#[tauri::command]
+fn mara_log(channel: String, line: String) -> Result<(), String> {
+    let root = match log_dir() {
+        Some(dir) => dir,
+        None => return Ok(()),
+    };
+    let dir = root.join(sanitize_segment(&channel));
+    create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let (month, stamp) = local_now();
+    let file_name = format!("Mara3_{month}.log");
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(file_name))
+        .map_err(|e| e.to_string())?;
+    // One line per call, prefixed with the channel + an explicit local timestamp:
+    // `[<channel> YYYY-MM-DD HH:MM:SS] <line>` (channel kept so merged logs stay legible).
+    write!(file, "[{channel} {stamp}] {line}{LINE_END}").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 fn get_settings() -> Settings {
     load_settings()
@@ -183,11 +339,43 @@ fn set_auto_connect(enabled: bool) -> Result<Settings, String> {
     Ok(s)
 }
 
+/// Host (no scheme/port/path/userinfo) of a server URL, for the IPC access scope.
+/// A hand-rolled parse keeps the legacy client dependency-light. Returns `None` for a
+/// bare IP address — Tauri 1's remote-IPC matching can't match IPs (tauri#7009), so
+/// granting one would silently do nothing; callers treat that as "no native bridge".
+fn host_of(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let authority = after_scheme.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit('@').next()?; // drop any userinfo
+    let host = authority.split(':').next()?; // drop port
+    if host.is_empty() || host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None; // empty, or a dotted-decimal IPv4 (won't match in Tauri 1)
+    }
+    Some(host.to_string())
+}
+
+/// Grant the just-chosen server's host IPC access at runtime, so the loaded remote page
+/// can reach the native commands (logging) — without hardcoding any hostname. We trust
+/// only the host the user connected to. Tauri 1 forbids wildcards in config, but this
+/// runtime scope is the supported escape hatch.
+fn grant_remote_ipc(window: &tauri::Window, url: &str) {
+    if let Some(host) = host_of(url) {
+        window.ipc_scope().configure_remote_access(
+            RemoteDomainAccessScope::new(host)
+                .add_window("main")
+                .allow_on_scheme("http")
+                .allow_on_scheme("https")
+                .enable_tauri_api(),
+        );
+    }
+}
+
 /// Navigate to the saved server. Tauri 1 has no Rust-side `navigate`, so we drive
 /// the webview via JS (`location.replace`), which loads the remote hosted UI.
 #[tauri::command]
 fn open_app(window: tauri::Window) -> Result<(), String> {
     let url = load_settings().server_url;
+    grant_remote_ipc(&window, &url);
     let js = format!(
         "window.location.replace({})",
         serde_json::to_string(&url).map_err(|e| e.to_string())?
@@ -198,6 +386,7 @@ fn open_app(window: tauri::Window) -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            mara_log,
             get_settings,
             set_server_url,
             set_auto_connect,
@@ -209,10 +398,12 @@ fn main() {
             let settings = load_settings();
             let init = format!(
                 "window.__MARA_SETTINGS__ = {settings}; \
-                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }};",
+                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
+                 window.__MARA_LOG__ = {log};",
                 settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
+                log = log_location_json(),
             );
             let window =
                 tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))

@@ -16,10 +16,33 @@ It behaves like the modern shell: a server **picker** (address + recent + an
 > - **No in-app "Switch server"** (Tauri 1 lacks the runtime navigation the v2
 >   version uses). Change servers from the launch picker — leave auto-connect off so
 >   it always appears — or by editing `settings.json`.
-> - **No native logging** on the remote page (the web app's `nativeLog` simply
->   no-ops there).
 > - Everything here depends on **end-of-life** components (Win7, an EOL WebView2
 >   runtime). Use only where Win7 support is genuinely required.
+
+## Native logging
+
+Like the modern shell, the loaded web UI can write a local log via `mara_log`
+(`src-tauri/src/main.rs`), split per channel into a monthly file:
+`<logDir>/<channel>/Mara3_YYYY-MM.log` (the month comes from Win32 `GetLocalTime` —
+no date crate, since `chrono`'s Windows path needs WinRT, absent on Win7). `logDir`
+defaults to `logs/` relative to the **current working directory** (the directory the
+client is launched from). A missing or `null` `logDir` keeps that default — **only an
+explicit `"logDir": ""` disables disk logging.** Otherwise set `"logDir"` to redirect it
+(absolute as-is, relative to the working directory). The launch picker shows the resolved
+absolute log directory (or "Logging disabled") on a faint line under the form.
+
+Because the UI is loaded from a **remote** origin, it can only reach `mara_log` for
+servers the client grants IPC to. Rather than hardcoding hosts, the client grants
+access **at runtime to exactly the server you connect to** (`grant_remote_ipc` in
+`src-tauri/src/main.rs`, via `ipc_scope().configure_remote_access(...)`) — Tauri 1
+forbids config wildcards, so this runtime scope is the supported escape hatch. Only
+connect to servers you trust, since that page can then call the native command.
+
+> ⚠️ **Bare IP-address servers won't get the native bridge** (e.g.
+> `http://192.168.1.5:5050`): Tauri 1's remote-IPC matching can't match IP hosts
+> ([tauri#7009](https://github.com/tauri-apps/tauri/issues/7009)), so logging silently
+> no-ops there. Use a DNS hostname. The remote-page → native-command path also has
+> **not** been runtime-verified on Win7 yet.
 
 ## Updates (portable "update available" nudge)
 

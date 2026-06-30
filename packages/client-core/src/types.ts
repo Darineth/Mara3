@@ -79,9 +79,14 @@ export interface ClientEvents {
   loginDenied: { reason: string; code?: string };
   error: { message: string };
   userConnect: UserInfo;
-  userDisconnect: { token: Token };
+  /** `channelTokens` are the channels the user was in at disconnect (captured before
+   *  removal), so listeners can note the departure per channel. */
+  userDisconnect: { token: Token; channelTokens: Token[] };
   channelJoined: ChannelState;
-  channelLeft: { channelToken: Token };
+  /** `reason` is 'left' for a real departure (we left / were removed — log-worthy) vs
+   *  'replaced' when the server reassigned the channel a new token (internal churn, not a
+   *  user action). `name` is the channel name, captured before the token is dropped. */
+  channelLeft: { channelToken: Token; name: string; reason: 'left' | 'replaced' };
   userJoinedChannel: { token: Token; channelToken: Token };
   userLeftChannel: { token: Token; channelToken: Token };
   /** A user changed their display name and/or colour mid-session. */

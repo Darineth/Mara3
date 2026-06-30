@@ -65,10 +65,8 @@ The picker (`bootstrap/index.html`) talks to native commands in `src-tauri/src/l
 `get_settings`, `set_server_url`, `set_auto_connect`, `open_app`, and `switch_server`.
 
 > Note: the **Switch server…** menu item invokes a native command from the _loaded
-> server's_ page, so it only works for origins the client grants IPC to —
-> `localhost`/`127.0.0.1` by default (see `capabilities/default.json` → `remote.urls`).
-> For other servers, switch via the launch picker (turn auto-connect off so it always
-> appears) or by editing `settings.json`.
+> server's_ page, which works because the client grants IPC to the server's origin at
+> runtime when it connects (`grant_remote_ipc` in `lib.rs`) — no per-host config.
 
 ## Run / build
 
@@ -157,12 +155,15 @@ runs on Linux via `pnpm --filter @mara/server start`.
 channel into its own sub-folder, one file per month:
 `<logDir>/<channel>/Mara3_YYYY-MM.log` (channel chat → the channel name, PMs →
 `pm-<user>`; connection/status notices are mirrored into every currently-open channel
-log rather than a file of their own). By default `logDir` is `logs/` **beside the
-executable** (portable, like `settings.json`), so copying the exe folder carries its
-logs with it. Set `"logDir"` in `settings.json` to redirect it — an absolute path is
-used as-is, a relative one resolves against the executable's folder, and an explicit
-blank string (`"logDir": ""`) disables disk logging entirely. The hosted web UI calls
-it via `apps/web/src/lib/native.ts`
+log rather than a file of their own). By default `logDir` is `logs/` relative to the
+**current working directory** (the directory the client is launched from) — a plain
+relative path, so it works the same on Windows, macOS, and Linux. A missing or `null`
+`logDir` keeps that default — **only an explicit blank string (`"logDir": ""`) disables
+disk logging.** Otherwise set `"logDir"` in `settings.json` to redirect it: an absolute
+path is used as-is, a relative one resolves against the working directory. The launch
+picker shows the resolved absolute log directory (or "Logging disabled") on a faint line
+under the form, so you can see where logs land before connecting. The hosted web UI
+calls it via `apps/web/src/lib/native.ts`
 (`nativeLog`), but only when running inside this shell — in a plain browser it is a
 no-op, so the same web build works everywhere. Add further native functions the
 same way: a `#[tauri::command]` in `lib.rs` + a wrapper in `native.ts`.
@@ -205,16 +206,16 @@ embedded pubkey in `tauri.conf.json` are already in place).
 ## Security — important
 
 A thin client that loads **remote** content and grants it **native** capabilities
-trusts that server. IPC access for the remote page is gated by
-`src-tauri/capabilities/default.json` → `remote.urls`, which defaults to
-**localhost only**. To use a remote/LAN server, add its origin there (e.g.
-`"http://chat.example.com:5050"`) and rebuild. Keep this list to servers you trust;
-do not widen it to `http://*`.
+trusts that server. Rather than hardcoding a hostname allowlist, the client grants IPC
+access **at runtime to exactly the origin you connect to** — see `grant_remote_ipc` in
+`src-tauri/src/lib.rs`, which calls `add_capability` with a `CapabilityBuilder` scoped
+to that origin (no wildcard, no rebuild). The granted permissions are limited to
+`core:default`, `opener:default`, and `updater:default`. Only connect to servers you
+trust — the page you load can use those native commands.
 
 ## Status
 
-Compiles against Tauri 2. The remote-page → native-command (IPC + capabilities)
-path is configured per Tauri 2 docs but has **not** been runtime-verified in this
-environment — confirm it on a real machine on first run, adjusting `remote.urls`
-to your server's origin. Mobile (iOS/Android) remains scaffolded; needs the mobile
-SDKs.
+Compiles against Tauri 2. The remote-page → native-command path (runtime
+`add_capability` for the connected origin) is configured per Tauri 2 docs but has
+**not** been runtime-verified in this environment — confirm it on a real machine on
+first run. Mobile (iOS/Android) remains scaffolded; needs the mobile SDKs.

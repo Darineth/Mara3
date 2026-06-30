@@ -205,6 +205,10 @@
   });
 
   // Desktop shell only: mirror connection + chat activity to the local log file.
+  // Channel names we've already logged our own join for this session — the server can
+  // send channelJoined twice for one channel (our explicit rejoin + its default
+  // auto-join), so dedupe by name like client-core's own "You joined" guard does.
+  const loggedJoins = new Set<string>();
   $effect(() => {
     if (!isDesktop()) return;
     // Log files are split per channel by its (human-readable) name, falling back to the
@@ -219,9 +223,40 @@
     const offs = [
       client.events.on('connected', (i) => logToAllChannels(`connected as ${i.name}`)),
       client.events.on('statusChanged', (s) => logToAllChannels(`status: ${s}`)),
+      // Membership changes, by name (matching what the chat view shows). Our own join
+      // arrives as channelJoined (deduped); others arrive as userJoinedChannel /
+      // userLeftChannel, and a disconnect as userDisconnect (per channel they were in).
+      client.events.on('channelJoined', (ch) => {
+        if (loggedJoins.has(ch.name)) return;
+        loggedJoins.add(ch.name);
+        void nativeLog(ch.name, `${$self?.name ?? 'You'} joined`);
+      }),
+      client.events.on('channelLeft', (e) => {
+        // Only a real departure — skip the 'replaced' token-churn on reconnect.
+        if (e.reason !== 'left') return;
+        loggedJoins.delete(e.name); // a later rejoin should log again
+        void nativeLog(e.name, `${$self?.name ?? 'You'} left`);
+      }),
+      client.events.on(
+        'userJoinedChannel',
+        (e) => void nativeLog(channelFolder(e.channelToken), `${nameOf(e.token)} joined`),
+      ),
+      client.events.on(
+        'userLeftChannel',
+        (e) => void nativeLog(channelFolder(e.channelToken), `${nameOf(e.token)} left`),
+      ),
+      client.events.on('userDisconnect', (e) => {
+        for (const token of e.channelTokens) {
+          void nativeLog(channelFolder(token), `${nameOf(e.token)} disconnected`);
+        }
+      }),
       client.events.on(
         'chat',
         (m) => void nativeLog(channelFolder(m.channelToken), `<${nameOf(m.from)}> ${m.text}`),
+      ),
+      client.events.on(
+        'emote',
+        (m) => void nativeLog(channelFolder(m.channelToken), `* ${nameOf(m.from)} ${m.text}`),
       ),
       client.events.on(
         'privateMessage',

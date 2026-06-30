@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use tauri::ipc::CapabilityBuilder;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Static JSON manifest the picker polls to learn about newer desktop builds, baked
@@ -18,6 +19,14 @@ const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
     Some(u) => u,
     None => "",
 };
+
+/// Log line terminator. Windows text viewers (e.g. Notepad) need CRLF — a lone LF shows
+/// the whole file as one line — so use the platform-native ending. Rust file writes are
+/// byte-exact (no text-mode translation), hence the explicit choice.
+#[cfg(windows)]
+const LINE_END: &str = "\r\n";
+#[cfg(not(windows))]
+const LINE_END: &str = "\n";
 
 /// The value used to seed the server address the first time (no settings file yet).
 /// There is **no** built-in default — the picker starts empty so the client never
@@ -61,10 +70,10 @@ struct Settings {
     /// picked a server they want to stick.
     #[serde(rename = "autoConnect", default)]
     auto_connect: bool,
-    /// Where the local log file (`mara.log`) is written. Absent → `logs/` beside the
-    /// executable (portable, like this file). A relative path resolves against the
-    /// executable's folder; an absolute path is used as-is to redirect logs elsewhere.
-    /// An explicit blank string (`""`) disables disk logging entirely.
+    /// Where logs are written. Absent/`null` → `logs/` relative to the current working
+    /// directory (where the client is launched from). A relative path resolves against
+    /// the working directory; an absolute path is used as-is. An explicit blank string
+    /// (`""`) disables disk logging entirely. See `log_dir()`.
     #[serde(rename = "logDir", default)]
     log_dir: Option<String>,
     /// Window position/size/maximized state, restored on the next launch.
@@ -103,27 +112,38 @@ fn settings_path() -> Result<PathBuf, String> {
 }
 
 /// Resolve the directory the local log file lives in, or `None` when disk logging is
-/// switched off. Defaults to `logs/` beside the executable (portable, like
-/// `settings.json`); the `logDir` setting overrides it — absolute paths are used as-is,
-/// relative ones resolve against the executable's folder, and an explicit blank string
-/// disables logging.
-fn log_dir() -> Result<Option<PathBuf>, String> {
-    let base = exe_dir()?;
-    let dir = match load_settings().log_dir {
-        // Explicitly blank → logging disabled.
-        Some(d) if d.trim().is_empty() => return Ok(None),
-        Some(d) => {
-            let p = PathBuf::from(d.trim());
-            if p.is_absolute() {
-                p
+/// switched off. Defaults to `logs/` relative to the **current working directory** (the
+/// directory the client is launched from) — a plain relative `PathBuf`, so the OS
+/// resolves it per-platform (cross-platform, no hardcoded separators). The `logDir`
+/// setting overrides it: an absolute path is used as-is, a relative one (like the
+/// default) resolves against the working directory. **Only an explicit blank string
+/// (`""`) disables logging** — a missing or `null` `logDir` keeps the default.
+fn log_dir() -> Option<PathBuf> {
+    match load_settings().log_dir {
+        Some(d) if d.trim().is_empty() => None,
+        Some(d) => Some(PathBuf::from(d.trim())),
+        None => Some(PathBuf::from("logs")),
+    }
+}
+
+/// JSON the picker's startup screen uses to tell the user where logs go, or that logging
+/// is off: `{"enabled":false}` or `{"enabled":true,"path":"<absolute dir>"}`. A relative
+/// `logDir` is resolved against the current working directory so the shown path matches
+/// where files actually land. Purely informational — nothing is created here.
+fn log_location_json() -> String {
+    match log_dir() {
+        None => serde_json::json!({ "enabled": false }).to_string(),
+        Some(dir) => {
+            let abs = if dir.is_absolute() {
+                dir
             } else {
-                base.join(p)
-            }
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(&dir))
+                    .unwrap_or(dir)
+            };
+            serde_json::json!({ "enabled": true, "path": abs.to_string_lossy() }).to_string()
         }
-        // Absent → default location.
-        None => base.join("logs"),
-    };
-    Ok(Some(dir))
+    }
 }
 
 /// Load settings, falling back to defaults (seeded from `MARA_URL`/the default) on
@@ -228,18 +248,26 @@ fn sanitize_segment(name: &str) -> String {
 /// exe; a blank `logDir` disables logging, so this becomes a silent no-op.
 #[tauri::command]
 fn mara_log(channel: String, line: String) -> Result<(), String> {
-    let Some(root) = log_dir()? else {
+    let Some(root) = log_dir() else {
         return Ok(());
     };
     let dir = root.join(sanitize_segment(&channel));
     create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let file_name = format!("Mara3_{}.log", Local::now().format("%Y-%m"));
+    let now = Local::now();
+    let file_name = format!("Mara3_{}.log", now.format("%Y-%m"));
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(dir.join(file_name))
         .map_err(|e| e.to_string())?;
-    writeln!(file, "{line}").map_err(|e| e.to_string())?;
+    // One line per call, prefixed with the channel + an explicit local timestamp:
+    // `[<channel> YYYY-MM-DD HH:MM:SS] <line>` (channel kept so merged logs stay legible).
+    write!(
+        file,
+        "[{channel} {}] {line}{LINE_END}",
+        now.format("%Y-%m-%d %H:%M:%S")
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -276,6 +304,43 @@ fn set_auto_connect(enabled: bool) -> Result<Settings, String> {
     Ok(s)
 }
 
+/// Grant the just-chosen server's origin IPC access at runtime, so the loaded remote
+/// page can reach the native commands (logging, opener, updater) — without hardcoding
+/// any hostname. We trust only the exact origin the user connected to (not a wildcard).
+/// Failures are swallowed: a re-opened origin is a duplicate (already granted), and
+/// logging must never block opening the server.
+fn grant_remote_ipc(app: &AppHandle, url: &tauri::Url) {
+    let origin = url.origin().ascii_serialization();
+    if origin == "null" {
+        return;
+    }
+    // Capability identifiers must be a clean slug — keep alphanumerics, collapse every
+    // other run (`://`, `:`, `.`) to a single dash so the id is always valid and stable.
+    let mut id = String::from("remote-");
+    let mut prev_dash = false;
+    for c in origin.chars() {
+        if c.is_ascii_alphanumeric() {
+            id.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            id.push('-');
+            prev_dash = true;
+        }
+    }
+    let cap = CapabilityBuilder::new(id)
+        .remote(origin)
+        .local(false)
+        .window("main")
+        .permission("core:default")
+        .permission("opener:default")
+        .permission("updater:default")
+        // App commands the loaded page calls — these need their autogenerated
+        // `allow-<command>` permissions (see build.rs AppManifest) to clear the ACL.
+        .permission("allow-mara-log")
+        .permission("allow-switch-server");
+    let _ = app.add_capability(cap);
+}
+
 /// Called by the bootstrap page once the chosen server is reachable: navigate the
 /// window to the live hosted UI. Rust-initiated navigation reliably loads the
 /// remote origin (the bootstrap page handles retrying until this fires).
@@ -285,6 +350,7 @@ fn open_app(app: AppHandle) -> Result<(), String> {
         .server_url
         .parse()
         .map_err(|e| format!("invalid server URL: {e}"))?;
+    grant_remote_ipc(&app, &url);
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window missing".to_string())?;
@@ -334,10 +400,12 @@ pub fn run() {
             // the actual fetch/compare/banner in JS — see bootstrap/index.html.
             let init = format!(
                 "window.__MARA_SETTINGS__ = {settings}; \
-                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }};",
+                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
+                 window.__MARA_LOG__ = {log};",
                 settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
+                log = log_location_json(),
             );
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

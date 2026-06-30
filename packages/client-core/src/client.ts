@@ -333,11 +333,15 @@ export class MaraClient {
         return;
 
       case 'userDisconnect': {
-        // Note the disconnect in each channel the user was in (capture the name
-        // before removing them, then drop them from every channel/roster).
+        // Note the disconnect in each channel the user was in (capture the name and the
+        // channel set before removing them, then drop them from every channel/roster).
         const name = this.nameOf(msg.token);
+        const channelTokens: Token[] = [];
         for (const [channelToken, channel] of get(this._channels)) {
-          if (channel.members.has(msg.token)) this.systemLine(channelToken, `${name} disconnected`);
+          if (channel.members.has(msg.token)) {
+            channelTokens.push(channelToken);
+            this.systemLine(channelToken, `${name} disconnected`);
+          }
         }
         // Also note it in any private conversation with them, so a PM clearly
         // shows the other party left.
@@ -349,7 +353,7 @@ export class MaraClient {
           });
         }
         this.removeUser(msg.token);
-        this.events.emit('userDisconnect', { token: msg.token });
+        this.events.emit('userDisconnect', { token: msg.token, channelTokens });
         return;
       }
 
@@ -379,7 +383,12 @@ export class MaraClient {
         });
         if (staleToken !== undefined) {
           this.migrateLog(this._channelMessages, staleToken, channel.token);
-          this.events.emit('channelLeft', { channelToken: staleToken });
+          // Token churn, not a user action — `replaced` so listeners (e.g. logging) skip it.
+          this.events.emit('channelLeft', {
+            channelToken: staleToken,
+            name: channel.name,
+            reason: 'replaced',
+          });
         }
         this.ensureLog(this._channelMessages, channel.token);
         this.seedHistory(channel.token, msg.history);
@@ -395,7 +404,8 @@ export class MaraClient {
         return;
       }
 
-      case 'channelLeft':
+      case 'channelLeft': {
+        const name = get(this._channels).get(msg.channelToken)?.name ?? '';
         this._channels.update((map) => {
           const next = new Map(map);
           const ch = next.get(msg.channelToken);
@@ -406,8 +416,10 @@ export class MaraClient {
           next.delete(msg.channelToken);
           return next;
         });
-        this.events.emit('channelLeft', { channelToken: msg.channelToken });
+        // A real departure (we left, or were removed) — log-worthy.
+        this.events.emit('channelLeft', { channelToken: msg.channelToken, name, reason: 'left' });
         return;
+      }
 
       case 'userJoinedChannel':
         this.mutateMembers(msg.channelToken, (m) => m.add(msg.token));

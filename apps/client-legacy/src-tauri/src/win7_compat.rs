@@ -75,12 +75,8 @@ static __imp_EventUnregister: unsafe extern "system" fn(u64) -> u32 = EventUnreg
 
 #[no_mangle]
 #[used]
-static __imp_EventSetInformation: unsafe extern "system" fn(
-    u64,
-    i32,
-    *const c_void,
-    u32,
-) -> u32 = EventSetInformation;
+static __imp_EventSetInformation: unsafe extern "system" fn(u64, i32, *const c_void, u32) -> u32 =
+    EventSetInformation;
 
 #[no_mangle]
 #[used]

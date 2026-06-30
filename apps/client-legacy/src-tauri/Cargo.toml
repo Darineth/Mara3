@@ -2,7 +2,7 @@
 name = "mara-client-legacy"
 version = "3.0.0"
 description = "Mara 3 — legacy desktop client (Windows 7, Tauri 1)"
-authors = ["Mara"]
+authors = ["Darineth"]
 edition = "2021"
 # Tauri 1 + an older toolchain is what keeps Windows 7 in reach; see README.md.
 rust-version = "1.70"

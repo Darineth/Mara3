@@ -8,7 +8,12 @@ interface TauriCore {
   invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 interface TauriGlobal {
-  core: TauriCore;
+  /** Tauri 2 invoke surface (the modern shell, on a *local* page). */
+  core?: TauriCore;
+  /** Tauri 1 invoke surface (the Win7 legacy client). */
+  tauri?: TauriCore;
+  /** Tauri 1 also exposes invoke at the top level in some builds. */
+  invoke?: TauriCore['invoke'];
   /** Tauri 1 shell API (present in the Win7 legacy client, not the modern shell). */
   shell?: { open(url: string): Promise<void> };
 }
@@ -18,9 +23,40 @@ function tauri(): TauriGlobal | null {
   return g.__TAURI__ ?? null;
 }
 
-/** True when running inside the Tauri desktop shell. */
+/**
+ * Tauri 2's low-level IPC. This is what `@tauri-apps/api`'s `invoke` calls under the
+ * hood, and crucially it IS injected on **remote** pages that have been granted IPC —
+ * whereas the `window.__TAURI__` convenience global is NOT injected there even with
+ * `withGlobalTauri` (tauri#11934). The desktop clients load the hosted UI as a remote
+ * page, so this is the surface that actually works there.
+ */
+function tauriInternals(): TauriCore | null {
+  const g = globalThis as { __TAURI_INTERNALS__?: TauriCore };
+  return g.__TAURI_INTERNALS__ ?? null;
+}
+
+/**
+ * Invoke a native command across every shell/page shape: Tauri 2 local pages expose
+ * `__TAURI__.core.invoke`; Tauri 2 remote pages expose only `__TAURI_INTERNALS__.invoke`;
+ * Tauri 1 (the Win7 client) exposes `__TAURI__.tauri.invoke` (or a bare `.invoke`).
+ * Called as a method so each surface's `invoke` keeps its own `this`.
+ */
+function rawInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  const t = tauri();
+  if (t?.core?.invoke) return t.core.invoke(cmd, args); // Tauri 2, local page
+  if (t?.tauri?.invoke) return t.tauri.invoke(cmd, args); // Tauri 1
+  if (t?.invoke) return t.invoke(cmd, args); // Tauri 1 (bare)
+  const ti = tauriInternals();
+  if (ti?.invoke) return ti.invoke(cmd, args); // Tauri 2, remote page
+  return Promise.reject(new Error('no native invoke'));
+}
+
+/**
+ * True when running inside a Tauri desktop shell. Checks both globals: the loaded
+ * server page (remote) only has `__TAURI_INTERNALS__`, not `__TAURI__`.
+ */
 export function isDesktop(): boolean {
-  return tauri() !== null;
+  return tauri() !== null || tauriInternals() !== null;
 }
 
 /**
@@ -29,10 +65,9 @@ export function isDesktop(): boolean {
  * plain browser.
  */
 export async function nativeLog(channel: string, line: string): Promise<void> {
-  const t = tauri();
-  if (!t) return;
+  if (!isDesktop()) return;
   try {
-    await t.core.invoke('mara_log', { channel, line });
+    await rawInvoke('mara_log', { channel, line });
   } catch {
     /* logging must never break the app */
   }
@@ -44,9 +79,8 @@ export async function nativeLog(channel: string, line: string): Promise<void> {
  * (e.g. when the current server's origin isn't IPC-allowed).
  */
 export async function switchServer(): Promise<void> {
-  const t = tauri();
-  if (!t) return;
-  await t.core.invoke('switch_server');
+  if (!isDesktop()) return;
+  await rawInvoke('switch_server');
 }
 
 /**
@@ -55,22 +89,19 @@ export async function switchServer(): Promise<void> {
  * browser. Used for the desktop update-download link.
  */
 export async function openExternal(url: string): Promise<void> {
-  const t = tauri();
-  if (!t) {
+  if (!isDesktop()) {
     window.open(url, '_blank', 'noopener');
     return;
   }
   try {
-    // Modern shell (Tauri 2): opener plugin. Win7 legacy (Tauri 1): shell.open.
-    if (t.core?.invoke) {
-      await t.core.invoke('plugin:opener|open_url', { url });
+    // Win7 legacy (Tauri 1): shell.open. Modern shell (Tauri 2, local or remote page):
+    // the opener plugin via whichever invoke surface is available.
+    const shell = tauri()?.shell;
+    if (shell?.open) {
+      await shell.open(url);
       return;
     }
-    if (t.shell?.open) {
-      await t.shell.open(url);
-      return;
-    }
-    throw new Error('no native opener');
+    await rawInvoke('plugin:opener|open_url', { url });
   } catch {
     window.open(url, '_blank', 'noopener');
   }

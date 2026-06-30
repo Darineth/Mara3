@@ -2,7 +2,7 @@
 name = "mara-shell"
 version = "3.0.0"
 description = "Mara 3 — cross-platform chat"
-authors = ["Mara"]
+authors = ["Darineth"]
 edition = "2021"
 rust-version = "1.77"
 

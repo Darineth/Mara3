@@ -1,10 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Thin client: load the remote Mara UI and expose native logging to it.",
+  "description": "Local bootstrap picker. The chosen server's origin is granted IPC at runtime (see grant_remote_ipc in lib.rs), so no hostnames are hardcoded here.",
   "windows": ["main"],
-  "remote": {
-    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
-  },
-  "permissions": ["core:default", "opener:default", "updater:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "updater:default",
+    "allow-get-settings",
+    "allow-set-server-url",
+    "allow-set-auto-connect",
+    "allow-open-app",
+    "allow-switch-server",
+    "allow-mara-log"
+  ]
 }
