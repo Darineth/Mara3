@@ -488,6 +488,14 @@
               class:active={activePm === null && activeChannel === channel.token}
               class:unread={unreadChannels.has(channel.token)}
               onclick={() => openChannel(channel.token)}
+              onmousedown={(e) => {
+                // Middle-click leaves the channel (and suppress the autoscroll cursor).
+                if (e.button === 1) {
+                  e.preventDefault();
+                  client.leaveChannel(channel.token);
+                }
+              }}
+              title="#{channel.name} — middle-click to leave"
             >
               #{channel.name}
             </button>
@@ -501,7 +509,17 @@
               class:active={activeChannel === null && activePm === peer}
               class:unread={unreadPms.has(peer)}
             >
-              <button class="tab-main" onclick={() => selectPm(peer)}>@{nameOf(peer)}</button>
+              <button
+                class="tab-main"
+                onclick={() => selectPm(peer)}
+                onmousedown={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    closePm(peer);
+                  }
+                }}
+                title="@{nameOf(peer)} — middle-click to close">@{nameOf(peer)}</button
+              >
               <button
                 class="tab-x"
                 onclick={() => closePm(peer)}

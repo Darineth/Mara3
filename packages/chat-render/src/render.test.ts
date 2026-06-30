@@ -391,19 +391,20 @@ describe('renderLine', () => {
     expect(html).toContain('<strong>hi</strong>'); // markdown still applies
   });
 
-  it('renders an away line in the author colour, escaped (no markdown/links)', () => {
+  it('renders an away line in the author colour: name escaped, note markdown + links, no images', () => {
     const html = renderLine({
       kind: 'away',
-      authorName: 'bob',
+      authorName: 'http://bob', // a URL-ish name must NOT become a link
       authorColor: '#00ff00',
-      text: 'bob is away (**lunch** http://x ![](/y))',
+      text: 'is away (**lunch** see https://x.com cat https://c.png)',
     });
     expect(html).toContain('mara-away');
     expect(html).toContain('color:#00ff00'); // the whole line is in the user's colour
     expect(html).toContain('<em>'); // italic, like an action
-    expect(html).not.toContain('<strong>'); // away note is escaped — no markdown
-    expect(html).not.toContain('<a '); // no auto-link
-    expect(html).not.toContain('<img'); // no inline image
+    expect(html).toContain('<strong>lunch</strong>'); // markdown applies to the note
+    expect(html).toContain('<a href="https://x.com"'); // links work in the note
+    expect(html).not.toContain('<img'); // but inline images are off (away persists)
+    expect(html).not.toContain('href="http://bob"'); // the name is escaped, never a link
   });
 
   it('falls back to a safe away colour when authorColor is invalid', () => {
@@ -411,7 +412,7 @@ describe('renderLine', () => {
       kind: 'away',
       authorName: 'x',
       authorColor: 'red',
-      text: 'x is back.',
+      text: 'is back.',
     });
     expect(html).toContain('color:#888888');
   });

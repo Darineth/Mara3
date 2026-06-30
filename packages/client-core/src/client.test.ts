@@ -217,13 +217,14 @@ describe('presence system messages', () => {
 
     await Promise.all([waitEvent(a, 'away'), Promise.resolve(b.sendAway('lunch'))]);
     let lines = get(a.channelMessages).get(aJoin.token) ?? [];
-    const awayLine = lines.find((l) => l.kind === 'away' && l.text === 'bob is away (lunch)');
+    // The line carries the predicate as text + `from` (the renderer prepends the name).
+    const awayLine = lines.find((l) => l.kind === 'away' && l.text === 'is away (lunch)');
     expect(awayLine).toBeDefined();
-    expect(awayLine?.from).toBe(bSelf.token); // carries the author so it renders in colour
+    expect(awayLine?.from).toBe(bSelf.token);
 
     await Promise.all([waitEvent(a, 'away'), Promise.resolve(b.sendAway(''))]);
     lines = get(a.channelMessages).get(aJoin.token) ?? [];
-    expect(lines.some((l) => l.kind === 'away' && l.text === 'bob is back.')).toBe(true);
+    expect(lines.some((l) => l.kind === 'away' && l.text === 'is back.')).toBe(true);
 
     a.disconnect();
     b.disconnect();
@@ -242,7 +243,7 @@ describe('presence system messages', () => {
     a.joinChannel('lobby');
     const aJoin = await waitEvent(a, 'channelJoined');
     const lines = get(a.channelMessages).get(aJoin.token) ?? [];
-    expect(lines.some((l) => l.kind === 'away' && l.text === 'bob is away (brb)')).toBe(true);
+    expect(lines.some((l) => l.kind === 'away' && l.text === 'is away (brb)')).toBe(true);
 
     a.disconnect();
     b.disconnect();

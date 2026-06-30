@@ -41,6 +41,7 @@
   let text = $state('');
   let history = $state<string[]>([]);
   let historyIndex = $state(-1); // -1 = editing a fresh line
+  let draft = ''; // the in-progress line, stashed while walking back through history
   let textarea = $state<HTMLTextAreaElement | null>(null);
   let attachments = $state<Attachment[]>([]);
   let dragOver = $state(false);
@@ -197,20 +198,56 @@
     onsend(value);
     if (typed) history = [...history, typed].slice(-100); // recall text only, not URLs
     historyIndex = -1;
+    draft = '';
     text = '';
     for (const a of attachments) URL.revokeObjectURL(a.preview);
     attachments = [];
     queueMicrotask(autosize);
   }
 
-  // Walk sent-text history. -1 means "fresh line"; the first ArrowUp jumps to the
-  // newest entry, then up/down step through and clamp at the ends.
+  // After loading a recalled line, resize and drop the caret at the end.
+  function caretToEnd() {
+    queueMicrotask(() => {
+      autosize();
+      const ta = textarea;
+      if (ta) ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+  }
+
+  // True when the (collapsed) caret sits on the first / last line of the field — the
+  // boundary where Up/Down recall history instead of moving between lines.
+  function caretOnFirstLine(): boolean {
+    const ta = textarea;
+    if (!ta || ta.selectionStart !== ta.selectionEnd) return false;
+    return !text.slice(0, ta.selectionStart).includes('\n');
+  }
+  function caretOnLastLine(): boolean {
+    const ta = textarea;
+    if (!ta || ta.selectionStart !== ta.selectionEnd) return false;
+    return !text.slice(ta.selectionStart).includes('\n');
+  }
+
+  // Walk sent-message history (terminal-style). Entering recall stashes the in-progress
+  // draft; stepping back past the oldest clamps; stepping forward past the newest restores
+  // the draft. -1 = the fresh draft line.
   function recall(direction: -1 | 1) {
     if (history.length === 0) return;
-    if (historyIndex === -1 && direction === -1) historyIndex = history.length - 1;
-    else historyIndex = Math.min(Math.max(historyIndex + direction, 0), history.length - 1);
+    if (historyIndex === -1) {
+      if (direction === 1) return; // already on the fresh line
+      draft = text; // save what was being typed before walking into history
+      historyIndex = history.length - 1;
+    } else {
+      const next = historyIndex + direction;
+      if (next >= history.length) {
+        historyIndex = -1;
+        text = draft; // back to the fresh line — restore the draft
+        caretToEnd();
+        return;
+      }
+      historyIndex = Math.max(next, 0);
+    }
     text = history[historyIndex] ?? '';
-    queueMicrotask(autosize);
+    caretToEnd();
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -228,12 +265,12 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit();
-      // Only start/continue history recall when the line is empty or already
-      // recalling, so ArrowUp still moves the caret while editing real text.
-    } else if (event.key === 'ArrowUp' && (text === '' || historyIndex !== -1)) {
+      // Recall when the caret is at the top/bottom edge of the field, so a single-line
+      // draft steps through history while a multi-line one still navigates between lines.
+    } else if (event.key === 'ArrowUp' && caretOnFirstLine()) {
       event.preventDefault();
       recall(-1);
-    } else if (event.key === 'ArrowDown' && historyIndex !== -1) {
+    } else if (event.key === 'ArrowDown' && historyIndex !== -1 && caretOnLastLine()) {
       event.preventDefault();
       recall(1);
     }

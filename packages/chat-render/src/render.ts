@@ -78,13 +78,13 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
         `<span class="mara-body mara-text">${renderText(line.text, options)}</span></div>`
       );
     case 'away':
-      // Away/back status line ("X is away (note)" / "X is back."), italic in the user's
-      // colour. The text already embeds the name and an away note, which is user-entered,
-      // so render it as ESCAPED TEXT ONLY (no markdown/links/images) — same safety as a
-      // system line, just coloured.
+      // Away/back status, rendered like an emote: the escaped author name + the note,
+      // italic in the user's colour. The note gets the full text pipeline (markdown +
+      // links), but inline IMAGES are forced off — an away note persists and is re-shown
+      // to everyone on join, so it can't plant images across channels.
       return (
         `<div class="mara-line mara-away">${ts(line)}` +
-        `<span class="mara-body mara-text" style="color:${color}"><em>${renderText(line.text, { links: false, images: false, markdown: false })}</em></span></div>`
+        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, { ...options, images: false })}</em></span></div>`
       );
   }
 }

@@ -28,9 +28,10 @@ interface SelfState {
   name: string;
 }
 
-/** The channel announcement for an away/back transition. A non-empty note means away. */
-function awayLine(name: string, note: string): string {
-  return note ? `${name} is away (${note})` : `${name} is back.`;
+/** The predicate of an away/back status line (the renderer prepends the author name, as
+ *  for an emote). A non-empty note means away. */
+function awayPredicate(note: string): string {
+  return note ? `is away (${note})` : 'is back.';
 }
 
 /**
@@ -436,7 +437,7 @@ export class MaraClient {
               this.pushLine(this._channelMessages, channel.token, {
                 kind: 'away',
                 from: u.token,
-                text: awayLine(u.name, u.away),
+                text: awayPredicate(u.away),
                 at: this.serverNow() + bump++,
               });
             }
@@ -503,8 +504,9 @@ export class MaraClient {
         const user = get(this._users).get(msg.token);
         if (user) this.upsertUser({ ...user, away: msg.text });
         // Announce the away/back transition in every channel the user shares — a channel
-        // line everyone there sees, in the user's own colour (kind 'away' carries `from`).
-        const text = awayLine(this.nameOf(msg.token), msg.text);
+        // line everyone there sees, in the user's own colour (kind 'away' carries `from`,
+        // and the renderer prepends the name, so the text is just the predicate).
+        const text = awayPredicate(msg.text);
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) {
             this.pushLine(this._channelMessages, channelToken, {
