@@ -43,7 +43,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   const color = /^#[0-9a-fA-F]{6}$/.test(line.authorColor) ? line.authorColor : '#888888';
   const name = escapeHtml(line.authorName);
 
-  // chat: "name:" prefix in author color, body in default color.
+  // chat: whole "name: body" in the author color (the name stays bold via CSS).
   // emote: whole "name + body" italicized in author color (a `/me` action).
   // system: italic body only, no author (server-generated notice).
   // The body is a single wrapping column after the timestamp gutter, so wrapped
@@ -52,8 +52,8 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
     case 'chat':
       return (
         `<div class="mara-line mara-chat">${ts(line)}` +
-        `<span class="mara-body">` +
-        `<span class="mara-author" style="color:${color}">${name}:</span> ` +
+        `<span class="mara-body" style="color:${color}">` +
+        `<span class="mara-author">${name}:</span> ` +
         `<span class="mara-text">${renderText(line.text, options)}</span>` +
         `</span></div>`
       );
