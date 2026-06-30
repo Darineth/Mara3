@@ -10,7 +10,7 @@ afterEach(() => {
 describe('native bridge', () => {
   it('reports not-desktop and no-ops in a plain browser', async () => {
     expect(isDesktop()).toBe(false);
-    await expect(nativeLog('hi')).resolves.toBeUndefined();
+    await expect(nativeLog('system', 'hi')).resolves.toBeUndefined();
   });
 
   it('detects the shell and forwards logs to the native command', async () => {
@@ -18,13 +18,16 @@ describe('native bridge', () => {
     (globalThis as G).__TAURI__ = { core: { invoke } };
 
     expect(isDesktop()).toBe(true);
-    await nativeLog('hello from web');
-    expect(invoke).toHaveBeenCalledWith('mara_log', { line: 'hello from web' });
+    await nativeLog('general', 'hello from web');
+    expect(invoke).toHaveBeenCalledWith('mara_log', {
+      channel: 'general',
+      line: 'hello from web',
+    });
   });
 
   it('swallows native errors', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('boom'));
     (globalThis as G).__TAURI__ = { core: { invoke } };
-    await expect(nativeLog('x')).resolves.toBeUndefined();
+    await expect(nativeLog('system', 'x')).resolves.toBeUndefined();
   });
 });

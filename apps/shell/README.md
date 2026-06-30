@@ -153,8 +153,16 @@ runs on Linux via `pnpm --filter @mara/server start`.
 
 ## Native logging
 
-`mara_log(line)` (in `src-tauri/src/lib.rs`) appends to `mara.log` in the OS app
-log directory. The hosted web UI calls it via `apps/web/src/lib/native.ts`
+`mara_log(channel, line)` (in `src-tauri/src/lib.rs`) appends to a log file split per
+channel into its own sub-folder, one file per month:
+`<logDir>/<channel>/Mara3_YYYY-MM.log` (channel chat → the channel name, PMs →
+`pm-<user>`; connection/status notices are mirrored into every currently-open channel
+log rather than a file of their own). By default `logDir` is `logs/` **beside the
+executable** (portable, like `settings.json`), so copying the exe folder carries its
+logs with it. Set `"logDir"` in `settings.json` to redirect it — an absolute path is
+used as-is, a relative one resolves against the executable's folder, and an explicit
+blank string (`"logDir": ""`) disables disk logging entirely. The hosted web UI calls
+it via `apps/web/src/lib/native.ts`
 (`nativeLog`), but only when running inside this shell — in a plain browser it is a
 no-op, so the same web build works everywhere. Add further native functions the
 same way: a `#[tauri::command]` in `lib.rs` + a wrapper in `native.ts`.

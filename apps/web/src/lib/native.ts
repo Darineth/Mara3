@@ -23,12 +23,16 @@ export function isDesktop(): boolean {
   return tauri() !== null;
 }
 
-/** Append a line to the desktop client's local log file (no-op in a browser). */
-export async function nativeLog(line: string): Promise<void> {
+/**
+ * Append a line to the desktop client's local log, filed under `channel` (its own
+ * sub-folder, one file per month: `<logDir>/<channel>/Mara3_YYYY-MM.log`). No-op in a
+ * plain browser.
+ */
+export async function nativeLog(channel: string, line: string): Promise<void> {
   const t = tauri();
   if (!t) return;
   try {
-    await t.core.invoke('mara_log', { line });
+    await t.core.invoke('mara_log', { channel, line });
   } catch {
     /* logging must never break the app */
   }

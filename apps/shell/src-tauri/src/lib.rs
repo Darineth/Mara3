@@ -2,6 +2,7 @@ use std::fs::create_dir_all;
 use std::io::Write;
 use std::path::PathBuf;
 
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -60,6 +61,12 @@ struct Settings {
     /// picked a server they want to stick.
     #[serde(rename = "autoConnect", default)]
     auto_connect: bool,
+    /// Where the local log file (`mara.log`) is written. Absent → `logs/` beside the
+    /// executable (portable, like this file). A relative path resolves against the
+    /// executable's folder; an absolute path is used as-is to redirect logs elsewhere.
+    /// An explicit blank string (`""`) disables disk logging entirely.
+    #[serde(rename = "logDir", default)]
+    log_dir: Option<String>,
     /// Window position/size/maximized state, restored on the next launch.
     #[serde(default)]
     window: WindowState,
@@ -71,6 +78,7 @@ impl Default for Settings {
             server_url: seed_url(),
             recent: Vec::new(),
             auto_connect: false,
+            log_dir: None,
             window: WindowState::default(),
         }
     }
@@ -80,13 +88,42 @@ impl Default for Settings {
 /// can navigate the window back to it from any loaded server.
 struct BootstrapUrl(String);
 
+/// Directory of the running executable — the portable storage root for `settings.json`
+/// and, by default, the `logs/` folder.
+fn exe_dir() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    exe.parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "cannot resolve executable directory".to_string())
+}
+
 /// Path to `settings.json` beside the running executable (portable storage).
 fn settings_path() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "cannot resolve executable directory".to_string())?;
-    Ok(dir.join("settings.json"))
+    Ok(exe_dir()?.join("settings.json"))
+}
+
+/// Resolve the directory the local log file lives in, or `None` when disk logging is
+/// switched off. Defaults to `logs/` beside the executable (portable, like
+/// `settings.json`); the `logDir` setting overrides it — absolute paths are used as-is,
+/// relative ones resolve against the executable's folder, and an explicit blank string
+/// disables logging.
+fn log_dir() -> Result<Option<PathBuf>, String> {
+    let base = exe_dir()?;
+    let dir = match load_settings().log_dir {
+        // Explicitly blank → logging disabled.
+        Some(d) if d.trim().is_empty() => return Ok(None),
+        Some(d) => {
+            let p = PathBuf::from(d.trim());
+            if p.is_absolute() {
+                p
+            } else {
+                base.join(p)
+            }
+        }
+        // Absent → default location.
+        None => base.join("logs"),
+    };
+    Ok(Some(dir))
 }
 
 /// Load settings, falling back to defaults (seeded from `MARA_URL`/the default) on
@@ -163,15 +200,44 @@ fn apply_window_state(window: &tauri::WebviewWindow, ws: &WindowState) {
     }
 }
 
-/// Native capability exposed to the hosted web UI: append a line to the local log.
+/// Reduce a channel name to one safe path segment for its log sub-folder: maps path
+/// separators and characters illegal in Windows filenames to `_`, trims leading/trailing
+/// dots and whitespace, and falls back to `unknown` — so an empty or odd channel token
+/// can never break the path or escape the log root (e.g. `..`).
+fn sanitize_segment(name: &str) -> String {
+    let cleaned: String = name
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.trim_matches('.').trim();
+    if cleaned.is_empty() {
+        "unknown".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+/// Native capability exposed to the hosted web UI: append a line to the local log,
+/// split per `channel` into its own sub-folder and per-month file
+/// (`<logDir>/<channel>/Mara3_YYYY-MM.log`). `logDir` defaults to `logs/` beside the
+/// exe; a blank `logDir` disables logging, so this becomes a silent no-op.
 #[tauri::command]
-fn mara_log(app: AppHandle, line: String) -> Result<(), String> {
-    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+fn mara_log(channel: String, line: String) -> Result<(), String> {
+    let Some(root) = log_dir()? else {
+        return Ok(());
+    };
+    let dir = root.join(sanitize_segment(&channel));
     create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file_name = format!("Mara3_{}.log", Local::now().format("%Y-%m"));
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join("mara.log"))
+        .open(dir.join(file_name))
         .map_err(|e| e.to_string())?;
     writeln!(file, "{line}").map_err(|e| e.to_string())?;
     Ok(())

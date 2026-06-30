@@ -207,16 +207,25 @@
   // Desktop shell only: mirror connection + chat activity to the local log file.
   $effect(() => {
     if (!isDesktop()) return;
+    // Log files are split per channel by its (human-readable) name, falling back to the
+    // numeric token if the channel isn't in the store yet.
+    const channelFolder = (token: Token): string =>
+      $channels.get(token)?.name ?? `channel-${token}`;
+    // System notices (connect/status) aren't tied to one channel, so mirror them into
+    // every channel log that's currently open rather than a separate file.
+    const logToAllChannels = (line: string) => {
+      for (const c of $channels.values()) void nativeLog(c.name, line);
+    };
     const offs = [
-      client.events.on('connected', (i) => void nativeLog(`connected as ${i.name}`)),
-      client.events.on('statusChanged', (s) => void nativeLog(`status: ${s}`)),
+      client.events.on('connected', (i) => logToAllChannels(`connected as ${i.name}`)),
+      client.events.on('statusChanged', (s) => logToAllChannels(`status: ${s}`)),
       client.events.on(
         'chat',
-        (m) => void nativeLog(`#${m.channelToken} <${nameOf(m.from)}> ${m.text}`),
+        (m) => void nativeLog(channelFolder(m.channelToken), `<${nameOf(m.from)}> ${m.text}`),
       ),
       client.events.on(
         'privateMessage',
-        (m) => void nativeLog(`[pm] <${nameOf(m.from)}> ${m.text}`),
+        (m) => void nativeLog(`pm-${nameOf(m.from)}`, `<${nameOf(m.from)}> ${m.text}`),
       ),
     ];
     return () => offs.forEach((off) => off());
