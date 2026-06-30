@@ -56,6 +56,25 @@
     if (focusKey != null) textarea?.focus();
   });
 
+  // "Type to focus": pressing a printable key while focus isn't already in an editable
+  // field jumps into the composer, so you can start typing without clicking it first. We
+  // don't preventDefault, so that same keystroke then lands in the textarea.
+  $effect(() => {
+    function onKeydown(e: KeyboardEvent) {
+      if (disabled || !textarea) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      if (e.key.length !== 1) return; // single printable chars only (not Enter/Tab/arrows/F-keys)
+      const active = document.activeElement as HTMLElement | null;
+      if (active === textarea) return; // already typing here
+      // Don't steal from another editable field (other inputs, dialogs, etc.).
+      if (active && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)))
+        return;
+      textarea.focus();
+    }
+    document.addEventListener('keydown', onKeydown);
+    return () => document.removeEventListener('keydown', onKeydown);
+  });
+
   // An attachment with no resolved `url` yet is still uploading; block send until
   // all resolve so we never emit a message referencing a not-yet-hosted image.
   const uploading = $derived(attachments.some((a) => a.url === undefined));
