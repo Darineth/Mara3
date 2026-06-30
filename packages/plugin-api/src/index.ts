@@ -77,15 +77,6 @@ export function createPipeline(plugins: MaraPlugin[]): TextPipeline {
 
 // -- sample plugins ---------------------------------------------------------
 
-/** Expands `/shrug` into the shrug kaomoji on outgoing messages. */
-export const shrugPlugin: MaraPlugin = {
-  name: 'shrug',
-  version: '1.0.0',
-  preprocessOutgoing(text) {
-    return text.replace(/\/shrug\b/g, '¯\\_(ツ)_/¯');
-  },
-};
-
 /** Masks a configurable word list on both incoming and outgoing text. */
 export function censorPlugin(words: string[]): MaraPlugin {
   // Escape regex metacharacters in each word (the words are user/config data,

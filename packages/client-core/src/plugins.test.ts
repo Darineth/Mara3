@@ -2,7 +2,7 @@ import { get } from 'svelte/store';
 import { WebSocket } from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig, startServer, createLogger, type MaraServer } from '@mara/server';
-import { createPipeline, shrugPlugin, type MaraPlugin } from '@mara/plugin-api';
+import { createPipeline, type MaraPlugin } from '@mara/plugin-api';
 import { MaraClient } from './client.js';
 import type { ClientEvents, ClientOptions, WebSocketCtor } from './types.js';
 
@@ -57,7 +57,8 @@ async function connected(client: MaraClient): Promise<ClientEvents['connected']>
 
 describe('plugin pipeline integration', () => {
   it('applies preprocessOutgoing before sending (other clients see transformed text)', async () => {
-    const sender = makeClient('alice', { plugins: createPipeline([shrugPlugin]) });
+    const exclaim: MaraPlugin = { name: 'exclaim', preprocessOutgoing: (t) => `${t}!` };
+    const sender = makeClient('alice', { plugins: createPipeline([exclaim]) });
     const receiver = makeClient('bob');
     await connected(sender);
     await connected(receiver);
@@ -69,9 +70,9 @@ describe('plugin pipeline integration', () => {
     await waitEvent(receiver, 'channelJoined');
 
     const got = waitEvent(receiver, 'chat');
-    sender.sendChat(channel.token, 'oh well /shrug');
+    sender.sendChat(channel.token, 'hi there');
     const received = await got;
-    expect(received.text).toBe('oh well ¯\\_(ツ)_/¯');
+    expect(received.text).toBe('hi there!');
 
     sender.disconnect();
     receiver.disconnect();

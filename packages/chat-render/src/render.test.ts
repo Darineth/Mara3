@@ -390,4 +390,29 @@ describe('renderLine', () => {
     expect(html).not.toContain('<em>'); // not the dim italic system style
     expect(html).toContain('<strong>hi</strong>'); // markdown still applies
   });
+
+  it('renders an away line in the author colour, escaped (no markdown/links)', () => {
+    const html = renderLine({
+      kind: 'away',
+      authorName: 'bob',
+      authorColor: '#00ff00',
+      text: 'bob is away (**lunch** http://x ![](/y))',
+    });
+    expect(html).toContain('mara-away');
+    expect(html).toContain('color:#00ff00'); // the whole line is in the user's colour
+    expect(html).toContain('<em>'); // italic, like an action
+    expect(html).not.toContain('<strong>'); // away note is escaped — no markdown
+    expect(html).not.toContain('<a '); // no auto-link
+    expect(html).not.toContain('<img'); // no inline image
+  });
+
+  it('falls back to a safe away colour when authorColor is invalid', () => {
+    const html = renderLine({
+      kind: 'away',
+      authorName: 'x',
+      authorColor: 'red',
+      text: 'x is back.',
+    });
+    expect(html).toContain('color:#888888');
+  });
 });

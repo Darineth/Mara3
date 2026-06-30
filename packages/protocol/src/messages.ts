@@ -224,6 +224,7 @@ const serverAway = z.object({
   type: z.literal('away'),
   token: tokenSchema,
   text: z.string().max(512),
+  at: serverEventAt,
 });
 
 /** Broadcast when a user changes their display name and/or colour mid-session. */

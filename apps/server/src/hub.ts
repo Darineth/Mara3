@@ -308,7 +308,9 @@ export class Hub {
 
   private handleAway(session: Session, msg: Extract<ClientMessage, { type: 'away' }>): void {
     session.info.away = msg.text;
-    this.broadcastAll({ type: 'away', token: session.info.token, text: msg.text });
+    // Broadcast to everyone (incl. the sender, so their own roster + the channel
+    // announcement update); clients turn it into an "is away/back" line per shared channel.
+    this.broadcastAll({ type: 'away', token: session.info.token, text: msg.text, at: this.now() });
   }
 
   // Change a user's display name and/or colour mid-session and broadcast the result

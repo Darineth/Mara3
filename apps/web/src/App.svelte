@@ -6,7 +6,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { MaraClient } from '@mara/client-core';
-  import { createPipeline, shrugPlugin } from '@mara/plugin-api';
+  import { createPipeline } from '@mara/plugin-api';
   import {
     applyTheme,
     loadSettings,
@@ -19,8 +19,9 @@
   import ChatApp from './ChatApp.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
 
-  // Build-time plugin registry (CSP-safe for web/mobile). Add plugins here.
-  const plugins = createPipeline([shrugPlugin]);
+  // Build-time plugin registry (CSP-safe for web/mobile). Add text-transform plugins
+  // here (see @mara/plugin-api, e.g. censorPlugin). Empty by default.
+  const plugins = createPipeline([]);
 
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { censorPlugin, createPipeline, shrugPlugin, type MaraPlugin } from './index.js';
+import { censorPlugin, createPipeline, type MaraPlugin } from './index.js';
 
 describe('createPipeline', () => {
   it('chains plugins in order for each hook', () => {
@@ -34,11 +34,6 @@ describe('createPipeline', () => {
 });
 
 describe('sample plugins', () => {
-  it('shrug expands /shrug on outgoing', () => {
-    const pipeline = createPipeline([shrugPlugin]);
-    expect(pipeline.preprocessOutgoing('well /shrug')).toBe('well ¯\\_(ツ)_/¯');
-  });
-
   it('censor masks words on incoming and outgoing', () => {
     const pipeline = createPipeline([censorPlugin(['badword'])]);
     expect(pipeline.preprocessOutgoing('a BadWord here')).toBe('a ******* here');

@@ -28,6 +28,11 @@ interface SelfState {
   name: string;
 }
 
+/** The channel announcement for an away/back transition. A non-empty note means away. */
+function awayLine(name: string, note: string): string {
+  return note ? `${name} is away (${note})` : `${name} is back.`;
+}
+
 /**
  * The Mara client: owns the WebSocket, drives the login handshake, keeps live
  * Svelte stores of users / channels / messages, and emits typed events. Runs
@@ -413,11 +418,30 @@ export class MaraClient {
         // start of our interaction in the channel is clear. Once per session per
         // channel name (a reconnect/token-churn rejoin keeps the original line via
         // migrateLog rather than adding a fresh one).
-        if (!this.joinAnnounced.has(channel.name)) {
+        const firstJoin = !this.joinAnnounced.has(channel.name);
+        if (firstJoin) {
           this.joinAnnounced.add(channel.name);
           this.systemLine(channel.token, `You joined #${channel.name}`, msg.at);
         }
         this.events.emit('channelJoined', channel);
+        // Echo the outstanding away notices of members already away (others only), so the
+        // joiner sees who's away. Done AFTER the event — so any MOTD/connect notice a
+        // listener adds during it lands first — and stamped just past serverNow() (now
+        // >= those notices) so they sort at the very end of the join sequence, in order.
+        if (firstJoin) {
+          const selfToken = get(this._self)?.token;
+          let bump = 1;
+          for (const u of msg.users) {
+            if (u.away && u.token !== selfToken) {
+              this.pushLine(this._channelMessages, channel.token, {
+                kind: 'away',
+                from: u.token,
+                text: awayLine(u.name, u.away),
+                at: this.serverNow() + bump++,
+              });
+            }
+          }
+        }
         return;
       }
 
@@ -478,6 +502,19 @@ export class MaraClient {
       case 'away': {
         const user = get(this._users).get(msg.token);
         if (user) this.upsertUser({ ...user, away: msg.text });
+        // Announce the away/back transition in every channel the user shares — a channel
+        // line everyone there sees, in the user's own colour (kind 'away' carries `from`).
+        const text = awayLine(this.nameOf(msg.token), msg.text);
+        for (const [channelToken, channel] of get(this._channels)) {
+          if (channel.members.has(msg.token)) {
+            this.pushLine(this._channelMessages, channelToken, {
+              kind: 'away',
+              from: msg.token,
+              text,
+              at: msg.at,
+            });
+          }
+        }
         this.events.emit('away', { token: msg.token, text: msg.text });
         return;
       }

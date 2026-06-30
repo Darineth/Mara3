@@ -7,7 +7,7 @@ import { escapeHtml, renderText, type RenderTextOptions } from './text.js';
  * (joins/leaves/connection), or a prominent server `notice` (the MOTD) rendered at
  * the default text colour.
  */
-export type LineKind = 'chat' | 'emote' | 'system' | 'notice';
+export type LineKind = 'chat' | 'emote' | 'system' | 'notice' | 'away';
 
 /** A single conversation line, decoupled from transport/roster types. */
 export interface LineModel {
@@ -76,6 +76,15 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
       return (
         `<div class="mara-line mara-notice">${ts(line)}` +
         `<span class="mara-body mara-text">${renderText(line.text, options)}</span></div>`
+      );
+    case 'away':
+      // Away/back status line ("X is away (note)" / "X is back."), italic in the user's
+      // colour. The text already embeds the name and an away note, which is user-entered,
+      // so render it as ESCAPED TEXT ONLY (no markdown/links/images) — same safety as a
+      // system line, just coloured.
+      return (
+        `<div class="mara-line mara-away">${ts(line)}` +
+        `<span class="mara-body mara-text" style="color:${color}"><em>${renderText(line.text, { links: false, images: false, markdown: false })}</em></span></div>`
       );
   }
 }

@@ -204,6 +204,50 @@ describe('presence system messages', () => {
     b.disconnect();
   });
 
+  it('announces away and back as a coloured line in shared channels', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    const bSelf = await connected(b);
+    a.joinChannel('lobby');
+    const aJoin = await waitEvent(a, 'channelJoined');
+    b.joinChannel('lobby');
+    await waitEvent(b, 'channelJoined');
+    await waitEvent(a, 'userJoinedChannel'); // a now has bob in the channel roster
+
+    await Promise.all([waitEvent(a, 'away'), Promise.resolve(b.sendAway('lunch'))]);
+    let lines = get(a.channelMessages).get(aJoin.token) ?? [];
+    const awayLine = lines.find((l) => l.kind === 'away' && l.text === 'bob is away (lunch)');
+    expect(awayLine).toBeDefined();
+    expect(awayLine?.from).toBe(bSelf.token); // carries the author so it renders in colour
+
+    await Promise.all([waitEvent(a, 'away'), Promise.resolve(b.sendAway(''))]);
+    lines = get(a.channelMessages).get(aJoin.token) ?? [];
+    expect(lines.some((l) => l.kind === 'away' && l.text === 'bob is back.')).toBe(true);
+
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('echoes outstanding away notices to someone who joins later', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    await connected(b);
+    b.joinChannel('lobby');
+    await waitEvent(b, 'channelJoined');
+    // Wait for b's own away echo, so the server has recorded it before alice joins.
+    await Promise.all([waitEvent(b, 'away'), Promise.resolve(b.sendAway('brb'))]);
+
+    a.joinChannel('lobby');
+    const aJoin = await waitEvent(a, 'channelJoined');
+    const lines = get(a.channelMessages).get(aJoin.token) ?? [];
+    expect(lines.some((l) => l.kind === 'away' && l.text === 'bob is away (brb)')).toBe(true);
+
+    a.disconnect();
+    b.disconnect();
+  });
+
   it('keeps a disconnected user in the directory so names survive', async () => {
     const a = makeClient('alice');
     const b = makeClient('bob');

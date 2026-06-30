@@ -11,6 +11,7 @@
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import { isDesktop, nativeLog, switchServer } from './lib/native.js';
+  import { runSlashCommand, type CommandContext } from './lib/commands.js';
   import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
@@ -252,6 +253,15 @@
           void nativeLog(channelFolder(token), `${nameOf(e.token)} disconnected`);
         }
       }),
+      client.events.on('away', (e) => {
+        // Mirror the channel announcement to each channel the user shares.
+        const line = e.text
+          ? `${nameOf(e.token)} is away (${e.text})`
+          : `${nameOf(e.token)} is back.`;
+        for (const c of $channels.values()) {
+          if (c.members.has(e.token)) void nativeLog(c.name, line);
+        }
+      }),
       client.events.on(
         'chat',
         (m) => void nativeLog(channelFolder(m.channelToken), `<${nameOf(m.from)}> ${m.text}`),
@@ -400,19 +410,39 @@
     }
   }
 
+  // Capabilities the slash commands act through (see lib/commands.ts). Built per-send so
+  // it captures the current active conversation.
+  function commandCtx(): CommandContext {
+    return {
+      activeChannel,
+      resolveUser: (name) => {
+        const lower = name.toLowerCase();
+        for (const u of $users.values()) if (u.name.toLowerCase() === lower) return u;
+        return null;
+      },
+      emote: (t) => {
+        if (activeChannel !== null) client.sendEmote(activeChannel, t);
+      },
+      privateMessage: (token, t) => {
+        selectPm(token);
+        client.sendPrivateMessage(token, t);
+      },
+      setAway: (t) => client.sendAway(t),
+      setName: (name) => {
+        client.setProfile({ name });
+        settings.name = name; // optimistic; the server's userProfile broadcast confirms it
+        persist();
+      },
+      notice: (t) => pushSystem(t),
+    };
+  }
+
   function handleSend(text: string) {
-    if (activePm !== null) {
-      // PMs are literal text — slash commands only apply to channel input.
-      client.sendPrivateMessage(activePm, text);
-      return;
-    }
-    if (activeChannel === null) return;
-    // Slash commands; slice offsets skip the command + trailing space ('/me ' = 4,
-    // '/away ' = 6). Bare '/away' (no arg) clears away status.
-    if (text.startsWith('/me ')) client.sendEmote(activeChannel, text.slice(4));
-    else if (text.startsWith('/away ')) client.sendAway(text.slice(6));
-    else if (text === '/away') client.sendAway('');
-    else client.sendChat(activeChannel, text);
+    // Slash commands run in any conversation; any leading `/` is handled (an unrecognised
+    // one shows an error and isn't sent, so typos don't leak as messages).
+    if (runSlashCommand(text, commandCtx())) return;
+    if (activePm !== null) client.sendPrivateMessage(activePm, text);
+    else if (activeChannel !== null) client.sendChat(activeChannel, text);
   }
 
   const baseLines = $derived(
