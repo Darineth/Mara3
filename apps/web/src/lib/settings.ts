@@ -35,11 +35,23 @@ function newIdentityKey(): string {
   return `id-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
-/** Coerce stored macros to exactly MACRO_COUNT string entries. */
+/** Default text for the F1 slot; the rest start empty. */
+const DEFAULT_F1_MACRO = 'Mara 3: Who even presses F1 anymore?  Seriously.';
+
+/** A fresh default macro set: F1 pre-filled, the rest blank. */
+function defaultMacros(): string[] {
+  const macros = Array.from({ length: MACRO_COUNT }, () => '');
+  macros[0] = DEFAULT_F1_MACRO;
+  return macros;
+}
+
+/** Coerce stored macros to exactly MACRO_COUNT string entries. A user who has never had
+ *  a macros array gets the defaults (F1 pre-filled); a saved array is kept verbatim, so a
+ *  slot the user cleared stays cleared. */
 function normalizeMacros(value: unknown): string[] {
-  const source = Array.isArray(value) ? value : [];
+  if (!Array.isArray(value)) return defaultMacros();
   return Array.from({ length: MACRO_COUNT }, (_, i) =>
-    typeof source[i] === 'string' ? (source[i] as string) : '',
+    typeof value[i] === 'string' ? (value[i] as string) : '',
   );
 }
 
@@ -75,7 +87,7 @@ export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
   theme: 'system',
-  macros: normalizeMacros([]),
+  macros: defaultMacros(),
   identityKey: '',
   channels: [],
 };
@@ -99,7 +111,7 @@ export function loadSettings(): MaraSettings {
   // Fresh copies clone `macros`/`channels` and mint a new identity key.
   const fresh = (): MaraSettings => ({
     ...defaultSettings,
-    macros: normalizeMacros([]),
+    macros: defaultMacros(),
     channels: [],
     identityKey: newIdentityKey(),
   });

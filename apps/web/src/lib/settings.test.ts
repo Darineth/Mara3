@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { defaultSettings, loadSettings, MACRO_COUNT, serverUrl } from './settings.js';
 
 describe('settings macros', () => {
-  it('defaults to exactly MACRO_COUNT empty macro slots', () => {
+  it('defaults to MACRO_COUNT slots with F1 pre-filled and the rest empty', () => {
     expect(defaultSettings.macros).toHaveLength(MACRO_COUNT);
-    expect(defaultSettings.macros.every((m) => m === '')).toBe(true);
+    expect(defaultSettings.macros[0]).toBe('Mara 3: Who even presses F1 anymore?  Seriously.');
+    expect(defaultSettings.macros.slice(1).every((m) => m === '')).toBe(true);
   });
 
   it('always returns MACRO_COUNT slots (no localStorage in this env)', () => {
