@@ -142,26 +142,58 @@ fn log_location_json() -> String {
     }
 }
 
-/// Reduce a channel name to one safe path segment for its log sub-folder: maps path
-/// separators and characters illegal in Windows filenames to `_`, trims leading/trailing
-/// dots and whitespace, and falls back to `unknown` — so an empty or odd channel token
-/// can never break the path or escape the log root (e.g. `..`). Mirrors the modern shell.
+/// Reduce a channel name to one safe, **collision-free** path segment for its log
+/// sub-folder. Anything unsafe in a filename is percent-encoded (uppercase hex of its
+/// UTF-8 bytes), so distinct names stay distinct — e.g. `./test/` → `%2E%2Ftest%2F` and
+/// `../test/` → `%2E.%2Ftest%2F` no longer collapse onto the same folder. We encode the
+/// Windows-illegal set, control chars and `%` itself; a leading dot (so the segment can
+/// never be `.`/`..` or a hidden file); a trailing dot (Windows silently strips those);
+/// and the first char of a Windows reserved device name (CON/PRN/AUX/NUL, COM1-9,
+/// LPT1-9). Outer whitespace is trimmed (insignificant). Empty → `unknown`. Mirrors the
+/// modern shell.
 fn sanitize_segment(name: &str) -> String {
-    let cleaned: String = name
-        .trim()
-        .chars()
-        .map(|c| match c {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect();
-    let cleaned = cleaned.trim_matches('.').trim();
-    if cleaned.is_empty() {
-        "unknown".to_string()
-    } else {
-        cleaned.to_string()
+    fn push_encoded(out: &mut String, c: char) {
+        let mut buf = [0u8; 4];
+        for &b in c.encode_utf8(&mut buf).as_bytes() {
+            out.push('%');
+            out.push_str(&format!("{b:02X}"));
+        }
     }
+    let chars: Vec<char> = name.trim().chars().collect();
+    if chars.is_empty() {
+        return "unknown".to_string();
+    }
+    let n = chars.len();
+    let mut out = String::with_capacity(name.len());
+    for (i, &c) in chars.iter().enumerate() {
+        let illegal = matches!(
+            c,
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '%'
+        ) || c.is_control();
+        let leading_dot = i == 0 && c == '.';
+        let trailing_dot = i == n - 1 && c == '.';
+        if illegal || leading_dot || trailing_dot {
+            push_encoded(&mut out, c);
+        } else {
+            out.push(c);
+        }
+    }
+    // Neutralize Windows reserved device names (reserved even as a folder name) by
+    // encoding the first character so the base before any dot no longer matches.
+    let base = out.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (base.len() == 4
+            && (base.starts_with("COM") || base.starts_with("LPT"))
+            && matches!(base.as_bytes()[3], b'1'..=b'9'));
+    if reserved {
+        let mut it = out.chars();
+        let first = it.next().unwrap();
+        let rest = it.as_str().to_string();
+        out.clear();
+        push_encoded(&mut out, first);
+        out.push_str(&rest);
+    }
+    out
 }
 
 /// Current local time as `(YYYY-MM, YYYY-MM-DD HH:MM:SS)` — the first for the monthly log
