@@ -18,6 +18,7 @@ beforeEach(async () => {
     port: 0,
     serverName: 'Test Server',
     motd: 'hello world',
+    motdFile: '', // use the inline motd above, not any MOTD.md in the working dir
     defaultChannel: '',
     historyFile: '',
     identityFile: '', // in-memory; persistence tested explicitly below
@@ -95,6 +96,41 @@ describe('handshake', () => {
     expect(welcome.server?.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(welcome.server?.protocol).toBe(PROTOCOL_VERSION);
     client.close();
+  });
+
+  it('re-reads the MOTD file on each login, so edits apply without a restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-motd-'));
+    const file = join(dir, 'MOTD.md');
+    writeFileSync(file, 'first message');
+    const srv = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        motd: 'fallback',
+        motdFile: file,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+      },
+      createLogger('silent'),
+    );
+    const u = `ws://127.0.0.1:${srv.port}/ws`;
+    const welcomeMotd = async (name: string): Promise<string> => {
+      const c = await TestClient.connect(u);
+      c.send({ type: 'login', protocol: PROTOCOL_VERSION, name, color: '#ffffff' });
+      const w = await c.waitFor('welcome');
+      c.close();
+      return w.motd;
+    };
+    try {
+      expect(await welcomeMotd('alice')).toBe('first message');
+      writeFileSync(file, 'second message'); // edited while the server keeps running
+      expect(await welcomeMotd('bob')).toBe('second message');
+    } finally {
+      await srv.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('denies a protocol-version mismatch', async () => {

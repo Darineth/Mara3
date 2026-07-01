@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
 import {
+  MOTD_MAX_LEN,
   PROTOCOL_VERSION,
   safeParseClientMessage,
   type ClientMessage,
@@ -44,6 +46,23 @@ export class Hub {
   flush(): void {
     this.history.flush();
     this.identity.flush();
+  }
+
+  /**
+   * The current MOTD, re-read from its file on each login so edits to `MOTD.md` take
+   * effect without a server restart. Falls back to the configured `motd` (from
+   * `MARA_MOTD`/the default) when no file is set, or it's missing/unreadable.
+   */
+  private currentMotd(): string {
+    const file = this.cfg.motdFile;
+    if (file) {
+      try {
+        if (existsSync(file)) return readFileSync(file, 'utf8').trim().slice(0, MOTD_MAX_LEN);
+      } catch {
+        /* unreadable → fall back to the configured value */
+      }
+    }
+    return this.cfg.motd;
   }
 
   onConnect(conn: Connection): void {
@@ -167,7 +186,7 @@ export class Hub {
         type: 'welcome',
         self: live.info,
         sessionToken,
-        motd: this.cfg.motd,
+        motd: this.currentMotd(),
         server: this.serverInfo,
         at: this.now(),
       });
@@ -188,7 +207,7 @@ export class Hub {
       type: 'welcome',
       self: info,
       sessionToken,
-      motd: this.cfg.motd,
+      motd: this.currentMotd(),
       server: this.serverInfo,
       at: this.now(),
     });

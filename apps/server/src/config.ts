@@ -9,6 +9,9 @@ export interface ServerConfig {
   port: number;
   serverName: string;
   motd: string;
+  /** Path the MOTD is re-read from on each login, so edits to `MOTD.md` apply without a
+   *  server restart. Empty/absent → the static `motd` (from `MARA_MOTD`/default) is used. */
+  motdFile?: string;
   /** Minimum acceptable client `appVersion`; older clients are told to update. */
   minAppVersion: number;
   /** Directory of the built web client to serve, or null to serve none. */
@@ -77,8 +80,13 @@ function baseDir(env: NodeJS.ProcessEnv): string {
  * oversized file can't make the `welcome` frame fail validation. `MARA_MOTD_FILE`
  * overrides the path for a file kept elsewhere.
  */
+/** Candidate MOTD file path: `MARA_MOTD_FILE`, else `MOTD.md` in the working directory. */
+function motdPath(env: NodeJS.ProcessEnv): string {
+  return env.MARA_MOTD_FILE?.trim() || resolve(process.cwd(), 'MOTD.md');
+}
+
 function readMotd(env: NodeJS.ProcessEnv): string {
-  const file = env.MARA_MOTD_FILE?.trim() || resolve(process.cwd(), 'MOTD.md');
+  const file = motdPath(env);
   if (existsSync(file)) {
     try {
       return readFileSync(file, 'utf8').trim().slice(0, MOTD_MAX_LEN);
@@ -185,6 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: num(env.MARA_PORT, DEFAULTS.port),
     serverName: env.MARA_SERVER_NAME?.trim() || DEFAULTS.serverName,
     motd: readMotd(env),
+    motdFile: motdPath(env),
     minAppVersion: num(env.MARA_MIN_APP_VERSION, DEFAULTS.minAppVersion),
     webRoot: env.MARA_WEB_ROOT?.trim() || defaultWebRoot(),
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,

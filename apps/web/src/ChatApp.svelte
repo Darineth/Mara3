@@ -63,6 +63,16 @@
   // (dev, or an older server).
   const stale = $derived(!!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId);
 
+  // Once connected, show the server's name in the browser tab; restore the original
+  // title (e.g. "Mara 3") when the session ends.
+  const baseTitle = typeof document !== 'undefined' ? document.title : '';
+  $effect(() => {
+    if (typeof document !== 'undefined') document.title = $serverInfo?.name ?? baseTitle;
+  });
+  onDestroy(() => {
+    if (typeof document !== 'undefined') document.title = baseTitle;
+  });
+
   // Desktop-only: the result of the launch update check (shared/memoized with the
   // UpdateBanner), shown in the menu so the user can see a check ran and its outcome.
   let updateStatus = $state<UpdateStatus | null>(null);

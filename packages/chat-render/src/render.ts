@@ -60,7 +60,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
     case 'emote':
       return (
         `<div class="mara-line mara-emote">${ts(line)}` +
-        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, options)}</em></span></div>`
+        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, { ...options, blocks: false })}</em></span></div>`
       );
     case 'system':
       // System notices (join/leave/disconnect/connection) embed a user-chosen display
@@ -84,7 +84,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
       // to everyone on join, so it can't plant images across channels.
       return (
         `<div class="mara-line mara-away">${ts(line)}` +
-        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, { ...options, images: false })}</em></span></div>`
+        `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, { ...options, images: false, blocks: false })}</em></span></div>`
       );
   }
 }

@@ -292,8 +292,47 @@
   .mara-chatview :global(.mara-codeblock) {
     display: block;
     padding: 0.5em 0.7em;
-    margin: 0.2em 0;
+    margin: 0.4em 0;
     white-space: pre-wrap;
+  }
+  /* Block-level markdown (Discord parity): headers, subtext, quotes, lists. Headers carry
+     extra space above to set them off from the block before them; the first block in a
+     message drops its leading margin (below) so a message never starts with a gap. */
+  .mara-chatview :global(.mara-h1),
+  .mara-chatview :global(.mara-h2),
+  .mara-chatview :global(.mara-h3) {
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0.6em 0 0.2em;
+  }
+  .mara-chatview :global(.mara-h1) {
+    font-size: 1.45em;
+  }
+  .mara-chatview :global(.mara-h2) {
+    font-size: 1.2em;
+  }
+  .mara-chatview :global(.mara-h3) {
+    font-size: 1.05em;
+  }
+  .mara-chatview :global(.mara-subtext) {
+    font-size: 0.8em;
+    opacity: 0.6;
+    margin: 0.2em 0;
+  }
+  .mara-chatview :global(.mara-quote) {
+    margin: 0.4em 0;
+    padding-left: 0.6em;
+    border-left: 3px solid var(--mara-border, #555);
+    opacity: 0.92;
+    white-space: pre-wrap;
+  }
+  .mara-chatview :global(.mara-list) {
+    margin: 0.4em 0;
+    padding-left: 1.5em;
+  }
+  /* A message never opens with a leading gap from its first block's top margin. */
+  .mara-chatview :global(.mara-text > :first-child) {
+    margin-top: 0;
   }
   .mara-chatview :global(.mara-spoiler) {
     background: var(--mara-fg, #e6e6e6);

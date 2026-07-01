@@ -214,6 +214,63 @@ describe('renderText — Discord markdown', () => {
     expect(html).toContain('<a href="http://x.com"');
     expect(html).toContain('now</strong>');
   });
+
+  it('strips a code-block language hint (no syntax highlighting)', () => {
+    expect(renderText('```js\nlet x = 1;\n```')).toBe(
+      '<code class="mara-codeblock">let x = 1;\n</code>',
+    );
+    // No newline after the fence → no language hint, the whole thing is code.
+    expect(renderText('```plain text```')).toBe('<code class="mara-codeblock">plain text</code>');
+  });
+});
+
+describe('renderText — Discord block markdown', () => {
+  it('renders headers (1–3 #) and subtext, with inline markdown inside', () => {
+    expect(renderText('# Big')).toBe('<div class="mara-h1">Big</div>');
+    expect(renderText('## Mid')).toBe('<div class="mara-h2">Mid</div>');
+    expect(renderText('### Small')).toBe('<div class="mara-h3">Small</div>');
+    expect(renderText('# **bold** title')).toBe(
+      '<div class="mara-h1"><strong>bold</strong> title</div>',
+    );
+    expect(renderText('-# fine print')).toBe('<div class="mara-subtext">fine print</div>');
+    // 4+ hashes / no text isn't a header.
+    expect(renderText('#### nope')).toBe('#### nope');
+    expect(renderText('#notaheader')).toBe('#notaheader');
+  });
+
+  it('renders single-line and rest-of-message block quotes', () => {
+    expect(renderText('> quoted')).toBe('<blockquote class="mara-quote">quoted</blockquote>');
+    // Consecutive `> ` lines fold into one quote.
+    expect(renderText('> a\n> b')).toBe('<blockquote class="mara-quote">a\nb</blockquote>');
+    // `>>> ` quotes the rest of the message, plain `>` lines included.
+    expect(renderText('>>> a\nb\nc')).toBe('<blockquote class="mara-quote">a\nb\nc</blockquote>');
+  });
+
+  it('renders bullet and numbered lists', () => {
+    expect(renderText('- a\n- b')).toBe('<ul class="mara-list"><li>a</li><li>b</li></ul>');
+    expect(renderText('* a\n* b')).toBe('<ul class="mara-list"><li>a</li><li>b</li></ul>');
+    expect(renderText('1. a\n2. b')).toBe('<ol class="mara-list"><li>a</li><li>b</li></ol>');
+  });
+
+  it('keeps plain lines separated and blocks self-breaking', () => {
+    // Plain line then a header: no extra blank line, header is its own block.
+    expect(renderText('hello\n# Title')).toBe('hello<div class="mara-h1">Title</div>');
+    // Two plain lines: a newline between them (the view renders it via pre-wrap).
+    expect(renderText('a\nb')).toBe('a\nb');
+  });
+
+  it('preserves a blank line between two blocks as a gap', () => {
+    expect(renderText('# H\n\n- a')).toBe(
+      '<div class="mara-h1">H</div>\n\n<ul class="mara-list"><li>a</li></ul>',
+    );
+  });
+
+  it('does not block-format when blocks are disabled (emote/away contexts)', () => {
+    // A leading `#`/`>` stays literal; inline markdown still applies.
+    expect(renderText('# not a header **but bold**', { blocks: false })).toBe(
+      '# not a header <strong>but bold</strong>',
+    );
+  });
 });
 
 describe('renderText — Markdown image syntax', () => {

@@ -1,8 +1,8 @@
 <!--
   Reference dialog for message formatting: the markdown, links/images, and legacy
   Mara 2 tags the renderer (@mara/chat-render) understands. Read-only — closes on
-  the backdrop, Escape, or Done. Kept in sync with text.ts (applyMarkdown + the
-  image/link passes).
+  the backdrop, Escape, or Done. Kept in sync with text.ts (applyMarkdown +
+  applyBlocks + the image/link passes).
 -->
 <script lang="ts">
   let { onClose }: { onClose: () => void } = $props();
@@ -40,11 +40,27 @@
     <div class="rows">
       <div class="row"><code>**bold**</code><span><strong>bold</strong></span></div>
       <div class="row"><code>*italic*</code><span><em>italic</em></span></div>
+      <div class="row">
+        <code>***bold italic***</code><span><strong><em>bold italic</em></strong></span>
+      </div>
       <div class="row"><code>__underline__</code><span><u>underline</u></span></div>
       <div class="row"><code>~~strike~~</code><span><s>strike</s></span></div>
       <div class="row"><code>`code`</code><span class="mono">code</span></div>
       <div class="row"><code>```code block```</code><span class="dim">monospace block</span></div>
       <div class="row"><code>||spoiler||</code><span class="dim">hidden until clicked</span></div>
+    </div>
+
+    <h3>Lines &amp; blocks</h3>
+    <p class="hint">Put these at the start of a line.</p>
+    <div class="rows">
+      <div class="row"><code># ## ###</code><span class="dim">headers (big → small)</span></div>
+      <div class="row"><code>-# subtext</code><span class="dim">small, dim text</span></div>
+      <div class="row">
+        <code>&gt; quote</code><span class="dim">block quote (&gt;&gt;&gt; quotes the rest)</span>
+      </div>
+      <div class="row">
+        <code>- item</code><span class="dim">bullet list (or <code>1.</code> for numbered)</span>
+      </div>
     </div>
 
     <h3>Links &amp; images</h3>

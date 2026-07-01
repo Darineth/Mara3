@@ -170,6 +170,110 @@ export function applyMarkdown(input: string): string {
   );
 }
 
+/**
+ * Apply Discord block-level markdown to already-escaped text, line by line: headers
+ * (`# `/`## `/`### `), subtext (`-# `), block quotes (`> ` and the multi-line `>>> `),
+ * and bullet (`-`/`*`) / numbered (`1.`) lists. Inline markdown ({@link applyMarkdown})
+ * is applied to each line's content — never across line breaks, matching Discord. The
+ * line markers are checked on the ESCAPED text, so `>` arrives as `&gt;`.
+ *
+ * Output joins plain lines with `\n` (the view renders them via `white-space: pre-wrap`),
+ * but emits block elements with no surrounding `\n` so they don't gain an extra blank
+ * line on top of their own block break.
+ */
+export function applyBlocks(input: string): string {
+  const lines = input.split('\n');
+  const pieces: { block: boolean; html: string }[] = [];
+  const isQuote = (l: string) => l === '&gt;' || l.startsWith('&gt; ');
+  const isBullet = (l: string) => /^ *[-*] /.test(l);
+  const isNumber = (l: string) => /^ *\d+\. /.test(l);
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? '';
+
+    // `>>> ` quotes the rest of the message (every remaining line).
+    if (line === '&gt;&gt;&gt;' || line.startsWith('&gt;&gt;&gt; ')) {
+      const body = [line.replace(/^&gt;&gt;&gt; ?/, ''), ...lines.slice(i + 1)]
+        .map((l) => applyMarkdown(l))
+        .join('\n');
+      pieces.push({ block: true, html: `<blockquote class="mara-quote">${body}</blockquote>` });
+      break;
+    }
+    // `> ` — consecutive lines fold into one quote.
+    if (isQuote(line)) {
+      const q: string[] = [];
+      while (i < lines.length && isQuote(lines[i] ?? '')) {
+        q.push(applyMarkdown((lines[i] ?? '').replace(/^&gt; ?/, '')));
+        i++;
+      }
+      pieces.push({
+        block: true,
+        html: `<blockquote class="mara-quote">${q.join('\n')}</blockquote>`,
+      });
+      continue;
+    }
+    // Headers (1–3 `#`) and subtext (`-# `). Both need text after the marker.
+    let m: RegExpExecArray | null;
+    if ((m = /^(#{1,3}) (.+)$/.exec(line))) {
+      const level = (m[1] ?? '#').length;
+      pieces.push({
+        block: true,
+        html: `<div class="mara-h${level}">${applyMarkdown(m[2] ?? '')}</div>`,
+      });
+      i++;
+      continue;
+    }
+    if ((m = /^-# (.+)$/.exec(line))) {
+      pieces.push({
+        block: true,
+        html: `<div class="mara-subtext">${applyMarkdown(m[1] ?? '')}</div>`,
+      });
+      i++;
+      continue;
+    }
+    // Bullet / numbered lists — consecutive matching lines fold into one list.
+    if (isBullet(line)) {
+      const items: string[] = [];
+      while (i < lines.length && isBullet(lines[i] ?? '')) {
+        items.push(`<li>${applyMarkdown((lines[i] ?? '').replace(/^ *[-*] +/, ''))}</li>`);
+        i++;
+      }
+      pieces.push({ block: true, html: `<ul class="mara-list">${items.join('')}</ul>` });
+      continue;
+    }
+    if (isNumber(line)) {
+      const items: string[] = [];
+      while (i < lines.length && isNumber(lines[i] ?? '')) {
+        items.push(`<li>${applyMarkdown((lines[i] ?? '').replace(/^ *\d+\. +/, ''))}</li>`);
+        i++;
+      }
+      pieces.push({ block: true, html: `<ol class="mara-list">${items.join('')}</ol>` });
+      continue;
+    }
+    // Plain line: inline markdown only.
+    pieces.push({ block: false, html: applyMarkdown(line) });
+    i++;
+  }
+
+  let out = '';
+  for (let k = 0; k < pieces.length; k++) {
+    const piece = pieces[k];
+    if (!piece) continue;
+    const prev = pieces[k - 1];
+    if (k > 0 && prev) {
+      const prevBlank = !prev.block && prev.html === '';
+      const pieceBlank = !piece.block && piece.html === '';
+      // A newline between two plain lines, or whenever a blank source line is involved
+      // (so explicit blank lines show as a gap even beside block elements). Two adjacent
+      // non-blank block elements rely on their CSS margins and get no extra newline.
+      if ((!piece.block && !prev.block) || prevBlank || pieceBlank) out += '\n';
+    }
+    out += piece.html;
+  }
+  return out;
+}
+
 export interface RenderTextOptions {
   /** Provide an emoticon map to enable emoticon substitution (default: off). */
   emoticons?: Record<string, string>;
@@ -179,6 +283,9 @@ export interface RenderTextOptions {
   images?: boolean;
   /** Set false to skip markdown formatting. */
   markdown?: boolean;
+  /** Set false to skip block-level markdown (headers/subtext/quotes/lists) and apply only
+   *  inline formatting — for single-line contexts like emotes and away lines. */
+  blocks?: boolean;
 }
 
 /** Turn a raw message body into safe, display-ready HTML. */
@@ -197,7 +304,9 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   // stash them. URLs in particular must be matched before escaping: a URL ending
   // in '&' would otherwise become '&amp;', and the regex's trailing-punctuation
   // trim would strand the ';' as literal text after the link.
-  s = s.replace(/```([\s\S]+?)```/g, (_m, code: string) =>
+  // Fenced code block, with an optional Discord-style language hint on the opening line
+  // (```js\n…```). We don't syntax-highlight, but we strip the hint so it isn't shown.
+  s = s.replace(/```(?:([a-zA-Z0-9+#.-]*)\n)?([\s\S]*?)```/g, (_m, _lang: string, code: string) =>
     stash(`<code class="mara-codeblock">${escapeHtml(code)}</code>`),
   );
   s = s.replace(/`([^`\n]+?)`/g, (_m, code: string) =>
@@ -252,7 +361,11 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   // escapeHtml leaves untouched, so the stashed (already-escaped) HTML is safe.
   s = escapeHtml(s);
 
-  if (options.markdown !== false) s = applyMarkdown(s);
+  if (options.markdown !== false) {
+    // Block markdown (headers/quotes/lists) for multi-line contexts; inline-only when
+    // `blocks` is off (emotes, away lines).
+    s = options.blocks === false ? applyMarkdown(s) : applyBlocks(s);
+  }
 
   // Restore every placeholder in a SINGLE non-recursive pass (see the file header).
   // Images restore in place — where their URL/tag/Markdown appeared in the message —
