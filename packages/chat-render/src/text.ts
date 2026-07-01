@@ -309,9 +309,21 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   s = s.replace(/```(?:([a-zA-Z0-9+#.-]*)\n)?([\s\S]*?)```/g, (_m, _lang: string, code: string) =>
     stash(`<code class="mara-codeblock">${escapeHtml(code)}</code>`),
   );
+  // Inline code: a double-backtick span first (so a single backtick can appear inside,
+  // ``a`b``), then the single-backtick form.
+  s = s.replace(/``([\s\S]+?)``/g, (_m, code: string) =>
+    stash(`<code class="mara-code">${escapeHtml(code)}</code>`),
+  );
   s = s.replace(/`([^`\n]+?)`/g, (_m, code: string) =>
     stash(`<code class="mara-code">${escapeHtml(code)}</code>`),
   );
+
+  // Backslash escapes: `\` before a character we treat specially renders it literally,
+  // dropping the backslash — so `\*not italic\*`, `\|\|x\|\|`, and a leading `\#` / `\-`
+  // show as typed. Runs AFTER code spans are stashed (backslashes stay literal inside
+  // code) and before markdown / image detection, stashing the escaped char so nothing
+  // downstream can re-interpret it.
+  s = s.replace(/\\([\\*_~|#>![\]-])/g, (_m, ch: string) => stash(escapeHtml(ch)));
 
   // Legacy [img]URL[/img] (Mara 2 compat): force the wrapped URL inline as an
   // image regardless of its extension/format — composes with the `!` marker and

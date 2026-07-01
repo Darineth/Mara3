@@ -193,6 +193,21 @@ describe('renderText — Discord markdown', () => {
     expect(renderText('```let x = *y*```')).toBe('<code class="mara-codeblock">let x = *y*</code>');
   });
 
+  it('supports a double-backtick code span so a single backtick can appear inside', () => {
+    expect(renderText('``a`b``')).toBe('<code class="mara-code">a`b</code>');
+  });
+
+  it('honors backslash escapes for special characters', () => {
+    // Escaped markers render literally (no formatting), dropping the backslash.
+    expect(renderText('\\*not italic\\*')).toBe('*not italic*');
+    expect(renderText('\\*x\\*')).not.toContain('<em>');
+    expect(renderText('\\|\\|x\\|\\|')).toBe('||x||');
+    expect(renderText('\\# not a header')).toBe('# not a header'); // escapes the block marker too
+    expect(renderText('a \\\\ b')).toBe('a \\ b'); // \\ -> one literal backslash
+    // A real, unescaped marker still formats.
+    expect(renderText('*yes*')).toBe('<em>yes</em>');
+  });
+
   it('escapes markup inside formatting', () => {
     expect(renderText('**<img>**')).toBe('<strong>&lt;img&gt;</strong>');
   });

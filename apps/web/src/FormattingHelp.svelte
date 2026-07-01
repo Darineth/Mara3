@@ -48,6 +48,9 @@
       <div class="row"><code>`code`</code><span class="mono">code</span></div>
       <div class="row"><code>```code block```</code><span class="dim">monospace block</span></div>
       <div class="row"><code>||spoiler||</code><span class="dim">hidden until clicked</span></div>
+      <div class="row">
+        <code>\*literal\*</code><span class="dim">backslash escapes formatting</span>
+      </div>
     </div>
 
     <h3>Lines &amp; blocks</h3>
