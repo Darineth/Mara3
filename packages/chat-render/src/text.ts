@@ -296,8 +296,11 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
     return `${SENTINEL}${tokens.length - 1}${SENTINEL}`;
   };
 
-  // Drop any stray null chars so they cannot collide with the placeholder marker.
-  const cleaned = raw.split(SENTINEL).join('');
+  // Normalize CRLF/CR to LF so line-anchored block markdown (headers `# `, subtext
+  // `-# `, whose regexes end in `$`) matches regardless of the source's line endings —
+  // e.g. a Windows-authored MOTD.md, or pasted text — not just LF input. Also drop any
+  // stray null chars so they cannot collide with the placeholder marker.
+  const cleaned = raw.replace(/\r\n?/g, '\n').split(SENTINEL).join('');
   let s = options.emoticons ? applyEmoticons(cleaned, options.emoticons) : cleaned;
 
   // Work on the *raw* text for code spans and URLs, escaping their contents as we

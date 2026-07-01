@@ -253,6 +253,18 @@ describe('renderText — Discord block markdown', () => {
     expect(renderText('#notaheader')).toBe('#notaheader');
   });
 
+  it('renders headers/subtext regardless of line endings (CRLF from a Windows MOTD)', () => {
+    // The header/subtext regexes are `$`-anchored; without CRLF→LF normalization a
+    // trailing \r would stop them from matching (a Windows-authored MOTD.md rendered
+    // headers as plain text). Both endings must produce the same block markup.
+    expect(renderText('# Big\r\n## Mid')).toBe(
+      '<div class="mara-h1">Big</div><div class="mara-h2">Mid</div>',
+    );
+    expect(renderText('-# fine print\r\nplain')).toBe(
+      '<div class="mara-subtext">fine print</div>plain',
+    );
+  });
+
   it('renders single-line and rest-of-message block quotes', () => {
     expect(renderText('> quoted')).toBe('<blockquote class="mara-quote">quoted</blockquote>');
     // Consecutive `> ` lines fold into one quote.
