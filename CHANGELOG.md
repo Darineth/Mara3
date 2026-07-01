@@ -32,6 +32,10 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   server never echoes a sent PM back to its sender.
 - The message-of-the-day no longer appears at the top of private-message threads; it
   stays a channel greeting.
+- Clicking an inline image no longer also opens it in the system browser on the Win7
+  desktop client — a plain click just opens the in-app lightbox. (The image link
+  dropped `target="_blank"`, which that client's older WebView2 opened externally even
+  though the click was handled in-app.)
 
 ## [3.0.0] - 2026-06-30
 

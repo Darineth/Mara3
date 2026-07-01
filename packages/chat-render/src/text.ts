@@ -97,9 +97,15 @@ function imageTag(url: string, alt = ''): string {
   // Wrapped in a box with hide/show controls the client wires up; the image can
   // be collapsed to the "Show image" chip and restored. `url` and `alt` are
   // pre-escaped (alt carries the Markdown `![alt](…)` text when present).
+  //
+  // The link deliberately has NO target="_blank": a plain click is handled in JS (it
+  // opens the lightbox and prevents navigation), while modifier/middle clicks open a
+  // new tab regardless of target. Dropping _blank stops the desktop WebView from ALSO
+  // opening the image in the system browser on a plain click (a Win7 WebView2 quirk
+  // where the _blank new-window request fires despite the click's preventDefault).
   return (
     `<span class="mara-img-box">` +
-    `<a href="${url}" class="mara-img-link" target="_blank" rel="noopener noreferrer">` +
+    `<a href="${url}" class="mara-img-link" rel="noopener noreferrer">` +
     `<img class="mara-img" src="${url}" alt="${alt}" loading="lazy" /></a>` +
     `<button type="button" class="mara-img-hide" aria-label="Hide image">Hide</button>` +
     `<button type="button" class="mara-img-show" aria-label="Show image">🖼 Show image</button>` +

@@ -125,6 +125,14 @@ describe('renderText — safety + links', () => {
     expect(html).toContain('class="mara-img-show"');
   });
 
+  it('does not give the image link target="_blank"', () => {
+    // A plain click is handled in JS (lightbox); _blank would make the desktop WebView
+    // ALSO open the image in the system browser, despite the client's preventDefault.
+    const html = renderText('https://example.com/cat.png');
+    expect(html).toContain('class="mara-img-link"');
+    expect(html).not.toMatch(/mara-img-link[^>]*target="_blank"/);
+  });
+
   it('renders a server-relative upload path as a base-relative inline image', () => {
     // Emitted WITHOUT the leading slash so it resolves against the page base —
     // works at the domain root and under a subpath (e.g. https://host/mara/).
