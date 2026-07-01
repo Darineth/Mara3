@@ -193,8 +193,28 @@ export function applyBlocks(input: string): string {
   const isQuote = (l: string) => l === '&gt;' || l.startsWith('&gt; ');
   const isBullet = (l: string) => /^ *[-*] /.test(l);
   const isNumber = (l: string) => /^ *\d+\. /.test(l);
+  // A soft-wrapped continuation of the current list item: an indented, non-empty line
+  // that isn't itself a new marker. Folded into the item so a wrapped bullet stays a
+  // single <li> instead of splitting the list at each wrap.
+  const isContinuation = (l: string) => /^\s+\S/.test(l) && !isBullet(l) && !isNumber(l);
 
   let i = 0;
+  // Collect one list's items, starting at `i`. Each item is its marker line plus any
+  // following continuation lines (folded with a space, like a Markdown soft wrap).
+  // Advances `i` past the whole list.
+  const collectItems = (match: (l: string) => boolean, strip: RegExp): string => {
+    const items: string[] = [];
+    while (i < lines.length && match(lines[i] ?? '')) {
+      let text = (lines[i] ?? '').replace(strip, '');
+      i++;
+      while (i < lines.length && isContinuation(lines[i] ?? '')) {
+        text += ' ' + (lines[i] ?? '').trim();
+        i++;
+      }
+      items.push(`<li>${applyMarkdown(text)}</li>`);
+    }
+    return items.join('');
+  };
   while (i < lines.length) {
     const line = lines[i] ?? '';
 
@@ -238,23 +258,20 @@ export function applyBlocks(input: string): string {
       i++;
       continue;
     }
-    // Bullet / numbered lists — consecutive matching lines fold into one list.
+    // Bullet / numbered lists — consecutive markers fold into one list, and each item's
+    // soft-wrapped continuation lines fold into that item (see collectItems).
     if (isBullet(line)) {
-      const items: string[] = [];
-      while (i < lines.length && isBullet(lines[i] ?? '')) {
-        items.push(`<li>${applyMarkdown((lines[i] ?? '').replace(/^ *[-*] +/, ''))}</li>`);
-        i++;
-      }
-      pieces.push({ block: true, html: `<ul class="mara-list">${items.join('')}</ul>` });
+      pieces.push({
+        block: true,
+        html: `<ul class="mara-list">${collectItems(isBullet, /^ *[-*] +/)}</ul>`,
+      });
       continue;
     }
     if (isNumber(line)) {
-      const items: string[] = [];
-      while (i < lines.length && isNumber(lines[i] ?? '')) {
-        items.push(`<li>${applyMarkdown((lines[i] ?? '').replace(/^ *\d+\. +/, ''))}</li>`);
-        i++;
-      }
-      pieces.push({ block: true, html: `<ol class="mara-list">${items.join('')}</ol>` });
+      pieces.push({
+        block: true,
+        html: `<ol class="mara-list">${collectItems(isNumber, /^ *\d+\. +/)}</ol>`,
+      });
       continue;
     }
     // Plain line: inline markdown only.

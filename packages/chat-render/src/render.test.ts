@@ -287,6 +287,24 @@ describe('renderText — Discord block markdown', () => {
     expect(renderText('1. a\n2. b')).toBe('<ol class="mara-list"><li>a</li><li>b</li></ol>');
   });
 
+  it('folds a wrapped list item into one <li> instead of splitting the list', () => {
+    // An indented continuation line (a soft-wrapped bullet) stays part of its item, so
+    // the whole thing is ONE list — not a list, a stray line, then another list.
+    expect(renderText('- first item that\n  wraps on\n- second')).toBe(
+      '<ul class="mara-list"><li>first item that wraps on</li><li>second</li></ul>',
+    );
+    expect(renderText('1. one that\n   wraps\n2. two')).toBe(
+      '<ol class="mara-list"><li>one that wraps</li><li>two</li></ol>',
+    );
+  });
+
+  it('ends a list at a blank or non-indented line, not at a wrap', () => {
+    // Blank line ends the list; the following non-indented text is its own plain line.
+    expect(renderText('- a\n  wrapped\n\nafter')).toBe(
+      '<ul class="mara-list"><li>a wrapped</li></ul>\n\nafter',
+    );
+  });
+
   it('keeps plain lines separated and blocks self-breaking', () => {
     // Plain line then a header: no extra blank line, header is its own block.
     expect(renderText('hello\n# Title')).toBe('hello<div class="mara-h1">Title</div>');
