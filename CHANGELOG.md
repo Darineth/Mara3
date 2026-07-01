@@ -17,6 +17,8 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Dark theme: the primary background is now solid black, with `#111` for secondary
   surfaces (panels, sidebar, dialogs, the message input, code blocks, and revealed
   spoilers).
+- Monospace text (code) now uses the platform default (`ui-monospace, monospace`)
+  instead of bundling Cascadia Code / Consolas.
 
 ### Fixed
 

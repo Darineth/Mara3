@@ -7,7 +7,7 @@
  */
 :root {
   --mara-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mara-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+  --mara-mono: ui-monospace, monospace;
 
   --mara-bg: #000000;
   --mara-bg-alt: #111111;
