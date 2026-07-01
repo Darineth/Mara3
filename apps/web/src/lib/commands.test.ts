@@ -31,6 +31,19 @@ describe('runSlashCommand', () => {
     expect(c.notice).toHaveBeenCalledWith(expect.stringContaining('Unknown command'));
   });
 
+  it('sends a pasted image path (leading /) as a message, not a command', () => {
+    // An image-only paste is sent as its bare upload path; it must not be mistaken for a
+    // command and swallowed. The "name" contains slashes/dots, so it is not command-shaped.
+    const c = ctx();
+    expect(runSlashCommand('/uploads/abc123.png', c)).toBe(false);
+    expect(c.notice).not.toHaveBeenCalled();
+
+    // Typed text plus the pasted image URL on the next line also passes through.
+    const c2 = ctx();
+    expect(runSlashCommand('/uploads/a.png\n/uploads/b.png', c2)).toBe(false);
+    expect(c2.notice).not.toHaveBeenCalled();
+  });
+
   it('/me emotes to the active channel', () => {
     const c = ctx();
     expect(runSlashCommand('/me waves', c)).toBe(true);

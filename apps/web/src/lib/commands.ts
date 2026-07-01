@@ -143,6 +143,9 @@ const COMMANDS: Command[] = [
   },
 ];
 
+/** A command name is a bare word — letters/digits only, no slashes or dots. */
+const COMMAND_NAME_RE = /^[a-z0-9]+$/;
+
 /**
  * Parse and run a slash command. Returns `true` if the input started with `/` (handled —
  * either a command ran or an "unknown command" notice was shown; do NOT also send it as a
@@ -152,6 +155,10 @@ export function runSlashCommand(input: string, ctx: CommandContext): boolean {
   if (!input.startsWith('/')) return false;
   const space = input.indexOf(' ');
   const name = (space === -1 ? input.slice(1) : input.slice(1, space)).toLowerCase();
+  // Only a bare word is a command. A pasted image is sent as its bare upload path (e.g.
+  // "/uploads/<id>.png"); that isn't a command, so let it fall through to be sent as a
+  // normal message instead of being swallowed as an "unknown command".
+  if (!COMMAND_NAME_RE.test(name)) return false;
   const rest = (space === -1 ? '' : input.slice(space + 1)).trim();
   const command = COMMANDS.find((c) => c.name === name);
   if (!command) {
