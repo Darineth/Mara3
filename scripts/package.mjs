@@ -48,8 +48,24 @@ set "SHOWPORT=%MARA_PORT%"
 if "%SHOWPORT%"=="" set "SHOWPORT=5050"
 echo Mara 3 server  -^>  http://localhost:%SHOWPORT%
 echo (Port/host come from the environment or mara.config; see README.txt.)
-echo Open that URL in a browser to use the chat. Close this window to stop the server.
-"%~dp0node.exe" "%~dp0app\\dist\\main.js"
+echo Open that URL in a browser to use the chat. Close this window (or Ctrl+C) to stop.
+echo Server output is written to server.log next to this launcher.
+
+rem Auto-restart: if the server exits (crash, unhandled error), relaunch it after a short
+rem pause so a transient failure doesn't take the server offline. Uses ping (not timeout)
+rem for the delay so it also works headless under Task Scheduler, where timeout has no
+rem console and would fail. stdout/stderr go to server.log so a background run still
+rem captures logs. To stop for good: close the window, Ctrl+C then Y, or stop the scheduled
+rem task -- killing node alone just makes this loop relaunch it.
+:run
+echo [%date% %time%] starting Mara 3 server>>"%~dp0server.log"
+"%~dp0node.exe" "%~dp0app\\dist\\main.js">>"%~dp0server.log" 2>&1
+set "rc=%errorlevel%"
+echo.
+echo Mara 3 server stopped (exit code %rc%). Restarting in 3s -- close this window or stop the task.
+echo [%date% %time%] server exited (code %rc%); restarting in 3s>>"%~dp0server.log"
+ping -n 4 127.0.0.1 >nul
+goto run
 `;
 
 const CONFIG_EXAMPLE = `# Mara 3 server configuration.
@@ -126,6 +142,7 @@ Your data (created on first run, kept next to this launcher - NOT inside app\\):
   mara.config   your settings (you create this from mara.config.example)
   data\\         message history + identity tokens (history.json, identity.json)
   uploads\\      uploaded images (size-capped cache)
+  server.log    server output/log (grows over time; safe to delete or trim anytime)
 
 Updating without losing settings or data:
   Replace the CODE, keep your state. Overwrite these from the new version:
