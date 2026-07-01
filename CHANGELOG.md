@@ -12,6 +12,12 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [3.0.2] - 2026-06-30
 
+### Changed
+
+- Dark theme: the primary background is now solid black, with `#111` for secondary
+  surfaces (panels, sidebar, dialogs, the message input, code blocks, and revealed
+  spoilers).
+
 ### Fixed
 
 - A soft-wrapped list item no longer splits its list: an indented continuation line

@@ -285,7 +285,7 @@
   .mara-chatview :global(.mara-codeblock) {
     font-family: var(--mara-mono, ui-monospace, monospace);
     font-size: 0.85em;
-    background: rgba(127, 127, 127, 0.18);
+    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
     border-radius: 4px;
     padding: 0.05em 0.35em;
   }
@@ -342,7 +342,7 @@
     padding: 0 0.2em;
   }
   .mara-chatview :global(.mara-spoiler.revealed) {
-    background: rgba(127, 127, 127, 0.18);
+    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
     color: inherit;
   }
 </style>

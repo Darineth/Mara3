@@ -9,12 +9,12 @@
   --mara-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mara-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
 
-  --mara-bg: #111111;
-  --mara-bg-alt: #252526;
+  --mara-bg: #000000;
+  --mara-bg-alt: #111111;
   --mara-fg: #e6e6e6;
   --mara-border: #333;
   --mara-hover: #2f2f2f;
-  --mara-input-bg: #2a2a2a;
+  --mara-input-bg: #111111;
   --mara-accent: #3b82f6;
   --mara-link: #5aa9ff;
   --mara-danger: #e5534b;
