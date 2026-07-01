@@ -479,18 +479,22 @@
   // are already in push/time order). At an equal timestamp the conversation line wins, so
   // "You joined" still precedes a MOTD notice stamped the same instant.
   const activeLines = $derived.by(() => {
-    if (connectionLines.length === 0) return baseLines;
+    // Session notices (Connected/drop/reconnect) belong in every conversation, but the MOTD
+    // (a server 'notice') is a channel greeting — don't surface it in a PM thread.
+    const notices =
+      activePm !== null ? connectionLines.filter((l) => l.kind !== 'notice') : connectionLines;
+    if (notices.length === 0) return baseLines;
     const out: ChatLine[] = [];
     let i = 0;
     for (const line of baseLines) {
-      let notice = connectionLines[i];
+      let notice = notices[i];
       while (notice && notice.at < line.at) {
         out.push(notice);
-        notice = connectionLines[++i];
+        notice = notices[++i];
       }
       out.push(line);
     }
-    if (i < connectionLines.length) out.push(...connectionLines.slice(i));
+    if (i < notices.length) out.push(...notices.slice(i));
     return out;
   });
 </script>
