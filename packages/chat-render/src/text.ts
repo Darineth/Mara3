@@ -81,8 +81,13 @@ const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
 // is validated against IMG_URL_RE before it's honored.
 const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 
+// Links carry NO target="_blank". The app intercepts a plain click and opens the URL
+// itself — via the native opener in the desktop shells, or window.open in a browser — so
+// a bare anchor suffices. _blank actively hurts the desktop clients: the Tauri 2 shell
+// blocks _blank new windows outright (links did nothing), and the Tauri 1 legacy client
+// opens them natively (which would double up with the app's own handler).
 function anchor(url: string): string {
-  return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  return `<a href="${url}" rel="noopener noreferrer">${url}</a>`;
 }
 // A server-relative upload path (`/uploads/<id>.ext`) is emitted WITHOUT its
 // leading slash so the browser resolves it against the page's base URL. That makes
@@ -144,7 +149,7 @@ export function applyEmoticons(
 export function linkify(escaped: string): string {
   return escaped.replace(
     URL_RE,
-    (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`,
+    (url) => `<a href="${url}" rel="noopener noreferrer">${url}</a>`, // no _blank; see anchor()
   );
 }
 

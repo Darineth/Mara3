@@ -10,7 +10,7 @@
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
-  import { isDesktop, nativeLog, switchServer } from './lib/native.js';
+  import { isDesktop, nativeLog, openExternal, switchServer } from './lib/native.js';
   import { runSlashCommand, type CommandContext } from './lib/commands.js';
   import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
@@ -292,6 +292,25 @@
       ),
     ];
     return () => offs.forEach((off) => off());
+  });
+
+  // Open external links ourselves so they work everywhere. Chat links carry no
+  // target="_blank" (see chat-render), so a plain click would otherwise navigate the app
+  // window away; here we route it to the native opener in the desktop shells (the Tauri 2
+  // client blocks _blank new windows, so links did nothing there) or a new browser tab.
+  // Images are skipped — a click there opens the in-app lightbox (see ChatView). Modifier
+  // and middle clicks fall through so "open in new tab" still works in a browser.
+  $effect(() => {
+    const onLinkClick = (e: MouseEvent) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as HTMLElement | null)?.closest('a[href]') as HTMLAnchorElement | null;
+      if (!a || a.closest('.mara-img-box')) return;
+      if (a.protocol !== 'http:' && a.protocol !== 'https:') return;
+      e.preventDefault();
+      void openExternal(a.href);
+    };
+    document.addEventListener('click', onLinkClick);
+    return () => document.removeEventListener('click', onLinkClick);
   });
 
   // Close the menu on any click outside it.

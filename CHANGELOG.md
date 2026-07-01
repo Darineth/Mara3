@@ -12,6 +12,12 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [3.0.3] - 2026-06-30
 
+### Fixed
+
+- Clicking a link in chat now opens it in the system browser on the desktop clients.
+  The modern (Tauri 2) client blocked the `target="_blank"` new window, so links did
+  nothing there; the app now routes a link click through the native opener instead.
+
 ## [3.0.2] - 2026-06-30
 
 ### Changed

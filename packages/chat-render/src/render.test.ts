@@ -28,6 +28,13 @@ describe('linkify', () => {
     expect(html).toContain('<a href="https://example.com/x"');
     expect(html).toContain('rel="noopener noreferrer"');
   });
+
+  it('does not give links target="_blank" (the app opens them itself)', () => {
+    // _blank does nothing in the Tauri 2 desktop client (it blocks _blank new windows) and
+    // double-opens in the Tauri 1 legacy client; the app intercepts the click instead.
+    expect(linkify('https://example.com/x')).not.toContain('target="_blank"');
+    expect(renderText('https://example.com/x')).not.toContain('target="_blank"');
+  });
 });
 
 describe('renderText — safety + links', () => {
