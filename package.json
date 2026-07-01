@@ -1,6 +1,6 @@
 {
   "name": "mara",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "private": true,
   "description": "Mara 3 — cross-platform chat (TypeScript / Svelte / Tauri 2).",
   "license": "MIT",

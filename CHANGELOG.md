@@ -5,10 +5,35 @@ All notable changes to Mara 3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- On release, rename [Unreleased] to [3.0.0] - YYYY-MM-DD and start a fresh
+<!-- On release, rename [Unreleased] to the new version + date and start a fresh
      [Unreleased] section above it. -->
 
 ## [Unreleased]
+
+## [3.0.1] - 2026-06-30
+
+### Added
+
+- **`/roll` dice** — roll D&D-style dice with `/roll [p][-]NdM[±K]`: `p` keeps the
+  result private, `-` shows each die, and an optional `±K` modifier adjusts the total.
+  Public rolls emote the result to the channel.
+
+### Changed
+
+- Darkened the dark theme's background to a deeper near-black.
+
+### Fixed
+
+- Pasting an image and pressing Enter no longer discards it: a bare upload path
+  (`/uploads/…`) is now sent as a message instead of being mistaken for an unknown
+  slash command and swallowed.
+- Your own outgoing private messages are now written to the desktop client's local
+  chat log — previously only the other participant's lines were logged, because the
+  server never echoes a sent PM back to its sender.
+- The message-of-the-day no longer appears at the top of private-message threads; it
+  stays a channel greeting.
+
+## [3.0.0] - 2026-06-30
 
 First release of Mara 3 — a self-hosted, account-less chat app. A single Node server
 hosts the web UI and the WebSocket on one port; a portable desktop client and a
@@ -60,4 +85,6 @@ JSON-over-WebSocket and is deliberately not compatible with the old Qt-era Mara 
 - Upload hardening: SVG rejected, strict filename handling, `nosniff` + sandbox CSP,
   and size caps; `/upload` requires a WS session token; WebSocket payloads are capped.
 
-[Unreleased]: https://github.com/Darineth/Mara3
+[Unreleased]: https://github.com/Darineth/Mara3/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/Darineth/Mara3/compare/v3.0.0...v3.0.1
+[3.0.0]: https://github.com/Darineth/Mara3/releases/tag/v3.0.0
