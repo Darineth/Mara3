@@ -444,6 +444,7 @@
         persist();
       },
       notice: (t) => pushSystem(t),
+      random: Math.random,
     };
   }
 

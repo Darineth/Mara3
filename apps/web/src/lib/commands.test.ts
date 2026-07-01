@@ -13,6 +13,7 @@ function ctx(overrides: Partial<CommandContext> = {}): CommandContext {
     setAway: vi.fn(),
     setName: vi.fn(),
     notice: vi.fn(),
+    random: () => 0.5, // deterministic: die of M sides -> 1 + floor(0.5 * M)
     ...overrides,
   };
 }
@@ -93,11 +94,73 @@ describe('runSlashCommand', () => {
     expect(c2.notice).toHaveBeenCalledWith(expect.stringContaining('too long'));
   });
 
+  it('/roll emotes a public roll to the channel (total only)', () => {
+    const c = ctx();
+    // random 0.5 -> each d20 = 11, so 2d20 = 22.
+    expect(runSlashCommand('/roll 2d20', c)).toBe(true);
+    expect(c.emote).toHaveBeenCalledWith('rolls 2d20: 22');
+    expect(c.notice).not.toHaveBeenCalled();
+  });
+
+  it('/roll with "p" keeps the result private (notice, not emote)', () => {
+    const c = ctx();
+    runSlashCommand('/roll p2d20', c);
+    expect(c.emote).not.toHaveBeenCalled();
+    expect(c.notice).toHaveBeenCalledWith('You roll 2d20: 22');
+  });
+
+  it('/roll with "-" shows each die', () => {
+    const c = ctx();
+    // random 0.5 -> each d6 = 4.
+    runSlashCommand('/roll -3d6', c);
+    expect(c.emote).toHaveBeenCalledWith('rolls 3d6: [4, 4, 4] = 12');
+  });
+
+  it('/roll applies a modifier and shows it in the breakdown', () => {
+    const c = ctx();
+    runSlashCommand('/roll -2d6+3', c);
+    expect(c.emote).toHaveBeenCalledWith('rolls 2d6+3: [4, 4] + 3 = 11');
+
+    const c2 = ctx();
+    runSlashCommand('/roll 2d6-1', c2); // non-verbose: total only
+    expect(c2.emote).toHaveBeenCalledWith('rolls 2d6-1: 7');
+  });
+
+  it('/roll defaults the count and combines p and - flags', () => {
+    const c = ctx();
+    runSlashCommand('/roll p-d20', c); // 1 die, private, verbose (single die -> total only)
+    expect(c.emote).not.toHaveBeenCalled();
+    expect(c.notice).toHaveBeenCalledWith('You roll 1d20: 11');
+  });
+
+  it('/roll falls back to a private notice when not in a channel', () => {
+    const c = ctx({ activeChannel: null });
+    runSlashCommand('/roll 1d20', c);
+    expect(c.emote).not.toHaveBeenCalled();
+    expect(c.notice).toHaveBeenCalledWith('You roll 1d20: 11');
+  });
+
+  it('/roll rejects bad syntax and out-of-range dice', () => {
+    const bad = ctx();
+    runSlashCommand('/roll nonsense', bad);
+    expect(bad.notice).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+
+    const many = ctx();
+    runSlashCommand('/roll 999d6', many);
+    expect(many.emote).not.toHaveBeenCalled();
+    expect(many.notice).toHaveBeenCalledWith(expect.stringContaining('dice'));
+
+    const big = ctx();
+    runSlashCommand('/roll 1d99999', big);
+    expect(big.emote).not.toHaveBeenCalled();
+    expect(big.notice).toHaveBeenCalledWith(expect.stringContaining('sides'));
+  });
+
   it('/help lists every command', () => {
     let text = '';
     const c = ctx({ notice: (t) => (text = t) });
     runSlashCommand('/help', c);
-    for (const name of ['/me', '/msg', '/away', '/back', '/name', '/help']) {
+    for (const name of ['/me', '/msg', '/away', '/back', '/name', '/roll', '/help']) {
       expect(text).toContain(name);
     }
   });

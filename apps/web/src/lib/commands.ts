@@ -24,6 +24,8 @@ export interface CommandContext {
   setName(name: string): void;
   /** Show a client-side notice line (command help, usage, and errors). */
   notice(text: string): void;
+  /** Random number in [0, 1) — injected so dice rolls stay unit-testable. */
+  random(): number;
 }
 
 interface Command {
@@ -36,6 +38,12 @@ interface Command {
 
 /** Max display-name length (matches the protocol's `setProfile.name`). */
 const NAME_MAX = 64;
+
+/** Dice-roll bounds — keep a single `/roll` sane and its output readable. */
+const ROLL_MAX_DICE = 100;
+const ROLL_MAX_SIDES = 1000;
+/** `[p][-]NdM[±K]`: p=private, -=show each die, N dice (default 1), M sides, optional modifier. */
+const ROLL_RE = /^(p)?(-)?(\d*)d(\d+)([+-]\d+)?$/i;
 
 const COMMANDS: Command[] = [
   {
@@ -88,6 +96,40 @@ const COMMANDS: Command[] = [
       if (!rest) return ctx.notice('Usage: /name <new name>');
       if (rest.length > NAME_MAX) return ctx.notice(`Name too long (max ${NAME_MAX}).`);
       ctx.setName(rest);
+    },
+  },
+  {
+    name: 'roll',
+    args: '[p][-]NdM[±K]',
+    help: 'Roll dice (p = private, - = show each die). E.g. 2d20, -5d10, p2d6+3',
+    run(rest, ctx) {
+      const m = ROLL_RE.exec(rest);
+      if (!m) return ctx.notice('Usage: /roll [p][-]NdM[±K] — e.g. 2d20, -5d10, p2d6+3');
+      const priv = !!m[1];
+      const verbose = !!m[2];
+      const count = m[3] ? parseInt(m[3], 10) : 1;
+      const sides = parseInt(m[4]!, 10);
+      const mod = m[5] ? parseInt(m[5], 10) : 0;
+      if (count < 1 || count > ROLL_MAX_DICE)
+        return ctx.notice(`/roll: use 1–${ROLL_MAX_DICE} dice.`);
+      if (sides < 1 || sides > ROLL_MAX_SIDES)
+        return ctx.notice(`/roll: dice need 1–${ROLL_MAX_SIDES} sides.`);
+      const rolls: number[] = [];
+      for (let i = 0; i < count; i++) rolls.push(1 + Math.floor(ctx.random() * sides));
+      const total = rolls.reduce((a, b) => a + b, 0) + mod;
+      const spec = `${count}d${sides}${mod ? (mod > 0 ? `+${mod}` : `${mod}`) : ''}`;
+      let body: string;
+      // Show the individual dice only when there's more than one number to break down.
+      if (verbose && (count > 1 || mod)) {
+        const modBreak = mod ? ` ${mod > 0 ? '+' : '-'} ${Math.abs(mod)}` : '';
+        body = `${spec}: [${rolls.join(', ')}]${modBreak} = ${total}`;
+      } else {
+        body = `${spec}: ${total}`;
+      }
+      // Private rolls (and any roll made outside a channel) show only to you; a public roll
+      // emotes to the whole channel so everyone sees the result.
+      if (priv || ctx.activeChannel === null) ctx.notice(`You roll ${body}`);
+      else ctx.emote(`rolls ${body}`);
     },
   },
   {
