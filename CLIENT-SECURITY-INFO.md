@@ -44,23 +44,31 @@ picker page.
 
 ## Open items
 
-### Legacy Win7 client (Tauri 1) — a wider surface
+### Legacy Win7 client (Tauri 1) — residual
 
-The legacy grant uses `enable_tauri_api()` on the remote scope
-(`apps/client-legacy/src-tauri/src/main.rs`). Tauri 1 has **no per-command ACL**, so
-enabling the API bridge exposes _all_ registered commands to the granted host. A
-connected server's page can therefore also call:
+Tauri 1 has **no per-command ACL**: the legacy grant uses `enable_tauri_api()` on the
+remote scope (`apps/client-legacy/src-tauri/src/main.rs`), and that same call is what
+injects the remote page's invoke bridge — so once a server is connected, its page can in
+principle reach every registered command. Instead of a true ACL (unavailable in Tauri 1),
+the picker-only commands (`get_settings`, `set_server_url`, `set_auto_connect`,
+`open_app`) now **origin-gate** themselves via `is_local_window()` — they refuse unless
+invoked from the local picker page (`tauri.localhost` / `tauri:`). Safe because the picker
+only calls them before navigating and there's no switch-back flow. So a loaded server can
+no longer read settings / the recent-servers list or rewrite the saved server URL; the
+commands it can still reach are effectively just `mara_log` (bounded) and the built-in
+`shell.open`.
 
-- `get_settings` — read recent-servers list, `logDir`, window geometry
-- `set_server_url` — rewrite the saved server → redirect the user on next launch
-- `set_auto_connect`, `open_app`
-- `shell.open` (`allowlist.shell.open: true`, with `dangerousUseHttpScheme: true`) —
-  external-open is **not** scheme-checked the way the modern shell's `open_external` is
+Also fixed to match the modern shell: the injected globals are gated to the local picker
+page (`__MARA_SETTINGS__` / `__MARA_LOG__` no longer leak), and `mara_log` is capped.
+`shell.open` is now limited to `^https?://` — note it was never an arbitrary-program/path
+hole: `open: true` already applied Tauri 1's default validator (`http(s)`/`mailto`/`tel`);
+this just drops `mailto`/`tel`. `dangerousUseHttpScheme: true` stays (Win7/WebView2 compat).
 
-It also still injects all three globals unconditionally, so `__MARA_SETTINGS__` /
-`__MARA_LOG__` leak to the remote page. `mara_log` there **is** capped (mirrors the
-modern shell). Options: narrow where feasible, or document as accepted risk (this is a
-legacy/Win7-only separate download).
+**Not viable — dropping `enable_tauri_api()`** (to remove the built-in API from the remote
+page): it's what injects the remote page's invoke bridge in Tauri 1, so removing it breaks
+`mara_log` — [native.ts](apps/web/src/lib/native.ts) reaches the legacy client via
+`__TAURI__.tauri.invoke` and has no low-level `__TAURI_IPC__` fallback. The origin-gating
+above achieves the practical goal without it.
 
 ### `mara_log` total-disk residual (accepted)
 

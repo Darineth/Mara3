@@ -15,7 +15,7 @@
     "allowlist": {
       "all": false,
       "shell": {
-        "open": true
+        "open": "^https?://"
       }
     },
     "windows": [],

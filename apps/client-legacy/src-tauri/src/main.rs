@@ -378,13 +378,31 @@ fn mara_log(channel: String, line: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn get_settings() -> Settings {
-    load_settings()
+/// True when a command was invoked from the local bootstrap picker (served from the app's
+/// own protocol) rather than a loaded remote server page. Tauri 1 has **no per-command
+/// ACL** — once the connected origin is granted IPC, the loaded page can reach every
+/// registered command — so the picker-only commands below use this to refuse calls coming
+/// from a server. Local content is `tauri://localhost` (or `http://tauri.localhost` with
+/// dangerousUseHttpScheme); a remote server page never matches. This is safe because the
+/// picker only calls these before navigating and there is no switch-back-to-picker flow.
+fn is_local_window(window: &tauri::Window) -> bool {
+    let url = window.url();
+    url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
 }
 
 #[tauri::command]
-fn set_server_url(url: String) -> Result<Settings, String> {
+fn get_settings(window: tauri::Window) -> Result<Settings, String> {
+    if !is_local_window(&window) {
+        return Err("unavailable from a loaded server".to_string());
+    }
+    Ok(load_settings())
+}
+
+#[tauri::command]
+fn set_server_url(window: tauri::Window, url: String) -> Result<Settings, String> {
+    if !is_local_window(&window) {
+        return Err("unavailable from a loaded server".to_string());
+    }
     let trimmed = url.trim().to_string();
     if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
         return Err("URL must start with http:// or https://".to_string());
@@ -399,7 +417,10 @@ fn set_server_url(url: String) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn set_auto_connect(enabled: bool) -> Result<Settings, String> {
+fn set_auto_connect(window: tauri::Window, enabled: bool) -> Result<Settings, String> {
+    if !is_local_window(&window) {
+        return Err("unavailable from a loaded server".to_string());
+    }
     let mut s = load_settings();
     s.auto_connect = enabled;
     save_settings(&s)?;
@@ -441,6 +462,9 @@ fn grant_remote_ipc(window: &tauri::Window, url: &str) {
 /// the webview via JS (`location.replace`), which loads the remote hosted UI.
 #[tauri::command]
 fn open_app(window: tauri::Window) -> Result<(), String> {
+    if !is_local_window(&window) {
+        return Err("unavailable from a loaded server".to_string());
+    }
     let url = load_settings().server_url;
     grant_remote_ipc(&window, &url);
     let js = format!(
@@ -463,10 +487,23 @@ fn main() {
             // Open the bundled picker page first; it persists the chosen server and
             // asks open_app to navigate to the live UI. Seed it with saved settings.
             let settings = load_settings();
+            // __MARA_UPDATE__ (version + public manifest URL) is non-sensitive and read by
+            // the hosted update banner on the *remote* page, so it's set unconditionally.
+            // __MARA_SETTINGS__ (recent-servers list, logDir, geometry) and __MARA_LOG__ (an
+            // absolute local path — often the OS username) are only read by the local picker,
+            // so they're gated to the local page: the init script runs on *every* navigation,
+            // and without this guard the loaded server's page could read them (info leak). The
+            // picker is served from the app protocol (`tauri://localhost`, or
+            // `http://tauri.localhost` with dangerousUseHttpScheme); the remote server page
+            // never matches. Mirrors the modern shell.
             let init = format!(
-                "window.__MARA_SETTINGS__ = {settings}; \
-                 window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
-                 window.__MARA_LOG__ = {log};",
+                "window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
+                 (function () {{ \
+                   var l = window.location; \
+                   if (l.protocol !== 'tauri:' && l.hostname !== 'tauri.localhost') return; \
+                   window.__MARA_SETTINGS__ = {settings}; \
+                   window.__MARA_LOG__ = {log}; \
+                 }})();",
                 settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
