@@ -34,6 +34,14 @@ reach the server."
   `![](/uploads/x)` can't become a link/image in everyone's notices. (`render.ts`) _(2026-06-28)_
 - **Upload magic-byte sniff** (was L6): the body's leading bytes must match the declared
   image type, so a lying `Content-Type` can't cache arbitrary bytes. (`uploads.ts`) _(2026-06-28)_
+- **Web app CSP** (defense-in-depth for the chat-render XSS boundary): document responses
+  carry a `Content-Security-Policy` whose load-bearing directive is `script-src 'self'`
+  (the Vite build emits only external, same-origin scripts — no inline/eval), plus
+  `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`, and `nosniff`.
+  `img-src`/`connect-src` are intentionally broad (arbitrary inline chat images; the
+  cross-origin desktop update-manifest fetch), so it hardens script **execution**, not
+  exfiltration. Note this only helps against malicious _content_ on an honest server — a
+  hostile server sends its own headers. (`apps/server/src/server.ts`) _(2026-06-30)_
 
 ## Reviewed 2026-06-28 (release-prep pass) — clean
 

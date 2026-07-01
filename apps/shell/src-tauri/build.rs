@@ -16,6 +16,7 @@ fn main() {
             "set_auto_connect",
             "open_app",
             "switch_server",
+            "open_external",
         ]));
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }

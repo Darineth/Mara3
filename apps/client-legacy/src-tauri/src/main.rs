@@ -34,6 +34,23 @@ const LINE_END: &str = "\r\n";
 #[cfg(not(windows))]
 const LINE_END: &str = "\n";
 
+/// Cap on a single logged line (bytes of `line`); longer lines are truncated with a
+/// marker. Real chat lines are far under this, so this only stops a malicious server
+/// (whose page drives `mara_log` over IPC) from writing a giant string per call.
+/// Mirrors the modern shell.
+const MAX_LOG_LINE: usize = 8 * 1024;
+
+/// Per-file size ceiling. Once a month's log reaches this, further lines are dropped
+/// (silent no-op) instead of appended, bounding the disk one channel can consume under a
+/// hostile server. Years of real logs top out ~5 MB/file, so 32 MB never trips normally.
+/// Mirrors the modern shell.
+const MAX_LOG_FILE: u64 = 32 * 1024 * 1024;
+
+/// Cap on the channel label (characters) before it becomes a folder name — bounds an
+/// otherwise attacker-controlled path segment (`sanitize_segment` can up to 4× its length
+/// when percent-encoding). Mirrors the modern shell.
+const MAX_LOG_CHANNEL: usize = 128;
+
 /// First-run seed for the server address. No built-in default (the picker starts
 /// empty so the client never suggests a server the user didn't pick); `MARA_URL`, if
 /// set, seeds it.
@@ -328,14 +345,32 @@ fn mara_log(channel: String, line: String) -> Result<(), String> {
         Some(dir) => dir,
         None => return Ok(()),
     };
+    // Clamp the (attacker-controllable) channel label before it becomes a folder name.
+    let channel: String = channel.chars().take(MAX_LOG_CHANNEL).collect();
     let dir = root.join(sanitize_segment(&channel));
     create_dir_all(&dir).map_err(|e| e.to_string())?;
     let (month, stamp) = local_now();
     let file_name = format!("Mara3_{month}.log");
+    let path = dir.join(file_name);
+    // Drop the write if this month's file is already at the ceiling (bounds the disk a
+    // single channel can use under a hostile server; real files never approach it).
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) >= MAX_LOG_FILE {
+        return Ok(());
+    }
+    // Clamp an over-long line on a char boundary so one call can't write megabytes.
+    let line = if line.len() > MAX_LOG_LINE {
+        let mut end = MAX_LOG_LINE;
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}… [truncated]", &line[..end])
+    } else {
+        line
+    };
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join(file_name))
+        .open(&path)
         .map_err(|e| e.to_string())?;
     // One line per call, prefixed with the channel + an explicit local timestamp:
     // `[<channel> YYYY-MM-DD HH:MM:SS] <line>` (channel kept so merged logs stay legible).

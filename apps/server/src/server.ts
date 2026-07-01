@@ -15,6 +15,39 @@ import { handleUpload, serveUpload, UPLOAD_ENDPOINT, UPLOAD_ROUTE } from './uplo
  */
 const MAX_FRAME_BYTES = 256 * 1024;
 
+/**
+ * Content-Security-Policy for the web app's document responses. This is
+ * defense-in-depth for the chat-render XSS boundary (an honest server protecting its
+ * users from malicious *message* content) — it is **not** a control against a hostile
+ * server, which serves its own headers. The load-bearing directive is `script-src
+ * 'self'`: the Vite build emits only external, same-origin scripts (no inline/eval), so
+ * an escaping bug can't turn injected markup into script execution.
+ *
+ * Deliberately permissive where the product requires it:
+ * - `img-src` is broad because chat allows inline images from arbitrary URLs. Images
+ *   don't execute, so this doesn't weaken the script protection — but it does mean data
+ *   can still be smuggled out via an `<img>` URL, so `connect-src` is not a complete
+ *   exfil boundary (an accepted, well-understood CSP limitation).
+ * - `connect-src` allows `https:`/`ws:`/`wss:` so the same-origin WebSocket works on both
+ *   plaintext-LAN and TLS deployments, and so the desktop update banner can fetch its
+ *   (cross-origin) update manifest.
+ * - `style-src 'unsafe-inline'` covers Svelte's scoped styles / `style=` attributes;
+ *   this is far lower risk than inline script and can be tightened to hashes later.
+ *
+ * Uploads are served separately with their own stricter CSP (see uploads.ts).
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' https: http: data: blob:",
+  "font-src 'self'",
+  "connect-src 'self' https: ws: wss:",
+].join('; ');
+
 export interface MaraServer {
   readonly hub: Hub;
   /** Actual bound port (useful when configured with port 0). */
@@ -44,6 +77,11 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
             } else {
               res.setHeader('Cache-Control', 'no-cache');
             }
+            // Defense-in-depth for the web UI (mainly the chat-render XSS boundary).
+            // Enforced only on the document; harmless on static assets. Don't sniff a
+            // declared type into something executable.
+            res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+            res.setHeader('X-Content-Type-Options', 'nosniff');
           },
         })
       : null;

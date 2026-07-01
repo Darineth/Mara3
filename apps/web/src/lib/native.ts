@@ -94,14 +94,15 @@ export async function openExternal(url: string): Promise<void> {
     return;
   }
   try {
-    // Win7 legacy (Tauri 1): shell.open. Modern shell (Tauri 2, local or remote page):
-    // the opener plugin via whichever invoke surface is available.
+    // Win7 legacy (Tauri 1): shell.open. Modern shell (Tauri 2, remote page): the native
+    // `open_external` command, which validates the scheme in Rust (http/https only) — the
+    // opener plugin itself is not granted to the server's origin.
     const shell = tauri()?.shell;
     if (shell?.open) {
       await shell.open(url);
       return;
     }
-    await rawInvoke('plugin:opener|open_url', { url });
+    await rawInvoke('open_external', { url });
   } catch {
     window.open(url, '_blank', 'noopener');
   }
