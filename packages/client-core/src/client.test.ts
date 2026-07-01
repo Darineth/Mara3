@@ -332,6 +332,12 @@ describe('private messages + ping', () => {
     // sender recorded its own outgoing line
     const aOutgoing = get(a.privateMessages).get(bob.token) ?? [];
     expect(aOutgoing.at(-1)?.text).toBe('secret');
+
+    // ...and announced it via `privateMessageSent` (the server never echoes our own PM back,
+    // so this is the only signal a logger gets for it).
+    const aSent = waitEvent(a, 'privateMessageSent');
+    a.sendPrivateMessage(bob.token, 'again');
+    expect(await aSent).toEqual({ to: bob.token, text: 'again' });
     // recipient recorded the incoming line
     const bIncoming = get(b.privateMessages).get(alice.token) ?? [];
     expect(bIncoming.at(-1)?.text).toBe('secret');

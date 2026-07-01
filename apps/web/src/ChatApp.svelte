@@ -284,6 +284,12 @@
         'privateMessage',
         (m) => void nativeLog(`pm-${nameOf(m.from)}`, `<${nameOf(m.from)}> ${m.text}`),
       ),
+      // Our own outgoing PMs aren't echoed by the server, so log them here (filed under the
+      // recipient, so both sides of a PM thread share one log — matching the incoming line).
+      client.events.on(
+        'privateMessageSent',
+        (m) => void nativeLog(`pm-${nameOf(m.to)}`, `<${$self?.name ?? 'You'}> ${m.text}`),
+      ),
     ];
     return () => offs.forEach((off) => off());
   });

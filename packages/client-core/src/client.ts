@@ -192,10 +192,13 @@ export class MaraClient {
   /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
   sendPrivateMessage(toUserToken: Token, text: string): void {
     this.send({ type: 'privateMessage', to: toUserToken, text });
-    // The server only echoes PMs to the recipient, so record our own outgoing line.
+    // The server only echoes PMs to the recipient, so record our own outgoing line, and
+    // emit it (channel chat comes back via the server echo, but a sent PM never does — this
+    // is the only hook a logger has for our own PMs).
     const me = get(this._self);
     if (me)
       this.pushLine(this._privateMessages, toUserToken, { kind: 'chat', from: me.token, text });
+    this.events.emit('privateMessageSent', { to: toUserToken, text });
   }
 
   /** Sends a heartbeat ping; the matching pong (by id) yields RTT. */
