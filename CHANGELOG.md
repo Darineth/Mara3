@@ -2,9 +2,16 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.6] - unreleased
+## [3.0.6] - 2026-07-02
 
-_In development._
+### Added
+
+- **Custom (server) emoji** — the operator drops image files into an emoji folder
+  (`MARA_EMOJI_DIR`; `blobwave.png` → `:blobwave:`) and they become inline image emoji.
+  Type `:name:` (with autocomplete that filters as you type, including a second emoji typed
+  flush against the first), pick from the composer's emoji button, or click an emoji in chat
+  to zoom it full-size. Animated GIFs work too, and new files are picked up within seconds
+  without a restart. These are custom image emoji (Discord-style), not Unicode.
 
 ## [3.0.5] - 2026-07-02
 

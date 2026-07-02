@@ -62,6 +62,7 @@
     privateMessages,
     serverInfo,
     motd,
+    emoji,
   } = client;
 
   // The page is stale when the server reports serving a different web build than
@@ -730,6 +731,7 @@
           users={$directory}
           {sessionStart}
           conversationKey={activeKey}
+          emoji={$emoji}
           hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
           onLoadOlder={() => {
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);
@@ -751,6 +753,7 @@
         upload={(file) => uploadImage(file, client.sessionToken)}
         focusKey={activeKey}
         color={settings.color}
+        emoji={$emoji}
       />
     {/if}
   </main>

@@ -35,13 +35,14 @@ export default defineConfig({
     host: host || false,
     // In dev (HMR), forward the server-owned routes to the Mara server so the
     // client can use same-origin URLs in every environment: the WebSocket, the
-    // image upload endpoint, and the served upload files. (`/upload` also covers
-    // `/uploads/...` by prefix, but both are listed for clarity.)
+    // image upload endpoint, the served upload files, and the custom-emoji images.
+    // (`/upload` also covers `/uploads/...` by prefix, but both are listed for clarity.)
     proxy: {
       '/ws': { target: `ws://localhost:${serverPort}`, ws: true },
       '/info': `http://localhost:${serverPort}`,
       '/upload': `http://localhost:${serverPort}`,
       '/uploads': `http://localhost:${serverPort}`,
+      '/emoji': `http://localhost:${serverPort}`,
     },
   },
   // Produce a relative-path build so it works both as a hosted SPA and inside Tauri.

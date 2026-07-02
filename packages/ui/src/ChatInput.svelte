@@ -4,6 +4,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { openLightbox, closeLightboxFor } from './lightbox.js';
+  import { matchEmojiShortcode } from './emojiComplete.js';
 
   let {
     onsend,
@@ -14,6 +15,7 @@
     upload,
     focusKey = null,
     color = null,
+    emoji = {},
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -23,6 +25,9 @@
     macros?: string[];
     /** Upload an image and resolve its hosted URL; enables drag-drop & paste. */
     upload?: (file: File) => Promise<string>;
+    /** The server's custom emoji (shortcode → image URL); drives the picker. Empty = no
+     *  picker button. Clicking one inserts its `:name:` shortcode at the cursor. */
+    emoji?: Record<string, string>;
     /** An opaque identity for the active conversation. Whenever it changes (and on first
      *  mount), the textarea grabs focus — so joining or switching a channel/PM lands the
      *  cursor in the field, ready to type. `null` (no conversation) doesn't focus. */
@@ -35,6 +40,45 @@
   // Validate before it's interpolated into an inline style (as renderLine does for the
   // author colour); an invalid value falls through to the textarea's `color: inherit`.
   const inputColor = $derived(/^#[0-9a-fA-F]{6}$/.test(color ?? '') ? color : null);
+
+  // Emoji picker: opens a popover of the server's custom emoji; picking one inserts its
+  // `:name:` at the cursor. Only shown when the server actually has emoji.
+  let pickerOpen = $state(false);
+  let pickerWrap = $state<HTMLElement | null>(null);
+  const emojiList = $derived(Object.entries(emoji));
+
+  // Inline `:shortcode` autocomplete: as you type `:que`, matching emoji are offered in a
+  // menu above the field; Up/Down move the selection, Enter/Tab accept, Esc dismisses.
+  interface EmojiMenu {
+    items: [string, string][];
+    active: number;
+    /** Index in `text` of the triggering `:`, so accepting replaces from there. */
+    start: number;
+  }
+  let emojiMenu = $state<EmojiMenu | null>(null);
+  let acList = $state<HTMLElement | null>(null);
+
+  function chooseEmoji(name: string) {
+    void insertAtCursor(`:${name}:`);
+    pickerOpen = false;
+  }
+
+  // Dismiss the picker on an outside click or Escape (only wired while it's open).
+  $effect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (pickerWrap && !pickerWrap.contains(e.target as Node)) pickerOpen = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') pickerOpen = false;
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
   /** A pending image attachment shown as a tile above the input. */
   interface Attachment {
@@ -177,6 +221,53 @@
     autosize();
   }
 
+  // Recompute the `:shortcode` autocomplete from the text just before a collapsed caret.
+  // Triggers on a `:` at the start of a token (line start or after whitespace) followed by
+  // the shortcode charset — so a clock (`12:30`) or a completed `:smile:` doesn't open it.
+  function updateEmojiMenu() {
+    const ta = textarea;
+    if (!ta || emojiList.length === 0) {
+      emojiMenu = null;
+      return;
+    }
+    const caret = ta.selectionStart ?? text.length;
+    if (caret !== (ta.selectionEnd ?? caret)) {
+      emojiMenu = null; // a non-empty selection: not typing a shortcode
+      return;
+    }
+    const match = matchEmojiShortcode(text.slice(0, caret), emojiList);
+    emojiMenu = match ? { items: match.items, active: 0, start: match.start } : null;
+  }
+
+  // Accept the autocomplete entry at `index`: replace the typed `:query` with `:name: `.
+  async function acceptEmoji(index: number) {
+    const menu = emojiMenu;
+    const ta = textarea;
+    if (!menu || !ta) return;
+    const item = menu.items[index];
+    if (!item) return;
+    const caret = ta.selectionStart ?? text.length;
+    const insert = `:${item[0]}: `;
+    text = text.slice(0, menu.start) + insert + text.slice(caret);
+    emojiMenu = null;
+    await tick();
+    const pos = menu.start + insert.length;
+    ta.setSelectionRange(pos, pos);
+    ta.focus();
+    autosize();
+  }
+
+  // Only caret-moving keys need a recompute on keyup; typing already recomputes via oninput.
+  function onKeyup(event: KeyboardEvent) {
+    if (/^(ArrowLeft|ArrowRight|Home|End)$/.test(event.key)) updateEmojiMenu();
+  }
+
+  // Keep the highlighted suggestion scrolled into view as Up/Down move it.
+  $effect(() => {
+    void emojiMenu?.active;
+    acList?.querySelector('.emoji-ac-item.active')?.scrollIntoView({ block: 'nearest' });
+  });
+
   // Grow the textarea to fit its content, capped at 160px (matches the CSS
   // max-height, beyond which it scrolls). Reset to 'auto' first so it can shrink.
   function autosize() {
@@ -259,6 +350,31 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
+    // While the emoji autocomplete is open it owns the navigation/commit keys, so they
+    // move/accept a suggestion instead of submitting or recalling history.
+    if (emojiMenu) {
+      const len = emojiMenu.items.length;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        emojiMenu = { ...emojiMenu, active: (emojiMenu.active + 1) % len };
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        emojiMenu = { ...emojiMenu, active: (emojiMenu.active - 1 + len) % len };
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        void acceptEmoji(emojiMenu.active);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        emojiMenu = null;
+        return;
+      }
+    }
     // F1–F12 insert the matching macro (only when one is set, so e.g. F5 still
     // refreshes the page when its slot is empty).
     const fkey = /^F([1-9]|1[0-2])$/.exec(event.key);
@@ -333,9 +449,82 @@
       maxlength={maxLength}
       rows="1"
       onkeydown={onKeydown}
-      oninput={autosize}
+      oninput={() => {
+        autosize();
+        updateEmojiMenu();
+      }}
+      onkeyup={onKeyup}
+      onclick={updateEmojiMenu}
+      onblur={() => (emojiMenu = null)}
       onpaste={onPaste}
     ></textarea>
+    {#if emojiMenu}
+      <ul class="emoji-ac" role="listbox" aria-label="Emoji suggestions" bind:this={acList}>
+        {#each emojiMenu.items as [name, url], i (name)}
+          <li>
+            <button
+              type="button"
+              class="emoji-ac-item"
+              class:active={i === emojiMenu.active}
+              role="option"
+              aria-selected={i === emojiMenu.active}
+              onmousedown={(e) => {
+                e.preventDefault(); // keep focus in the field so accepting doesn't blur it
+                void acceptEmoji(i);
+              }}
+              onmouseenter={() => {
+                if (emojiMenu) emojiMenu = { ...emojiMenu, active: i };
+              }}
+            >
+              <img src={url} alt="" loading="lazy" />
+              <span class="emoji-ac-name">:{name}:</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if emojiList.length > 0}
+      <div class="emoji-picker-wrap" bind:this={pickerWrap}>
+        <button
+          type="button"
+          class="emoji-btn"
+          onclick={() => (pickerOpen = !pickerOpen)}
+          aria-label="Insert emoji"
+          aria-expanded={pickerOpen}
+          title="Emoji"
+          {disabled}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+            <line x1="9" y1="9" x2="9.01" y2="9" />
+            <line x1="15" y1="9" x2="15.01" y2="9" />
+          </svg>
+        </button>
+        {#if pickerOpen}
+          <div class="emoji-popover" role="listbox" aria-label="Emoji">
+            {#each emojiList as [name, url] (name)}
+              <button
+                type="button"
+                class="emoji-choice"
+                title=":{name}:"
+                onclick={() => chooseEmoji(name)}
+              >
+                <img src={url} alt=":{name}:" loading="lazy" />
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
     <button
       type="button"
       class="send"
@@ -445,6 +634,134 @@
       transform: rotate(360deg);
     }
   }
+  /* Pinned inside the field just left of the send icon (which sits at right 0.3rem and is
+     ~1.85rem wide), so both icons share the bottom-right corner as the field grows. */
+  .emoji-picker-wrap {
+    position: absolute;
+    right: 2.15rem;
+    bottom: 0.3rem;
+  }
+  .emoji-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--mara-fg, #ddd);
+    cursor: pointer;
+    opacity: 0.6;
+    transition:
+      background-color 0.15s ease,
+      opacity 0.15s ease;
+  }
+  .emoji-btn:hover:not(:disabled) {
+    opacity: 1;
+    background: rgba(127, 127, 127, 0.16);
+  }
+  .emoji-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .emoji-btn svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    display: block;
+  }
+  .emoji-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    /* Anchored to the button's right edge so it opens leftward into the field, not off the
+       right edge of the window. */
+    right: 0;
+    z-index: 50;
+    width: min(280px, 78vw);
+    max-height: 220px;
+    overflow-y: auto;
+    display: grid;
+    /* Stretch columns to fill the row (min 2rem each) so there's no ragged empty
+       space on the right — fixed-width tracks would leave the leftover width there. */
+    grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+    gap: 0.2rem;
+    padding: 0.4rem;
+    background: var(--mara-bg-alt, #252526);
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  .emoji-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Fill the (stretched) grid cell so the hover target has no gaps between cells. */
+    width: 100%;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+  }
+  .emoji-choice:hover {
+    background: rgba(127, 127, 127, 0.18);
+  }
+  .emoji-choice img {
+    max-width: 1.5rem;
+    max-height: 1.5rem;
+    object-fit: contain;
+  }
+  /* `:shortcode` autocomplete menu, floating above the field. */
+  .emoji-ac {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    z-index: 60;
+    width: min(300px, 100%);
+    max-height: 220px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0.25rem;
+    list-style: none;
+    background: var(--mara-bg-alt, #252526);
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  .emoji-ac li {
+    margin: 0;
+  }
+  .emoji-ac-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .emoji-ac-item.active {
+    background: rgba(127, 127, 127, 0.22);
+  }
+  .emoji-ac-item img {
+    width: 1.4rem;
+    height: 1.4rem;
+    object-fit: contain;
+    flex: none;
+  }
+  .emoji-ac-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.9;
+  }
   .mara-field {
     position: relative;
     flex: 1;
@@ -454,8 +771,8 @@
     flex: 1;
     resize: none;
     font: inherit;
-    /* Extra right padding leaves room for the send icon that sits inside the field. */
-    padding: 0.45rem 2.5rem 0.45rem 0.6rem;
+    /* Extra right padding leaves room for the emoji + send icons that sit inside the field. */
+    padding: 0.45rem 4.3rem 0.45rem 0.6rem;
     border-radius: 6px;
     border: 1px solid var(--mara-border, #333);
     background: var(--mara-input-bg, #2a2a2a);

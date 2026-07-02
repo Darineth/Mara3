@@ -60,6 +60,9 @@ export class MaraClient {
   readonly serverInfo: Readable<ServerInfo | null>;
   /** The server's message of the day from `welcome` ('' when none is set). */
   readonly motd: Readable<string>;
+  /** The server's custom emoji set (shortcode → image URL) from `welcome`; empty until
+   *  login, or when the server has none configured. Drives `:name:` rendering + the picker. */
+  readonly emoji: Readable<Record<string, string>>;
 
   private readonly _connection = writable<ConnectionState>('idle');
   private readonly _self = writable<SelfState | null>(null);
@@ -71,6 +74,7 @@ export class MaraClient {
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _serverInfo = writable<ServerInfo | null>(null);
   private readonly _motd = writable('');
+  private readonly _emoji = writable<Record<string, string>>({});
 
   private socket: WebSocketLike | null = null;
   /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
@@ -114,6 +118,7 @@ export class MaraClient {
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
     this.serverInfo = { subscribe: this._serverInfo.subscribe };
     this.motd = { subscribe: this._motd.subscribe };
+    this.emoji = { subscribe: this._emoji.subscribe };
 
     this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
@@ -330,6 +335,7 @@ export class MaraClient {
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
         this._motd.set(msg.motd ?? '');
+        this._emoji.set(Object.fromEntries((msg.emoji ?? []).map((e) => [e.name, e.url])));
         // Anchor the server-clock estimate to login time (0 = older server with no `at`,
         // so serverNow() == now()), keeping client-stamped notices on the server's clock.
         this.serverClockOffset = typeof msg.at === 'number' ? msg.at - this.now() : 0;

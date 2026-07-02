@@ -11,6 +11,7 @@ import {
 } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
+import { EmojiStore } from './emoji.js';
 import { HistoryStore } from './history.js';
 import { IdentityStore, type IdentityProfile } from './identity.js';
 import type { Logger } from './logger.js';
@@ -27,6 +28,8 @@ export class Hub {
   readonly state: ServerState;
   private readonly history: HistoryStore;
   private readonly identity: IdentityStore;
+  /** The operator's custom emoji set, sent to each client in `welcome`. */
+  private readonly emoji: EmojiStore;
   /** Monotonic message-id counter; seeded from persisted history so ids keep increasing
    *  across restarts. Each chat/emote gets `++this.nextMessageId`. */
   private nextMessageId: number;
@@ -54,6 +57,7 @@ export class Hub {
     this.history = new HistoryStore(cfg.historyFile, log);
     this.nextMessageId = this.history.maxId();
     this.identity = new IdentityStore(cfg.identityFile, log);
+    this.emoji = new EmojiStore(cfg.emojiDir, log);
     this.state = new ServerState(this.identity);
     this.serverInfo = getServerInfo(cfg.webRoot, cfg.serverName);
   }
@@ -286,6 +290,7 @@ export class Hub {
         sessionToken,
         motd: this.currentMotd(),
         server: this.serverInfo,
+        emoji: this.emoji.manifest(),
         at: this.now(),
       });
       for (const channelToken of live.channels) {
@@ -315,6 +320,7 @@ export class Hub {
       sessionToken,
       motd: this.currentMotd(),
       server: this.serverInfo,
+      emoji: this.emoji.manifest(),
       at: this.now(),
     });
     this.broadcastAll({ type: 'userConnect', user: info }, token);

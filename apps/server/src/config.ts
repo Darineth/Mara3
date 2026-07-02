@@ -22,6 +22,9 @@ export interface ServerConfig {
   defaultChannel: string;
   /** Directory where uploaded images are cached and served from. */
   uploadDir: string;
+  /** Directory of custom emoji images the operator provides; each file's name (sans
+   *  extension) is its `:shortcode:`. Scanned on demand and served at `/emoji/`. */
+  emojiDir: string;
   /** Maximum size of a single uploaded file, in bytes. */
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
@@ -219,6 +222,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,
     defaultChannel: (env.MARA_DEFAULT_CHANNEL ?? DEFAULTS.defaultChannel).trim(),
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
+    emojiDir: env.MARA_EMOJI_DIR?.trim() || join(base, 'emoji'),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),

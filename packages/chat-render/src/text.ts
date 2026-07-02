@@ -81,6 +81,13 @@ const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
 // is validated against IMG_URL_RE before it's honored.
 const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 
+// Custom emoji shortcode `:name:` (shortcode charset only, so `12:30:45` and `:)` never
+// match). Only substituted when `name` is in the supplied emoji map — an unknown name is
+// left as literal text. The manifest URL is re-validated against this allowlist (the
+// server's own `/emoji/` route, or an absolute http(s) URL) before it's trusted.
+const EMOJI_RE = /:([a-zA-Z0-9_+-]+):/g;
+const EMOJI_URL_RE = /^(?:https?:\/\/|\/emoji\/)[^\s<]+$/i;
+
 // Links carry NO target="_blank". The app intercepts a plain click and opens the URL
 // itself — via the native opener in the desktop shells, or window.open in a browser — so
 // a bare anchor suffices. _blank actively hurts the desktop clients: the Tauri 2 shell
@@ -96,7 +103,14 @@ function anchor(url: string): string {
 // Detection elsewhere still keys on the leading-slash form; this only adjusts the
 // rendered href/src (a subpath deployment must be served with a trailing slash).
 function toRenderUrl(url: string): string {
-  return url.startsWith('/uploads/') ? url.slice(1) : url;
+  return url.startsWith('/uploads/') || url.startsWith('/emoji/') ? url.slice(1) : url;
+}
+// Inline custom-emoji image. `name` is the shortcode (charset-limited by EMOJI_RE) and
+// `safeUrl` is already validated + escaped. Sized to the line via `.mara-emoji`; the
+// `:name:` alt keeps it copy/paste- and screen-reader-friendly and is the fallback text.
+function emojiTag(name: string, safeUrl: string): string {
+  const code = escapeHtml(`:${name}:`);
+  return `<img class="mara-emoji" src="${safeUrl}" alt="${code}" title="${code}" loading="lazy" />`;
 }
 function imageTag(url: string, alt = ''): string {
   // Wrapped in a box with hide/show controls the client wires up; the image can
@@ -305,6 +319,9 @@ export function applyBlocks(input: string): string {
 export interface RenderTextOptions {
   /** Provide an emoticon map to enable emoticon substitution (default: off). */
   emoticons?: Record<string, string>;
+  /** Custom emoji map (shortcode `name` → image URL). Enables `:name:` → inline `<img>`
+   *  for known names (default: off). */
+  emoji?: Record<string, string>;
   /** Set false to skip URL linkification. */
   links?: boolean;
   /** Set false to render image URLs as plain links instead of inline images. */
@@ -355,6 +372,19 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   // code) and before markdown / image detection, stashing the escaped char so nothing
   // downstream can re-interpret it.
   s = s.replace(/\\([\\*_~|#>![\]-])/g, (_m, ch: string) => stash(escapeHtml(ch)));
+
+  // Custom emoji `:name:` → inline image, for names in the supplied manifest only.
+  // Runs after code spans are stashed (so `:x:` inside `code` is left alone) and before
+  // markdown/image detection. The manifest URL is re-validated against the emoji/​http(s)
+  // allowlist and escaped, then stashed as trusted HTML like the image tags above.
+  if (options.emoji) {
+    const emoji = options.emoji;
+    s = s.replace(EMOJI_RE, (literal, name: string) => {
+      const url = emoji[name];
+      if (url === undefined || !EMOJI_URL_RE.test(url)) return literal;
+      return stash(emojiTag(name, escapeHtml(toRenderUrl(url))));
+    });
+  }
 
   // Legacy [img]URL[/img] (Mara 2 compat): force the wrapped URL inline as an
   // image regardless of its extension/format — composes with the `!` marker and

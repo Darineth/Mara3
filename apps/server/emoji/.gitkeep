@@ -1,0 +1,5 @@
+# Custom emoji live here. Drop image files (png/jpg/gif/webp/avif/bmp) into this
+# folder — each file's name becomes its :shortcode: (blobwave.png -> :blobwave:).
+# They're served at /emoji/ and offered in the composer's emoji picker. New files
+# are picked up within a few seconds (no restart). Override the location with
+# MARA_EMOJI_DIR. This .gitkeep just keeps the (otherwise-ignored) folder present.

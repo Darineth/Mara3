@@ -54,6 +54,10 @@ Thumbs.db
 
 # Runtime data
 apps/server/data/
+# Keep the custom-emoji folder in the repo (so it's there to drop files into), but
+# ignore whatever the operator puts in it.
+apps/server/emoji/*
+!apps/server/emoji/.gitkeep
 
 # Claude
 .claude

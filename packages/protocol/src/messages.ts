@@ -129,6 +129,18 @@ export type ServerInfo = z.infer<typeof serverInfoSchema>;
  *  markdown message; `welcome` is infrequent, so the extra payload is negligible. */
 export const MOTD_MAX_LEN = 65536;
 
+/** A custom (server-hosted) emoji: a shortcode `name` and the URL of its image.
+ *  Typing `:name:` renders the image inline. `name` is the shortcode charset only. */
+export const emojiEntrySchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9_+-]+$/),
+  url: z.string().max(512),
+});
+export type EmojiEntry = z.infer<typeof emojiEntrySchema>;
+
 const welcome = z.object({
   type: z.literal('welcome'),
   /** The logged-in user's own info (token, the possibly-deduped name, colour). */
@@ -138,6 +150,9 @@ const welcome = z.object({
   motd: z.string().max(MOTD_MAX_LEN).default(''),
   /** Server + build identity. Optional so a newer client tolerates an older server. */
   server: serverInfoSchema.optional(),
+  /** The server's custom emoji set (shortcode → image URL). Absent on servers with none
+   *  configured, or older servers; a newer client just renders no custom emoji then. */
+  emoji: z.array(emojiEntrySchema).max(2000).optional(),
   /** Server clock at login (epoch ms). The client anchors a server-time estimate to it
    *  so session/connect notices order consistently with chat. Optional (older servers). */
   at: z.number().int().nonnegative().optional(),

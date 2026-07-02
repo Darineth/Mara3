@@ -5,6 +5,7 @@ import { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
 import { Hub } from './hub.js';
 import type { Logger } from './logger.js';
+import { EMOJI_ROUTE, serveEmoji } from './emoji.js';
 import { handleUpload, serveUpload, UPLOAD_ENDPOINT, UPLOAD_ROUTE } from './uploads.js';
 
 /**
@@ -121,6 +122,10 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       }
       if (req.url?.startsWith(UPLOAD_ROUTE)) {
         void serveUpload(req, res, cfg);
+        return;
+      }
+      if (req.url?.startsWith(EMOJI_ROUTE)) {
+        void serveEmoji(req, res, cfg);
         return;
       }
       if (serveStatic) {

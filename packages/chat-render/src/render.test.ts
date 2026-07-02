@@ -37,6 +37,54 @@ describe('linkify', () => {
   });
 });
 
+describe('renderText — custom emoji', () => {
+  const emoji = {
+    blob: '/emoji/blob.png',
+    wave: 'https://cdn.example.com/wave.gif',
+  };
+
+  it('renders a known :shortcode: as an inline emoji image (upload-style relative src)', () => {
+    const html = renderText('hi :blob: there', { emoji });
+    // Server-relative /emoji/ path loses its leading slash so it resolves against the base.
+    expect(html).toContain('<img class="mara-emoji" src="emoji/blob.png"');
+    expect(html).toContain('alt=":blob:"');
+    expect(html).toContain('hi ');
+    expect(html).toContain(' there');
+  });
+
+  it('accepts an absolute http(s) emoji URL unchanged', () => {
+    const html = renderText(':wave:', { emoji });
+    expect(html).toContain('src="https://cdn.example.com/wave.gif"');
+    expect(html).toContain('class="mara-emoji"');
+  });
+
+  it('leaves an unknown shortcode as literal text', () => {
+    expect(renderText('say :nope: please', { emoji })).toBe('say :nope: please');
+  });
+
+  it('does not convert shortcodes inside a code span', () => {
+    const html = renderText('`:blob:`', { emoji });
+    expect(html).not.toContain('mara-emoji');
+    expect(html).toContain('<code');
+    expect(html).toContain(':blob:');
+  });
+
+  it('does not touch colon runs that are not shortcodes', () => {
+    // Nothing named "30"/"45" in the map, so a clock time is untouched.
+    expect(renderText('at 12:30:45 sharp', { emoji })).toBe('at 12:30:45 sharp');
+  });
+
+  it('ignores a manifest URL with a disallowed scheme (defense-in-depth)', () => {
+    const html = renderText(':x:', { emoji: { x: 'javascript:alert(1)' } });
+    expect(html).not.toContain('<img');
+    expect(html).toBe(':x:');
+  });
+
+  it('renders no emoji when no map is supplied', () => {
+    expect(renderText('plain :blob: text')).toBe('plain :blob: text');
+  });
+});
+
 describe('renderText — safety + links', () => {
   it('escapes before linkifying and never emits user markup', () => {
     const html = renderText('<b>hi</b> http://example.com');

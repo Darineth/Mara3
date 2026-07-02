@@ -113,6 +113,13 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_MAX_UPLOAD_MB=10       # per-file cap
 #MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)
 
+# --- Custom emoji ---
+# Drop image files (png/jpg/gif/webp/avif/bmp) into this folder; each file's name
+# becomes its :shortcode: (e.g. blobwave.png -> :blobwave:). Served at /emoji/ and
+# offered in the composer's emoji picker. Defaults to an "emoji" folder next to
+# Mara3-Server.bat; new files are picked up within seconds (no restart needed).
+#MARA_EMOJI_DIR=D:\\Mara3-Data\\emoji
+
 # --- History ---
 #MARA_HISTORY_LIMIT=1000     # messages retained per channel (persisted; deepest scroll-back)
 #MARA_HISTORY_CHUNK=50       # messages sent on join, and per "load older" page on scroll-up

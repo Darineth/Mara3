@@ -7,6 +7,7 @@ import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { PROTOCOL_VERSION } from '@mara/protocol';
 import { startServer, type MaraServer } from './server.js';
+import { EmojiStore } from './emoji.js';
 import { login, TestClient } from './harness.js';
 
 let server: MaraServer;
@@ -471,6 +472,76 @@ describe('private messages, presence, ping', () => {
     const gone = await b.waitFor('userDisconnect');
     expect(gone.token).toBe(alice.token);
     b.close();
+  });
+});
+
+describe('custom emoji', () => {
+  function makeEmojiDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-emoji-'));
+    writeFileSync(join(dir, 'blob.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(join(dir, 'wave.gif'), Buffer.from('GIF8'));
+    writeFileSync(join(dir, 'Bad Name.png'), Buffer.from([0x89])); // invalid shortcode → skipped
+    writeFileSync(join(dir, 'notes.txt'), 'x'); // not an image → skipped
+    return dir;
+  }
+
+  it('scans a directory into a shortcode→url manifest, skipping invalid names/types', () => {
+    const dir = makeEmojiDir();
+    try {
+      const store = new EmojiStore(dir, createLogger('silent'), 0);
+      expect(store.manifest()).toEqual([
+        { name: 'blob', url: '/emoji/blob.png' },
+        { name: 'wave', url: '/emoji/wave.gif' },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns an empty manifest for a missing directory', () => {
+    const store = new EmojiStore(
+      join(tmpdir(), 'mara-emoji-nope-does-not-exist'),
+      createLogger('silent'),
+      0,
+    );
+    expect(store.manifest()).toEqual([]);
+  });
+
+  it('includes the emoji manifest in welcome and serves the files (allowlisted)', async () => {
+    const dir = makeEmojiDir();
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        emojiDir: dir,
+      },
+      createLogger('silent'),
+    );
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s.port}/ws`);
+      c.send({ type: 'login', protocol: PROTOCOL_VERSION, name: 'alice', color: '#ffffff' });
+      const welcome = await c.waitFor('welcome');
+      expect(welcome.emoji).toEqual([
+        { name: 'blob', url: '/emoji/blob.png' },
+        { name: 'wave', url: '/emoji/wave.gif' },
+      ]);
+      c.close();
+
+      // The referenced file is served with its image type…
+      const ok = await fetch(`http://127.0.0.1:${s.port}/emoji/blob.png`);
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get('content-type')).toBe('image/png');
+      // …an unknown name 404s, and a disallowed extension (SVG) is refused.
+      expect((await fetch(`http://127.0.0.1:${s.port}/emoji/nope.png`)).status).toBe(404);
+      expect((await fetch(`http://127.0.0.1:${s.port}/emoji/blob.svg`)).status).toBe(404);
+    } finally {
+      await s.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

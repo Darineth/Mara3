@@ -13,6 +13,7 @@
     hasMore = false,
     onLoadOlder,
     conversationKey = null,
+    emoji = {},
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
@@ -26,6 +27,8 @@
     /** Identifies the conversation on show (e.g. `ch:1`/`pm:2`). When it changes, the view
      *  lands on the new conversation's latest instead of inheriting the old scroll/pin. */
     conversationKey?: string | null;
+    /** Custom emoji map (shortcode → image URL); `:name:` in a message renders inline. */
+    emoji?: Record<string, string>;
   } = $props();
 
   let viewport = $state<HTMLDivElement | null>(null);
@@ -175,6 +178,12 @@
       if (img && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
         event.preventDefault(); // don't navigate the wrapping anchor
         openLightbox(img.currentSrc || img.src, img.alt);
+        return;
+      }
+      // Custom emoji zoom to full resolution in the lightbox on a plain left-click.
+      const emojiImg = target?.closest('img.mara-emoji') as HTMLImageElement | null;
+      if (emojiImg && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        openLightbox(emojiImg.currentSrc || emojiImg.src, emojiImg.alt);
       }
     };
     el.addEventListener('click', onClick);
@@ -202,7 +211,7 @@
         <hr class="mara-sep" />
       {/if}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-      {@html renderLine(toModel(line))}
+      {@html renderLine(toModel(line), { emoji })}
     {/each}
     {#if lines.length === 0}
       <div class="mara-empty">No messages yet.</div>
@@ -266,6 +275,18 @@
   }
   .mara-chatview :global(a) {
     color: var(--mara-link, #5aa9ff);
+  }
+  /* Custom emoji: inline, sized to the text line (not a media block like .mara-img). */
+  .mara-chatview :global(.mara-emoji) {
+    display: inline-block;
+    height: 1.4em;
+    width: auto;
+    max-width: 100%;
+    vertical-align: -0.3em;
+    margin: 0 0.02em;
+    object-fit: contain;
+    /* Click to zoom to full resolution in the lightbox (see ChatView's click handler). */
+    cursor: zoom-in;
   }
   .mara-chatview :global(.mara-img) {
     display: block;

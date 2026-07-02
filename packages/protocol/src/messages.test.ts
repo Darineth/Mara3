@@ -31,7 +31,13 @@ const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
 };
 
 const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
-  welcome: { type: 'welcome', self: user, sessionToken: 'xyz', motd: 'Welcome' },
+  welcome: {
+    type: 'welcome',
+    self: user,
+    sessionToken: 'xyz',
+    motd: 'Welcome',
+    emoji: [{ name: 'blob', url: '/emoji/blob.png' }],
+  },
   loginDenied: { type: 'loginDenied', reason: 'name taken' },
   userConnect: { type: 'userConnect', user },
   userDisconnect: { type: 'userDisconnect', token: 678 },
@@ -155,6 +161,30 @@ describe('schema defaults', () => {
     );
     if (welcome.type !== 'welcome') throw new Error('unexpected');
     expect(welcome.motd).toBe('');
+    // emoji is optional (omitted here → undefined).
+    expect(welcome.emoji).toBeUndefined();
+
+    // A custom-emoji entry only accepts the shortcode charset in `name`.
+    const withEmoji = parseServerMessage(
+      JSON.stringify({
+        type: 'welcome',
+        self: { token: 1, name: 'a', color: '#ffffff' },
+        sessionToken: 's',
+        emoji: [{ name: 'blob_wave-2', url: '/emoji/blob.png' }],
+      }),
+    );
+    if (withEmoji.type !== 'welcome') throw new Error('unexpected');
+    expect(withEmoji.emoji?.[0]?.name).toBe('blob_wave-2');
+    expect(() =>
+      parseServerMessage(
+        JSON.stringify({
+          type: 'welcome',
+          self: { token: 1, name: 'a', color: '#ffffff' },
+          sessionToken: 's',
+          emoji: [{ name: 'bad name!', url: '/emoji/x.png' }],
+        }),
+      ),
+    ).toThrow();
 
     // channelJoined.history defaults to [] when omitted.
     const joined = parseServerMessage(
