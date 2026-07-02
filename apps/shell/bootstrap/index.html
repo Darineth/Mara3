@@ -429,8 +429,12 @@
           opt.value = u;
           recentEl.appendChild(opt);
         }
+        // Windows relaunched us after an OS-update reboot (RegisterApplicationRestart):
+        // reconnect to the last server even if auto-connect is off, restoring the session
+        // the reboot interrupted. Never overrides an explicit "Switch server".
+        const resume = window.__MARA_RESUME__ === true;
         const url = normalize(settings.serverUrl);
-        if (url && settings.autoConnect !== false && !forceSwitch) {
+        if (url && (settings.autoConnect !== false || resume) && !forceSwitch) {
           autoConnect(url);
         } else {
           status('Choose a server, then Connect.');

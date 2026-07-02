@@ -457,6 +457,45 @@ fn switch_server(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// True when Windows relaunched us after a Restart Manager reboot — i.e. we were running
+/// when an OS update rebooted the machine, and Windows started us again with the
+/// `--resumed` argument we registered (see `register_for_restart`). The picker reads this
+/// (via `window.__MARA_RESUME__`) to auto-connect to the last server even when
+/// auto-connect is off, restoring the session the reboot interrupted. Harmless on other
+/// platforms and in normal launches: the flag is simply absent.
+fn resumed_after_restart() -> bool {
+    std::env::args().any(|a| a == "--resumed")
+}
+
+/// Windows only: ask the OS to relaunch this client after a Restart Manager reboot (the
+/// mechanism Windows Update uses). Windows records the current exe path plus the
+/// `--resumed` argument now, and if the machine is rebooted for an update while we're
+/// running, starts us again after the user logs back in. We deliberately exclude
+/// crash/hang restarts (`RESTART_NO_CRASH | RESTART_NO_HANG`) so this only ever fires for
+/// a reboot/patch — never to revive a client that crashed. Best-effort: a registration
+/// failure is swallowed (the client still runs normally, it just won't auto-resume).
+///
+/// Note: Windows only relaunches apps that were running for at least ~60 s and only for
+/// Restart-Manager-initiated reboots — not a hard power-off. The portable single-exe
+/// model fits well: the path is captured at call time and nothing persists in the
+/// registry.
+#[cfg(windows)]
+fn register_for_restart() {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Recovery::{
+        RegisterApplicationRestart, RESTART_NO_CRASH, RESTART_NO_HANG,
+    };
+    // Null-terminated UTF-16 argument string. Do NOT include the exe name — Windows
+    // prepends it automatically from the running process's image path.
+    let args: Vec<u16> = "--resumed\0".encode_utf16().collect();
+    // SAFETY: `args` outlives this synchronous call and is a valid, NUL-terminated UTF-16
+    // buffer for its whole duration.
+    unsafe {
+        let _ =
+            RegisterApplicationRestart(PCWSTR(args.as_ptr()), RESTART_NO_CRASH | RESTART_NO_HANG);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -477,6 +516,12 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // Ask Windows to relaunch us after a Restart Manager reboot (Windows Update),
+            // so a client that was open when the machine rebooted comes back and, via the
+            // `--resumed` flag, reconnects to the last server. No-op on other platforms.
+            #[cfg(windows)]
+            register_for_restart();
+
             // Load the local bootstrap page first; it shows the server picker, polls
             // the chosen server, and asks us to navigate to the live UI once it is
             // reachable. Seed the picker with the saved settings.
@@ -499,11 +544,13 @@ pub fn run() {
                    if (l.protocol !== 'tauri:' && l.hostname !== 'tauri.localhost') return; \
                    window.__MARA_SETTINGS__ = {settings}; \
                    window.__MARA_LOG__ = {log}; \
+                   window.__MARA_RESUME__ = {resume}; \
                  }})();",
                 settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
                 log = log_location_json(),
+                resume = resumed_after_restart(),
             );
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
