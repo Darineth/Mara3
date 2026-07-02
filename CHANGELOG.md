@@ -10,6 +10,8 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-07-01
+
 ## [3.0.3] - 2026-06-30
 
 ### Fixed
@@ -113,7 +115,8 @@ JSON-over-WebSocket and is deliberately not compatible with the old Qt-era Mara 
 - Upload hardening: SVG rejected, strict filename handling, `nosniff` + sandbox CSP,
   and size caps; `/upload` requires a WS session token; WebSocket payloads are capped.
 
-[Unreleased]: https://github.com/Darineth/Mara3/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/Darineth/Mara3/compare/v3.0.4...HEAD
+[3.0.4]: https://github.com/Darineth/Mara3/compare/v3.0.3...v3.0.4
 [3.0.3]: https://github.com/Darineth/Mara3/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Darineth/Mara3/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Darineth/Mara3/compare/v3.0.0...v3.0.1
