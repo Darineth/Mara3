@@ -4,7 +4,12 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.9] - unreleased
 
-_In development._
+### Changed
+
+- The Windows 7 client download no longer bundles the WebView2 fixed runtime — it ships an
+  empty `webview2-runtime/` folder with a README on how to obtain and place it (Windows 7
+  needs Microsoft's Fixed Version runtime, which is provided separately). This keeps the
+  download small; build a self-contained bundle with `MARA_WEBVIEW2_BUNDLE=1`.
 
 ## [3.0.8] - 2026-07-02
 
