@@ -55,7 +55,7 @@ with direction-appropriate shapes.
 | `chat`              | `from, channelToken, text, at`          | A channel message (`at` = server send time).  |
 | `emote`             | `from, channelToken, text, at`          | A channel action.                             |
 | `away`              | `token, text`                           | A user's away status changed.                 |
-| `privateMessage`    | `from, text`                            | A direct message to you.                      |
+| `privateMessage`    | `from, to, text`                        | A direct message; `to` keys the sender's copy.|
 | `pong`              | `id`                                    | Reply to `ping`.                              |
 | `error`             | `message`                               | A request failed, or a frame was invalid.     |
 
@@ -94,8 +94,9 @@ multiplexes onto the live session (it receives a `welcome` and a `channelJoined`
 for each channel the user is already in, to bring it in sync). Channel and PM
 traffic fan out to every open window, and `userDisconnect` is broadcast only once
 the user's **last** window closes. Each window still gets its own `sessionToken`
-(upload bearer). One asymmetry: an _outgoing_ PM is recorded only in the window
-that sent it — a user's other windows see incoming PMs but not their own sent lines.
+(upload bearer). Outgoing PMs converge too: the server mirrors a sent PM to the
+sender's other windows (skipping the one that sent it, which shows the line
+locally), so every window/device sees both sides of a conversation.
 
 There are still no accounts — a chosen name is a display label, not proof of
 identity. Presence is per-channel: clients learn who is present from each

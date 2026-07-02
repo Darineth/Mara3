@@ -499,9 +499,19 @@ export class Hub {
       conn.send({ type: 'error', message: 'user is offline' });
       return;
     }
-    // Delivered to every window of the recipient; the sender records its own
-    // outgoing line locally (in the window that sent it).
-    this.sendToUser(target, { type: 'privateMessage', from: session.info.token, text: msg.text });
+    const pm: ServerMessage = {
+      type: 'privateMessage',
+      from: session.info.token,
+      to: msg.to,
+      text: msg.text,
+    };
+    // Delivered to every window of the recipient…
+    this.sendToUser(target, pm);
+    // …and mirrored to the sender's *other* windows so every window/device of the
+    // sender converges on the same thread. The originating window renders its own
+    // line optimistically, so we skip it here (and skip the whole mirror when a user
+    // PMs themselves — the recipient fan-out above already reached all their windows).
+    if (target !== session) this.sendToUserExcept(session, conn, pm);
   }
 
   // -- helpers --------------------------------------------------------------
@@ -545,6 +555,11 @@ export class Hub {
   /** Send to every window of one user. */
   private sendToUser(session: Session, message: ServerMessage): void {
     for (const conn of session.connections) conn.send(message);
+  }
+
+  /** Send to every window of one user except one connection (which handled it itself). */
+  private sendToUserExcept(session: Session, except: Connection, message: ServerMessage): void {
+    for (const conn of session.connections) if (conn !== except) conn.send(message);
   }
 
   // Fan out to every session; `exceptToken` omits the originator so a sender

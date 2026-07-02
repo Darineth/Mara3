@@ -254,6 +254,10 @@ const serverUserProfile = z.object({
 const serverPrivateMessage = z.object({
   type: z.literal('privateMessage'),
   from: tokenSchema,
+  // The other party of the conversation from the *recipient's* view this is the
+  // sender; on the copy mirrored to a sender's own other windows it is the target.
+  // Every window keys the PM thread by the partner token that isn't itself.
+  to: tokenSchema,
   text: chatTextSchema,
 });
 

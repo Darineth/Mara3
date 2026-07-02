@@ -60,7 +60,7 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
   emote: { type: 'emote', id: 3, from: 678, channelToken: 12345, text: 'waves', at: 1700000002 },
   away: { type: 'away', token: 678, text: 'brb' },
   userProfile: { type: 'userProfile', user },
-  privateMessage: { type: 'privateMessage', from: 678, text: 'psst' },
+  privateMessage: { type: 'privateMessage', from: 678, to: 999, text: 'psst' },
   historyChunk: {
     type: 'historyChunk',
     channelToken: 12345,

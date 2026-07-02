@@ -405,9 +405,44 @@ describe('private messages, presence, ping', () => {
     a.send({ type: 'privateMessage', to: bob.token, text: 'secret' });
     const received = await b.waitFor('privateMessage');
     expect(received.from).toBe(alice.token);
+    expect(received.to).toBe(bob.token);
     expect(received.text).toBe('secret');
 
     a.close();
+    b.close();
+  });
+
+  it("mirrors an outgoing PM to the sender's other windows (not the sending one)", async () => {
+    // Two windows of one user (same identityKey), plus a recipient.
+    const a1 = await TestClient.connect(url);
+    const alice = await login(a1, 'alice', '#cccccc', 'alice-key');
+    const a2 = await TestClient.connect(url);
+    await login(a2, 'alice', '#cccccc', 'alice-key'); // second window multiplexes onto alice
+    const b = await TestClient.connect(url);
+    const bob = await login(b, 'bob');
+
+    a1.send({ type: 'privateMessage', to: bob.token, text: 'hi bob' });
+
+    // The recipient gets it, and so does alice's *other* window — keyed by the
+    // recipient token so it threads under the same conversation.
+    const [atBob, atA2] = await Promise.all([
+      b.waitFor('privateMessage'),
+      a2.waitFor('privateMessage'),
+    ]);
+    expect(atBob.from).toBe(alice.token);
+    expect(atA2.from).toBe(alice.token);
+    expect(atA2.to).toBe(bob.token);
+    expect(atA2.text).toBe('hi bob');
+
+    // The sending window is skipped (it renders its own line locally): a follow-up
+    // PM the other way round is the next thing a1 should see, not an echo of its own.
+    b.send({ type: 'privateMessage', to: alice.token, text: 'hey alice' });
+    const back = await a1.waitFor('privateMessage');
+    expect(back.from).toBe(bob.token);
+    expect(back.text).toBe('hey alice');
+
+    a1.close();
+    a2.close();
     b.close();
   });
 

@@ -408,6 +408,32 @@ describe('private messages + ping', () => {
     b.disconnect();
   });
 
+  it("mirrors a sent PM into the sender's other window", async () => {
+    // Two windows of one user share an identityKey so the server multiplexes them.
+    const a1 = makeClient('alice', { identityKey: 'alice-key' });
+    const a2 = makeClient('alice', { identityKey: 'alice-key' });
+    const b = makeClient('bob');
+    const alice = await connected(a1);
+    await connected(a2);
+    const a1SawBob = waitEvent(a1, 'userConnect');
+    await connected(b);
+    const bob = await a1SawBob;
+
+    // a1 sends; a2 (the other window) should learn of the outgoing PM via the mirror,
+    // threaded under bob and surfaced as `privateMessageSent`.
+    const a2Sent = waitEvent(a2, 'privateMessageSent');
+    a1.sendPrivateMessage(bob.token, 'from window one');
+    expect(await a2Sent).toEqual({ to: bob.token, text: 'from window one' });
+
+    const a2Thread = get(a2.privateMessages).get(bob.token) ?? [];
+    expect(a2Thread.at(-1)?.text).toBe('from window one');
+    expect(a2Thread.at(-1)?.from).toBe(alice.token); // rendered as our own outgoing line
+
+    a1.disconnect();
+    a2.disconnect();
+    b.disconnect();
+  });
+
   it('notes in the PM thread when the other party disconnects', async () => {
     const a = makeClient('alice');
     await connected(a);

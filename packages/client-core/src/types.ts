@@ -100,8 +100,9 @@ export interface ClientEvents {
   emote: { from: Token; channelToken: Token; text: string };
   away: { token: Token; text: string };
   privateMessage: { from: Token; text: string };
-  /** Our own outgoing PM. The server delivers PMs only to the recipient (never echoes them
-   *  back), so this is the one signal listeners get for a sent PM — used to log it locally. */
+  /** Our own outgoing PM. Fires in the window that sent it, and in the user's other
+   *  windows/devices when the server mirrors the PM to them — so every window logs the
+   *  sent line. `to` is the recipient token. */
   privateMessageSent: { to: Token; text: string };
   pong: { id: number; rtt: number };
 }

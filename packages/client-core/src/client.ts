@@ -199,9 +199,9 @@ export class MaraClient {
   /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
   sendPrivateMessage(toUserToken: Token, text: string): void {
     this.send({ type: 'privateMessage', to: toUserToken, text });
-    // The server only echoes PMs to the recipient, so record our own outgoing line, and
-    // emit it (channel chat comes back via the server echo, but a sent PM never does — this
-    // is the only hook a logger has for our own PMs).
+    // Optimistically record our own outgoing line in this window: the server mirrors the
+    // PM to our *other* windows but deliberately skips the sending one, so this local push
+    // (and the matching `privateMessageSent` emit) is how the originating window shows it.
     const me = get(this._self);
     if (me)
       this.pushLine(this._privateMessages, toUserToken, { kind: 'chat', from: me.token, text });
@@ -558,14 +558,24 @@ export class MaraClient {
         return;
       }
 
-      case 'privateMessage':
-        this.pushLine(this._privateMessages, msg.from, {
+      case 'privateMessage': {
+        // The server sends `from`/`to`; the conversation partner is whichever token
+        // isn't us. A message whose `from` is us is the mirror of our own outgoing PM
+        // to another window/device — thread it under the recipient and report it as a
+        // sent line, so every window converges (the sending window already did this
+        // locally in `sendPrivateMessage`, and the server excludes it from the mirror).
+        const me = get(this._self);
+        const outgoing = me !== null && msg.from === me.token;
+        const partner = outgoing ? msg.to : msg.from;
+        this.pushLine(this._privateMessages, partner, {
           kind: 'chat',
           from: msg.from,
           text: msg.text,
         });
-        this.events.emit('privateMessage', { from: msg.from, text: msg.text });
+        if (outgoing) this.events.emit('privateMessageSent', { to: partner, text: msg.text });
+        else this.events.emit('privateMessage', { from: msg.from, text: msg.text });
         return;
+      }
 
       case 'pong': {
         // Match against the recorded send time to derive RTT; unknown/duplicate
