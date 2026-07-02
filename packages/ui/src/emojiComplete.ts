@@ -6,6 +6,21 @@
 /** Emoji as `[name, url]` pairs (the shape of `Object.entries(map)`). */
 export type EmojiPair = [name: string, url: string];
 
+/**
+ * Resolve an emoji manifest URL into an `<img src>` that survives a subpath deployment.
+ *
+ * NOTE — keep emoji image `src`s RELATIVE. The manifest uses server-absolute paths
+ * (`/emoji/x.png`) — that's the canonical form the chat renderer validates — but a
+ * leading-slash `src` resolves against the ORIGIN, so it 404s when the app is hosted under a
+ * subdirectory (e.g. `https://host/mara/` would look for `https://host/emoji/x.png`).
+ * Dropping the leading slash makes it resolve against the page's base URL instead. Always
+ * route an emoji `src` through this (never the raw manifest URL); absolute http(s) URLs pass
+ * through untouched. Mirrors chat-render's `toRenderUrl`, which does the same for messages.
+ */
+export function emojiSrc(url: string): string {
+  return url.startsWith('/emoji/') ? url.slice(1) : url;
+}
+
 export interface EmojiMatch {
   /** Ranked matches (prefix hits first, then alphabetical), capped at `limit`. */
   items: EmojiPair[];

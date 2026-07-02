@@ -4,7 +4,12 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.7] - unreleased
 
-_In development._
+### Fixed
+
+- Emoji autocomplete now waits for two characters after the `:`, so text emoticons like
+  `:D` and `:P` no longer pop the emoji menu.
+- Emoji images in the picker and autocomplete now load correctly when the server is hosted
+  under a subdirectory (they use page-relative paths, matching how chat messages render).
 
 ## [3.0.6] - 2026-07-02
 

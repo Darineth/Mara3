@@ -4,7 +4,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { openLightbox, closeLightboxFor } from './lightbox.js';
-  import { matchEmojiShortcode } from './emojiComplete.js';
+  import { emojiSrc, matchEmojiShortcode } from './emojiComplete.js';
 
   let {
     onsend,
@@ -476,7 +476,7 @@
                 if (emojiMenu) emojiMenu = { ...emojiMenu, active: i };
               }}
             >
-              <img src={url} alt="" loading="lazy" />
+              <img src={emojiSrc(url)} alt="" loading="lazy" />
               <span class="emoji-ac-name">:{name}:</span>
             </button>
           </li>
@@ -518,7 +518,7 @@
                 title=":{name}:"
                 onclick={() => chooseEmoji(name)}
               >
-                <img src={url} alt=":{name}:" loading="lazy" />
+                <img src={emojiSrc(url)} alt=":{name}:" loading="lazy" />
               </button>
             {/each}
           </div>

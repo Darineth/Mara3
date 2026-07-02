@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchEmojiShortcode, type EmojiPair } from './emojiComplete.js';
+import { emojiSrc, matchEmojiShortcode, type EmojiPair } from './emojiComplete.js';
 
 const emoji: EmojiPair[] = [
   ['smile', '/emoji/smile.png'],
@@ -9,6 +9,16 @@ const emoji: EmojiPair[] = [
 ];
 
 const names = (m: ReturnType<typeof matchEmojiShortcode>) => m?.items.map(([n]) => n);
+
+describe('emojiSrc', () => {
+  it('strips the leading slash so a server-relative path resolves under a subpath', () => {
+    expect(emojiSrc('/emoji/blob.png')).toBe('emoji/blob.png');
+  });
+
+  it('leaves an absolute http(s) URL untouched', () => {
+    expect(emojiSrc('https://cdn.example.com/blob.png')).toBe('https://cdn.example.com/blob.png');
+  });
+});
 
 describe('matchEmojiShortcode', () => {
   it('matches an in-progress shortcode and reports the : position', () => {
