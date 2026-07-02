@@ -729,6 +729,7 @@
           lines={activeLines}
           users={$directory}
           {sessionStart}
+          conversationKey={activeKey}
           hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
           onLoadOlder={() => {
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);

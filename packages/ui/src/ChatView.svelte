@@ -12,6 +12,7 @@
     sessionStart = 0,
     hasMore = false,
     onLoadOlder,
+    conversationKey = null,
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
@@ -22,6 +23,9 @@
     hasMore?: boolean;
     /** Called when the user scrolls near the top and `hasMore` — request older messages. */
     onLoadOlder?: () => void;
+    /** Identifies the conversation on show (e.g. `ch:1`/`pm:2`). When it changes, the view
+     *  lands on the new conversation's latest instead of inheriting the old scroll/pin. */
+    conversationKey?: string | null;
   } = $props();
 
   let viewport = $state<HTMLDivElement | null>(null);
@@ -65,6 +69,9 @@
   // Line count at the last effect run, to distinguish a prepend (older history paged in)
   // from an append (live message) when the array grows.
   let lastLen = 0;
+  // Conversation shown at the last effect run (undefined until the first), so a switch
+  // between channels/PMs is detected and handled as a fresh view rather than an append.
+  let lastKey: string | null | undefined;
   // Set while an older-history page is loading: the pre-prepend scroll metrics, so we can
   // restore the viewport position once the taller content renders (no jump). Also acts as
   // the in-flight guard so we don't fire overlapping load requests.
@@ -92,13 +99,22 @@
   }
 
   $effect(() => {
-    const len = lines.length; // track new lines
+    const key = conversationKey; // track conversation switches
+    const len = lines.length; // ...and new lines
     const el = viewport;
     if (!el) {
       lastLen = len;
+      lastKey = key;
       return;
     }
-    if (pendingAnchor && len > lastLen) {
+    if (key !== lastKey) {
+      // Switched conversations: land on this one's latest with fresh state, rather than
+      // inheriting the previous conversation's pin and (now meaningless) scroll position.
+      pendingAnchor = null;
+      pinnedToBottom = true;
+      el.scrollTop = el.scrollHeight;
+      lastScrollTop = el.scrollTop;
+    } else if (pendingAnchor && len > lastLen) {
       // Older messages were prepended: shift down by the added height so the line the
       // user was reading stays put, instead of jumping to the new top.
       el.scrollTop = el.scrollHeight - pendingAnchor.prevHeight + pendingAnchor.prevTop;
@@ -107,6 +123,7 @@
       el.scrollTop = el.scrollHeight;
     }
     lastLen = len;
+    lastKey = key;
   });
 
   // Keep pinned to the bottom as the content's height changes after the initial

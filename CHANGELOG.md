@@ -4,7 +4,10 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.5] - unreleased
 
-_In development._
+### Fixed
+
+- Switching between channel/PM tabs now lands on the newest message of the conversation
+  you switched to, instead of inheriting the previous tab's scroll position.
 
 ## [3.0.4] - 2026-07-02
 
