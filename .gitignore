@@ -33,6 +33,7 @@ apps/shell/.tauri/*.key
 
 # Test / coverage
 coverage/
+TestApps/
 
 # Logs
 *.log
