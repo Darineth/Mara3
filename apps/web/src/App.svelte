@@ -17,6 +17,7 @@
   import { clientBuild, shortBuild } from './lib/version.js';
   import { desktopVersion } from './lib/update.js';
   import ChatApp from './ChatApp.svelte';
+  import IdentityControls from './IdentityControls.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
 
   // Build-time plugin registry (CSP-safe for web/mobile). Add text-transform plugins
@@ -33,6 +34,9 @@
   // Fetched from the public /info endpoint (no login needed); falls back to the
   // app name if the server is unreachable or doesn't report one.
   let serverName = $state('Mara 3');
+  // The identity export/import is an advanced action — hidden behind a toggle on the
+  // connect screen so the common case (just connect) stays uncluttered.
+  let showIdentity = $state(false);
 
   async function loadServerName() {
     try {
@@ -85,6 +89,14 @@
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     connect();
+  }
+
+  // Adopt an identity key pasted from another client. It's stored (and persisted) now,
+  // and the next connect below uses it; the server then hands back that identity's
+  // token and its others-visible name/colour, which ChatApp reconciles into settings.
+  function importIdentity(key: string) {
+    settings.identityKey = key;
+    saveSettings(settings);
   }
 
   function disconnect() {
@@ -164,6 +176,17 @@
         <p class="error">{error}</p>
       {/if}
       <button type="submit">Connect</button>
+      <button
+        type="button"
+        class="identity-toggle"
+        aria-expanded={showIdentity}
+        onclick={() => (showIdentity = !showIdentity)}
+      >
+        {showIdentity ? 'Hide identity options' : 'Identity options'}
+      </button>
+      {#if showIdentity}
+        <IdentityControls identityKey={settings.identityKey} onImport={importIdentity} />
+      {/if}
       <p class="build">v{clientBuild.version} · build {shortBuild(clientBuild.buildId)}</p>
     </form>
   </div>
@@ -263,6 +286,23 @@
     color: #fff;
     font-weight: 600;
     cursor: pointer;
+  }
+  /* Understated link-style toggle so the identity export/import stays out of the way
+     until asked for. */
+  .identity-toggle {
+    align-self: center;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.75rem;
+    opacity: 0.55;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  .identity-toggle:hover {
+    opacity: 0.85;
   }
   .build {
     margin: 0;

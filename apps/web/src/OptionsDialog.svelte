@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import type { MaraSettings, Theme } from './lib/settings.js';
+  import IdentityControls from './IdentityControls.svelte';
 
   let {
     settings,
@@ -72,6 +73,7 @@
           <option value="light">Light</option>
         </select>
       </label>
+      <IdentityControls identityKey={settings.identityKey} />
       <footer>
         <button type="button" class="cancel" onclick={onClose}>Cancel</button>
         <button type="submit" class="done">Save</button>

@@ -244,6 +244,12 @@
         // guards on focus; this avoids a needless IPC hop when we're already in front.
         if (!document.hasFocus()) void requestAttention();
       }),
+      client.events.on('privateMessageSent', (pm) => {
+        // Fires for our own sent PM — including the copy the server mirrors to our other
+        // windows/devices. Surface the thread here too so linked clients converge on the
+        // same conversation list (no unread badge: it's our own message).
+        addPmTab(pm.to);
+      }),
       client.events.on('chat', (m) => markChannelUnread(m.channelToken)),
       client.events.on('emote', (m) => markChannelUnread(m.channelToken)),
       client.events.on('statusChanged', (status) => {
@@ -321,8 +327,9 @@
         'privateMessage',
         (m) => void nativeLog(`pm-${nameOf(m.from)}`, `<${nameOf(m.from)}> ${m.text}`),
       ),
-      // Our own outgoing PMs aren't echoed by the server, so log them here (filed under the
-      // recipient, so both sides of a PM thread share one log — matching the incoming line).
+      // Log our own outgoing PMs (the sending window's local echo, and the copy the
+      // server mirrors to our other windows) under the recipient, so both sides of a PM
+      // thread share one log — matching the incoming line above.
       client.events.on(
         'privateMessageSent',
         (m) => void nativeLog(`pm-${nameOf(m.to)}`, `<${$self?.name ?? 'You'}> ${m.text}`),

@@ -26,6 +26,16 @@ export interface MaraSettings {
 
 const KEY = 'mara3.settings';
 
+/** Longest identity key we accept, matching the wire's login `identityKey` bound. */
+export const IDENTITY_KEY_MAX = 128;
+
+/** Whether a pasted string is acceptable to import as an identity key: 1–128 chars
+ *  once trimmed (the same bound the server validates on login). */
+export function isValidIdentityKey(key: string): boolean {
+  const trimmed = key.trim();
+  return trimmed.length >= 1 && trimmed.length <= IDENTITY_KEY_MAX;
+}
+
 /** Generate a fresh identity secret (random; persisted for the life of the install). */
 function newIdentityKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {

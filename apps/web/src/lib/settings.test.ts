@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { defaultSettings, loadSettings, MACRO_COUNT, serverUrl } from './settings.js';
+import {
+  defaultSettings,
+  isValidIdentityKey,
+  loadSettings,
+  MACRO_COUNT,
+  serverUrl,
+} from './settings.js';
 
 describe('settings macros', () => {
   it('defaults to MACRO_COUNT slots with F1 pre-filled and the rest empty', () => {
@@ -11,6 +17,21 @@ describe('settings macros', () => {
   it('always returns MACRO_COUNT slots (no localStorage in this env)', () => {
     const settings = loadSettings();
     expect(settings.macros).toHaveLength(MACRO_COUNT);
+  });
+});
+
+describe('isValidIdentityKey', () => {
+  it('accepts a trimmed 1–128 char string', () => {
+    expect(isValidIdentityKey('a')).toBe(true);
+    expect(isValidIdentityKey('123e4567-e89b-12d3-a456-426614174000')).toBe(true);
+    expect(isValidIdentityKey('x'.repeat(128))).toBe(true);
+    expect(isValidIdentityKey('  padded-key  ')).toBe(true); // trimmed before measuring
+  });
+
+  it('rejects empty/whitespace-only or over-long input', () => {
+    expect(isValidIdentityKey('')).toBe(false);
+    expect(isValidIdentityKey('   ')).toBe(false);
+    expect(isValidIdentityKey('x'.repeat(129))).toBe(false);
   });
 });
 
