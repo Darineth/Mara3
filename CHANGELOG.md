@@ -2,10 +2,22 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.4] - 2026-07-01
+## [3.0.4] - 2026-07-02
 
 ### Added
 
+- **Shared identity across clients** — your display name and colour now belong to your
+  identity (stored with it on the server) rather than to one install, so signing in on
+  another client — or a second window — shows the same you everywhere. A new **Identity
+  options** panel (hidden by default on the connect screen, and in the in-session Options
+  dialog) lets you **copy your identity key** and **import** it on another client to act
+  as one shared identity. The key is a bearer secret — anyone who has it can appear as
+  you — so it's masked by default with a plain reveal/copy and a password-style warning.
+- **Private messages stay in sync across your windows** — a PM you send or receive now
+  appears in every window or device you have open under one identity, and its tab opens
+  in each, instead of the conversation only living in the window that sent it. Private
+  messages remain live-only and are **never stored on the server** (a deliberate privacy
+  choice), so a client that was offline when a PM was sent won't receive it after the fact.
 - **Scroll-back history** — the server retains more messages per channel (default 1000)
   and sends only a recent chunk on join; scrolling to the top of a channel pages in
   older messages on demand, keeping your place. Tunable via `MARA_HISTORY_LIMIT`
@@ -22,6 +34,9 @@ All notable changes to Mara 3 are documented here.
 
 - The message composer now shows what you type in your own display colour, matching
   how your messages appear in the log.
+- The wire protocol was updated for the identity changes, so connecting to this server
+  needs an up-to-date client; older clients are automatically prompted to reload/update
+  on connect.
 
 ## [3.0.3] - 2026-06-30
 
