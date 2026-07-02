@@ -2,7 +2,11 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.7] - unreleased
+## [3.0.8] - unreleased
+
+_In development._
+
+## [3.0.7] - 2026-07-02
 
 ### Fixed
 
