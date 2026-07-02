@@ -2029,7 +2029,7 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "mara-shell"
-version = "3.0.0"
+version = "3.0.4"
 dependencies = [
  "chrono",
  "serde",

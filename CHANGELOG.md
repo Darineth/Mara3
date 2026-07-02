@@ -2,14 +2,6 @@
 
 All notable changes to Mara 3 are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-<!-- On release, rename [Unreleased] to the new version + date and start a fresh
-     [Unreleased] section above it. -->
-
-## [Unreleased]
-
 ## [3.0.4] - 2026-07-01
 
 ### Added
@@ -19,6 +11,12 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   older messages on demand, keeping your place. Tunable via `MARA_HISTORY_LIMIT`
   (retention) and `MARA_HISTORY_CHUNK` (page size). Messages now carry a stable
   server-assigned id used to order and de-duplicate history.
+- **Restart after an OS update** (desktop) — the desktop client registers with the
+  Windows Restart Manager, so if it was open when a Windows Update reboot occurs it
+  relaunches after you log back in and reconnects to your last server automatically.
+- **Taskbar alert for private messages** (desktop) — a private message that arrives
+  while the window is in the background now flashes the taskbar button (Windows),
+  bounces the dock (macOS), or marks the window urgent (Linux) until you focus it.
 
 ### Changed
 

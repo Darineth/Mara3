@@ -1,6 +1,6 @@
 [package]
 name = "mara-client-legacy"
-version = "3.0.0"
+version = "3.0.4"
 description = "Mara 3 — legacy desktop client (Windows 7, Tauri 1)"
 authors = ["Darineth"]
 edition = "2021"

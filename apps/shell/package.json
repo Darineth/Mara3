@@ -1,6 +1,6 @@
 {
   "name": "@mara/shell",
-  "version": "3.0.0",
+  "version": "3.0.4",
   "private": true,
   "type": "module",
   "description": "Thin Tauri 2 native shell that loads the Mara server's hosted web UI and exposes native client functions (e.g. local logging).",
