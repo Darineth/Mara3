@@ -119,7 +119,10 @@ The server retains the most recent messages per channel (capped, default 100;
 that reloaded/reconnected) sees recent scrollback. Each entry snapshots the
 author's name/colour so it renders even if that author is no longer present.
 Backlog is persisted to disk (`MARA_HISTORY_FILE`, on by default; set empty to
-disable), so it survives a restart. Private messages are not retained.
+disable), so it survives a restart. **Private messages are never retained** — the
+server keeps no PM history, on disk or in memory, as a deliberate privacy decision
+(see [SECURITY-TODO.md](SECURITY-TODO.md)); a PM reaches only the devices connected
+when it was sent.
 
 ## Keepalive
 
@@ -134,7 +137,7 @@ terminal `loginDenied { reason }`.
 
 ## Versioning
 
-`PROTOCOL_VERSION` (currently `1`) bumps on any breaking change to the message set.
+`PROTOCOL_VERSION` (currently `3`) bumps on any breaking change to the message set.
 The client sends it in `login`; the server denies a mismatch with `loginDenied`.
 
 ## Limits

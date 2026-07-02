@@ -13,6 +13,20 @@ account system**. By default the server speaks plaintext `ws://`/`http://`.
 Findings are rated against "a malicious but unprivileged client/host that can
 reach the server."
 
+## Design decisions
+
+- **Private messages are never stored, by design (privacy).** The server delivers a
+  PM to the recipient's live windows and mirrors it to the sender's other live
+  windows, then forgets it — it is never written to disk or held in any backlog,
+  unlike channel history (`MARA_HISTORY_FILE`). The point is that the server keeps
+  **no record of private conversations**, so a server dump, backup, or operator
+  cannot reveal them. The accepted trade-off: a PM reaches only the devices
+  connected at send time — a device offline when a PM is sent never receives it,
+  PMs to an offline user are dropped, and PM threads do not survive a restart. This
+  is intended behaviour, not a gap: do **not** add PM persistence, offline queueing,
+  or backlog-on-join. (`apps/server/src/hub.ts` `handlePrivateMessage`; contrast
+  `handleChannelText` → `HistoryStore`.)
+
 ## Already addressed
 
 - Strict Zod validation of every frame in both directions; malformed frames
