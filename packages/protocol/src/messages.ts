@@ -161,6 +161,9 @@ const userDisconnect = z.object({
 
 /** A past channel message replayed as backlog when joining. */
 export const channelHistoryEntrySchema = z.object({
+  /** Monotonic server-assigned message id (stable identity; used to dedupe and, later,
+   *  to page older history). Unique and increasing within the server's lifetime. */
+  id: z.number().int().nonnegative(),
   from: tokenSchema,
   /** Author name + colour snapshot, so backlog still renders for authors no
    *  longer present (or from a prior session) who aren't in the current roster. */
@@ -205,6 +208,8 @@ const userLeftChannel = z.object({
 
 const serverChat = z.object({
   type: z.literal('chat'),
+  /** Monotonic server message id (matches the backlog entry when replayed). */
+  id: z.number().int().nonnegative(),
   from: tokenSchema,
   channelToken: tokenSchema,
   text: chatTextSchema,
@@ -214,6 +219,8 @@ const serverChat = z.object({
 
 const serverEmote = z.object({
   type: z.literal('emote'),
+  /** Monotonic server message id (matches the backlog entry when replayed). */
+  id: z.number().int().nonnegative(),
   from: tokenSchema,
   channelToken: tokenSchema,
   text: chatTextSchema,

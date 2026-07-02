@@ -376,6 +376,9 @@ describe('channels and chat', () => {
     expect(bj.history.every((h) => h.from === alice.token)).toBe(true);
     expect(bj.history.every((h) => h.name === 'alice')).toBe(true);
     expect(bj.history.every((h) => typeof h.at === 'number')).toBe(true);
+    // Each message carries a monotonic server id (stable identity for dedupe/paging).
+    expect(bj.history[0]!.id).toBeGreaterThan(0);
+    expect(bj.history[1]!.id).toBeGreaterThan(bj.history[0]!.id);
 
     a.close();
     b.close();
@@ -467,6 +470,11 @@ describe('history persistence', () => {
       const entry = bj.history.find((h) => h.text === 'persist me');
       expect(entry).toBeDefined();
       expect(entry?.name).toBe('alice'); // author snapshot survived the restart
+      // A message sent after the restart gets an id ABOVE the persisted one — the id
+      // counter was reseeded from the reloaded history's max, not reset to zero.
+      b.send({ type: 'chat', channelToken: bj.channelToken, text: 'after restart' });
+      const live = await b.waitFor('chat');
+      expect(live.id).toBeGreaterThan(entry!.id);
       b.close();
     } finally {
       await s2.close();

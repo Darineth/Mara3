@@ -27,6 +27,9 @@ export class Hub {
   readonly state: ServerState;
   private readonly history: HistoryStore;
   private readonly identity: IdentityStore;
+  /** Monotonic message-id counter; seeded from persisted history so ids keep increasing
+   *  across restarts. Each chat/emote gets `++this.nextMessageId`. */
+  private nextMessageId: number;
   /** Our version + the web build we serve; echoed in every `welcome`. */
   readonly serverInfo: ServerInfo;
 
@@ -37,6 +40,7 @@ export class Hub {
     private readonly now: () => number = Date.now,
   ) {
     this.history = new HistoryStore(cfg.historyFile, log);
+    this.nextMessageId = this.history.maxId();
     this.identity = new IdentityStore(cfg.identityFile, log);
     this.state = new ServerState(this.identity);
     this.serverInfo = getServerInfo(cfg.webRoot, cfg.serverName);
@@ -304,9 +308,11 @@ export class Hub {
     // broadcast it. The author's name/colour are snapshotted so backlog renders
     // even after a restart, when the author's token is gone.
     const at = this.now();
+    const id = ++this.nextMessageId;
     this.history.append(
       channel.name,
       {
+        id,
         from: session.info.token,
         name: session.info.name,
         color: session.info.color,
@@ -318,6 +324,7 @@ export class Hub {
     );
     this.broadcastChannel(channelToken, {
       type: kind,
+      id,
       from: session.info.token,
       channelToken,
       text,

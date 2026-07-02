@@ -486,6 +486,7 @@ export class MaraClient {
           from: msg.from,
           text,
           at: msg.at,
+          serverId: msg.id,
         });
         this.events.emit('chat', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -498,6 +499,7 @@ export class MaraClient {
           from: msg.from,
           text,
           at: msg.at,
+          serverId: msg.id,
         });
         this.events.emit('emote', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -658,10 +660,11 @@ export class MaraClient {
   }
 
   /**
-   * Merge a channel's join backlog into its log. Deduped by (from, at, kind,
-   * text) so a reconnect's replayed history doesn't double messages we still
-   * hold, then ordered by server timestamp. System lines (from === null) never
-   * collide with backlog, so local join/leave notices are preserved.
+   * Merge a channel's join backlog into its log. Deduped by server message id (falling
+   * back to a (from, at, kind, text) composite for any id-less line) so a reconnect's
+   * replayed history doesn't double messages we still hold, then ordered by server
+   * timestamp. System lines (from === null, no id) never collide with backlog, so local
+   * join/leave notices are preserved.
    */
   private seedHistory(channelToken: Token, history: ChannelHistoryEntry[]): void {
     if (history.length === 0) return;
@@ -679,18 +682,18 @@ export class MaraClient {
       return next ?? map;
     });
 
-    const key = (from: Token | null, at: number, kind: string, text: string) =>
-      `${from}|${at}|${kind}|${text}`;
+    const keyOf = (l: Pick<ChatLine, 'serverId' | 'from' | 'at' | 'kind' | 'text'>) =>
+      l.serverId != null ? `#${l.serverId}` : `${l.from}|${l.at}|${l.kind}|${l.text}`;
     this._channelMessages.update((map) => {
       const existing = map.get(channelToken) ?? [];
-      const seen = new Set(existing.map((l) => key(l.from, l.at, l.kind, l.text)));
+      const seen = new Set(existing.map(keyOf));
       const added: ChatLine[] = [];
       for (const e of history) {
         const text = this.applyIncoming(e.text, channelToken, e.from);
-        const k = key(e.from, e.at, e.kind, text);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        added.push({ id: ++this.lineSeq, kind: e.kind, from: e.from, text, at: e.at });
+        const line = { serverId: e.id, kind: e.kind, from: e.from, text, at: e.at };
+        if (seen.has(keyOf(line))) continue;
+        seen.add(keyOf(line));
+        added.push({ id: ++this.lineSeq, ...line });
       }
       if (added.length === 0) return map;
       const merged = [...existing, ...added].sort((a, b) => a.at - b.at || a.id - b.id);

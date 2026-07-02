@@ -28,6 +28,14 @@ export class HistoryStore {
     return this.data.get(name) ?? [];
   }
 
+  /** Highest retained message id (0 if none). The hub seeds its id counter from this
+   *  so newly-assigned ids keep increasing across restarts. */
+  maxId(): number {
+    let max = 0;
+    for (const arr of this.data.values()) for (const e of arr) if (e.id > max) max = e.id;
+    return max;
+  }
+
   /** Append a message, cap the buffer, and schedule a save. */
   append(name: string, entry: ChannelHistoryEntry, cap: number): void {
     const arr = this.data.get(name) ?? [];
@@ -43,11 +51,28 @@ export class HistoryStore {
       // Shape: { [channelName]: entry[] }. Validate each entry via the protocol
       // schema so a corrupt/tampered file can't smuggle in malformed data.
       const obj = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, unknown>;
+      // Backfill ids for entries written before message ids existed, so an old history
+      // file migrates transparently: find the max id already present, then assign the
+      // rest in stored (chronological) order. Newer files already carry ids, so this is a
+      // no-op for them.
+      let maxId = 0;
+      for (const arr of Object.values(obj)) {
+        if (!Array.isArray(arr)) continue;
+        for (const e of arr) {
+          const id = (e as { id?: unknown })?.id;
+          if (typeof id === 'number' && id > maxId) maxId = id;
+        }
+      }
       for (const [name, arr] of Object.entries(obj)) {
         if (!Array.isArray(arr)) continue;
         this.data.set(
           name,
-          arr.map((e) => channelHistoryEntrySchema.parse(e)),
+          arr.map((e) => {
+            if (e && typeof e === 'object' && (e as { id?: unknown }).id == null) {
+              (e as { id: number }).id = ++maxId;
+            }
+            return channelHistoryEntrySchema.parse(e);
+          }),
         );
       }
       this.log.info({ channels: this.data.size, file: this.file }, 'loaded message history');
