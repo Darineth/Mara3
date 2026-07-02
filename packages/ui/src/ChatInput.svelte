@@ -13,6 +13,7 @@
     macros = [],
     upload,
     focusKey = null,
+    color = null,
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -26,7 +27,14 @@
      *  mount), the textarea grabs focus — so joining or switching a channel/PM lands the
      *  cursor in the field, ready to type. `null` (no conversation) doesn't focus. */
     focusKey?: string | null;
+    /** The user's own display colour (`#rrggbb`), echoed as the composer text colour so
+     *  typing matches how their messages appear. Null/invalid falls back to the theme fg. */
+    color?: string | null;
   } = $props();
+
+  // Validate before it's interpolated into an inline style (as renderLine does for the
+  // author colour); an invalid value falls through to the textarea's `color: inherit`.
+  const inputColor = $derived(/^#[0-9a-fA-F]{6}$/.test(color ?? '') ? color : null);
 
   /** A pending image attachment shown as a tile above the input. */
   interface Attachment {
@@ -319,6 +327,7 @@
     <textarea
       bind:this={textarea}
       bind:value={text}
+      style={inputColor ? `color:${inputColor}` : undefined}
       {placeholder}
       {disabled}
       maxlength={maxLength}

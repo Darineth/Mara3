@@ -697,6 +697,7 @@
         macros={settings.macros}
         upload={(file) => uploadImage(file, client.sessionToken)}
         focusKey={activeKey}
+        color={settings.color}
       />
     {/if}
   </main>

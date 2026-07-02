@@ -12,6 +12,11 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [3.0.4] - 2026-07-01
 
+### Changed
+
+- The message composer now shows what you type in your own display colour, matching
+  how your messages appear in the log.
+
 ## [3.0.3] - 2026-06-30
 
 ### Fixed
