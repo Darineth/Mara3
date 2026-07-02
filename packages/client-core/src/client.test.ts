@@ -19,6 +19,11 @@ beforeEach(async () => {
       defaultChannel: '',
       historyFile: '',
       identityFile: '',
+      // Announce disconnects synchronously: these tests assert the client's reaction to
+      // a `userDisconnect`, not the server's grace/flap timing (which defaults to a 15s
+      // hold — longer than the test timeout — and is covered by the server's own suite).
+      disconnectGraceMs: 0,
+      flapSettleMs: 0,
     },
     createLogger('silent'),
   );
