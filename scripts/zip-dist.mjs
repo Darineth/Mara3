@@ -400,11 +400,13 @@ writeFileSync(
 
 // "Update available" nudge manifests: each portable client polls its OWN latest*.json
 // (separate downloads), comparing the manifest `version` to its build's and showing a
-// Download banner when this is newer. Host these alongside the matching zip at
-// MARA_UPDATE_BASE_URL. Keep UPDATE_BASE_URL in sync with package.mjs / package-legacy.mjs
-// (which bake <base>/<manifest> into each client). Override per-build with
-// MARA_UPDATE_BASE_URL. Each is emitted only when its archive was built this run.
-const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+// Download banner when this is newer. The default base is the repo's GitHub Releases
+// "latest" download endpoint, so both the manifest and the archive it points at resolve to
+// the newest release (publish each release's assets under stable names — see
+// scripts/release-github.mjs). Keep UPDATE_BASE_URL in sync with package.mjs /
+// package-legacy.mjs (which bake <base>/<manifest> into each client). Override per-build
+// with MARA_UPDATE_BASE_URL. Each is emitted only when its archive was built this run.
+const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
 for (const { component, manifest, label } of [
   { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
@@ -413,12 +415,19 @@ for (const { component, manifest, label } of [
 ]) {
   const built = archives.find((a) => a.component === component);
   if (!built) continue;
+  const comp = COMPONENTS.find((c) => c.name === component);
+  const ext = comp.archive === 'tar.gz' ? '.tar.gz' : '.zip';
   // The manifest version is the CLIENT version (not the product version), so the nudge
   // compares like-for-like against the installed shell's baked version — an app-only
   // release never makes installed clients think a new client exists.
   const latest = {
-    version: componentVersion(COMPONENTS.find((c) => c.name === component)),
-    url: `${updateBase}/${built.file}`,
+    version: componentVersion(comp),
+    // Link the STABLE `<name>-latest.<ext>` alias, NOT the version-stamped archive: an
+    // "update available" banner that was shown before a later release still points at the
+    // CURRENT download. A versioned URL goes stale — it 404s once that build is cleaned up,
+    // or fetches a now-old build. The operator keeps `<name>-latest.<ext>` pointing at the
+    // newest zip (these components all emit that alias), so the link never expires.
+    url: `${updateBase}/${component}-latest${ext}`,
     notes: '',
     pub_date: builtAt,
     sha256: built.sha256,

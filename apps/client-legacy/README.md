@@ -50,11 +50,12 @@ Mirrors the modern shell's nudge — the exe stays portable and never self-insta
 but the picker shows an **"update available"** banner (with a **Download** link that
 opens the system browser via Tauri 1's `shell.open`) when a newer build exists. Because
 this is a **separate download** from the modern desktop client, it polls its **own**
-manifest: `MARA_UPDATE_BASE_URL/latest-windows7-x64.json` (default base
-`https://mara.pretoast.com/mara3-updates`, baked in by `scripts/package-legacy.mjs`),
-which `scripts/zip-dist.mjs` writes pointing at the `Mara3-windows7-x64-*.zip`. To publish a
-Win7 update: upload the new zip **and** `latest-windows7-x64.json` to that folder; serve the
-JSON with `Access-Control-Allow-Origin: *` (cross-origin fetch). Build with
+manifest: `MARA_UPDATE_BASE_URL/latest-windows7-x64.json` (default base the repo's GitHub
+Releases `latest` download endpoint, baked in by `scripts/package-legacy.mjs`),
+which `scripts/zip-dist.mjs` writes pointing at the `Mara3-windows7-x64-latest.zip`. To publish a
+Win7 update: attach the new zip **and** `latest-windows7-x64.json` to the release (see
+`scripts/release-github.mjs`); the host must serve the JSON with
+`Access-Control-Allow-Origin: *` (cross-origin fetch). Build with
 `MARA_UPDATE_URL=` empty to disable. See [`../shell/README.md`](../shell/README.md#updates-portable-update-available-nudge)
 for the shared design.
 

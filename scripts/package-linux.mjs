@@ -35,7 +35,7 @@ const dryRun = process.argv.includes('--dry-run');
 const optional = process.argv.includes('--optional');
 
 // Keep in sync with package.mjs / zip-dist.mjs. The Linux client polls its own manifest.
-const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
 const updateUrl = process.env.MARA_UPDATE_URL ?? `${updateBase}/latest-linux-x64.json`;
 

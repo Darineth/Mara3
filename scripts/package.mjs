@@ -25,11 +25,14 @@ const args = new Set(process.argv.slice(2));
 const skipTests = args.has('--skip-tests');
 const skipDesktop = args.has('--skip-desktop');
 
-// Default self-hosted folder for the desktop "update available" nudge. The client is
-// built to poll <base>/<manifest> and zip-dist.mjs writes the manifest pointing at
-// <base>/<archive>. Override per-build with MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL=
-// to disable the check. Keep in sync with zip-dist.mjs's UPDATE_BASE_URL.
-const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+// Default base for the desktop "update available" nudge: the repo's GitHub Releases
+// "latest" download endpoint, so <base>/<asset> always resolves to the newest published
+// release's asset of that name (publish each release's assets under stable names — see
+// scripts/release-github.mjs). The client polls <base>/<manifest> and zip-dist.mjs writes
+// each manifest's download URL as <base>/<archive>. Override per-build with
+// MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL= (empty) to disable the check. Keep in sync with
+// zip-dist.mjs's UPDATE_BASE_URL.
+const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 
 // The shell builds for the host OS, so it polls that OS's manifest (matching the name
 // zip-dist.mjs emits). Build the Linux client on Linux, the Windows one on Windows.

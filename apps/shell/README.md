@@ -171,16 +171,19 @@ same way: a `#[tauri::command]` in `lib.rs` + a wrapper in `native.ts`.
 ## Updates (portable "update available" nudge)
 
 The client stays a **portable single exe** and never self-installs — but it can
-_notify_ when a newer build exists. One self-hosted folder drives it:
-`MARA_UPDATE_BASE_URL` (default `https://mara.pretoast.com/mara3-updates`). The
+_notify_ when a newer build exists. One base URL drives it: `MARA_UPDATE_BASE_URL`
+(default the repo's GitHub Releases `latest` download endpoint, so `<base>/<asset>`
+always resolves to the newest release; point it at any host you like). The
 packaging scripts:
 
 - bake `MARA_UPDATE_URL = <base>/latest-<os>.json` into the binary (`scripts/package.mjs`,
   OS-specific: `latest-windows-x64.json` / `latest-linux-x64.json`), and
 - write a ready-to-host `latest-<os>.json` pointing at the archive (`scripts/zip-dist.mjs`).
 
-To publish an update: upload the new `Mara3-windows-x64-*.zip` **and** the generated
-`latest-windows-x64.json` to that folder. On launch the client compares its `version`
+To publish an update: attach the new `Mara3-windows-x64-latest.zip` **and** the generated
+`latest-windows-x64.json` to the release (`pnpm release:github`, or upload them to your own
+host); the host must serve the JSON with `Access-Control-Allow-Origin: *` (it's fetched
+cross-origin). On launch the client compares its `version`
 to its own and, if newer, shows a dismissible **"update available"** banner with a
 **Download** link (opens the host in the system browser). The banner shows in two
 places: the launch picker, and — because `lib.rs` injects the update context on every

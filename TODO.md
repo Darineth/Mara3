@@ -147,9 +147,9 @@ The remaining blockers before tagging **v3.0.0** and publishing the first build:
       native shell binary (Rust commands, picker page, Tauri/webview version bumps) needs
       a real push, and that's rare. Chose a lightweight, portable-preserving nudge over
       Tauri's silent self-installer: the client stays a portable single exe. Build it with
-      `MARA_UPDATE_BASE_URL=https://<host>/<path>` (self-hosted); `package.mjs` bakes
-      `MARA_UPDATE_URL=<base>/latest-windows-x64.json` (default base
-      `https://mara.pretoast.com/mara3-updates`) into the binary and `zip-dist.mjs`
+      `MARA_UPDATE_BASE_URL=https://<host>/<path>`; `package.mjs` bakes
+      `MARA_UPDATE_URL=<base>/latest-windows-x64.json` (default base the repo's GitHub
+      Releases `latest` download endpoint) into the binary and `zip-dist.mjs`
       writes a ready-to-host `latest-windows-x64.json` pointing at the zip. `lib.rs` injects
       `window.__MARA_UPDATE__` on every page, so the nudge shows in **two** places:
       the launch picker (`bootstrap/index.html`) and the live web UI itself

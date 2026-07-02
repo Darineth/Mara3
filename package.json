@@ -17,6 +17,7 @@
     "package:linux": "node scripts/package-linux.mjs",
     "package:zip": "node scripts/zip-dist.mjs",
     "package:all": "node scripts/package.mjs && node scripts/package-legacy.mjs && node scripts/package-linux.mjs --optional && node scripts/zip-dist.mjs",
+    "release:github": "node scripts/release-github.mjs",
     "bump": "node scripts/bump-version.mjs",
     "version:check": "node scripts/bump-version.mjs --check",
     "icons:gen": "node scripts/generate-icons.mjs",

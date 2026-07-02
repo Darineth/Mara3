@@ -4,7 +4,17 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.8] - unreleased
 
-_In development._
+### Fixed
+
+- The desktop "update available" download link now points at the stable `*-latest` archive
+  instead of a version-stamped one, so a banner shown before a newer release still links to
+  the current download rather than going stale.
+
+### Changed
+
+- Desktop client update checks and downloads now default to **GitHub Releases** hosting
+  (`releases/latest/download`), so publishing a release there is picked up automatically;
+  `MARA_UPDATE_BASE_URL` still overrides it for self-hosting.
 
 ## [3.0.7] - 2026-07-02
 

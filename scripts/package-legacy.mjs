@@ -37,10 +37,11 @@ const skipBuild = process.argv.includes('--skip-build');
 
 // "Update available" nudge: bake the Win7 client's OWN manifest URL into the build.
 // It's a separate download from the modern desktop, so it polls latest-windows7-x64.json
-// (not latest-windows-x64.json). One folder URL drives the pipeline — keep UPDATE_BASE_URL
-// in sync with package.mjs / zip-dist.mjs. Override with MARA_UPDATE_BASE_URL, or
-// MARA_UPDATE_URL= (empty) to disable. zip-dist.mjs emits the matching latest-windows7-x64.json.
-const UPDATE_BASE_URL = 'https://mara.pretoast.com/mara3-updates';
+// (not latest-windows-x64.json). Defaults to the repo's GitHub Releases "latest" download
+// endpoint — keep UPDATE_BASE_URL in sync with package.mjs / zip-dist.mjs. Override with
+// MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL= (empty) to disable. zip-dist.mjs emits the
+// matching latest-windows7-x64.json.
+const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 const buildEnv = { ...process.env };
 if (buildEnv.MARA_UPDATE_URL === undefined) {
   const base = (buildEnv.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
