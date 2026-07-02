@@ -18,13 +18,19 @@ describe('matchEmojiShortcode', () => {
   });
 
   it('ranks prefix matches above mere substring matches, then alphabetically', () => {
-    // Query "a": "awesome" (prefix) outranks "sad" (contains an "a").
-    expect(names(matchEmojiShortcode(':a', emoji))).toEqual(['awesome', 'sad']);
+    const list: EmojiPair[] = [
+      ['smile', '/emoji/smile.png'],
+      ['cosmic', '/emoji/cosmic.png'],
+    ];
+    // Query "sm": "smile" (prefix) outranks "cosmic" (merely contains "sm").
+    expect(names(matchEmojiShortcode(':sm', list))).toEqual(['smile', 'cosmic']);
   });
 
-  it('does not open on a bare colon — needs at least one character', () => {
+  it('needs at least two characters, so text emoticons like :D and :P are left alone', () => {
     expect(matchEmojiShortcode('say :', emoji)).toBeNull();
-    // ...but opens as soon as a name character is typed.
+    expect(matchEmojiShortcode('haha :D', emoji)).toBeNull();
+    expect(matchEmojiShortcode(':s', emoji)).toBeNull(); // one char: not yet
+    // ...but opens once a second name character is typed.
     expect(names(matchEmojiShortcode('say :sm', emoji))).toEqual(['smile', 'smirk']);
   });
 

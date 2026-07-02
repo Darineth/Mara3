@@ -20,15 +20,15 @@ export interface EmojiMatch {
  * The `:` must open a token — at the start of the line, after whitespace, or directly after
  * another `:` (so a second emoji typed flush against a completed one, `:tada::par`, still
  * triggers). A clock (`12:30`) or a namespaced word (`note:foo`) never triggers it, since
- * those colons follow a non-colon character. At least one shortcode character must follow
- * the `:`, so a bare `:` doesn't open the menu until you start typing a name.
+ * those colons follow a non-colon character. At least TWO shortcode characters must follow
+ * the `:`, so a text emoticon like `:D` or `:P` (and a bare `:`) doesn't open the menu.
  */
 export function matchEmojiShortcode(
   before: string,
   emoji: EmojiPair[],
   limit = 50,
 ): EmojiMatch | null {
-  const m = /(?:^|[\s:])(:[a-zA-Z0-9_+-]+)$/.exec(before);
+  const m = /(?:^|[\s:])(:[a-zA-Z0-9_+-]{2,})$/.exec(before);
   if (!m || m[1] === undefined) return null;
   const token = m[1]; // ":que"
   const query = token.slice(1).toLowerCase();
