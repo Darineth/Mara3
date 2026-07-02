@@ -115,7 +115,7 @@ rarely build a single piece by hand — but each is documented below.
 - **Build / run:**
   - Dev: `pnpm --filter @mara/server dev` (tsx, watch) or `serve` (tsx, once) — **server.bat**.
   - Prod: `pnpm --filter @mara/server build` (`tsc` → `dist/`), then `node dist/main.js`.
-- **Config (env):** `MARA_PORT` (5050), `MARA_HOST`, `MARA_WEB_ROOT`, `MARA_WS_PATH` (`/ws`), `MARA_DEFAULT_CHANNEL` (`Main`), `MARA_UPLOAD_DIR` (defaults to `apps/server/uploads`), `MARA_MAX_UPLOAD_MB` (10), `MARA_MAX_CACHE_MB` (512), `MARA_HISTORY_LIMIT` (100), `MARA_HISTORY_FILE` (defaults to `apps/server/data/history.json`; empty disables), `MARA_IDENTITY_FILE` (defaults to `apps/server/data/identity.json`; empty disables — the persistent client-identity → token map).
+- **Config (env):** `MARA_PORT` (5050), `MARA_HOST`, `MARA_WEB_ROOT`, `MARA_WS_PATH` (`/ws`), `MARA_DEFAULT_CHANNEL` (`Main`), `MARA_UPLOAD_DIR` (defaults to `apps/server/uploads`), `MARA_MAX_UPLOAD_MB` (10), `MARA_MAX_CACHE_MB` (512), `MARA_HISTORY_LIMIT` (1000; retained per channel, the deepest a client can page back), `MARA_HISTORY_CHUNK` (50; messages sent on join and per scroll-up page), `MARA_HISTORY_FILE` (defaults to `apps/server/data/history.json`; empty disables), `MARA_IDENTITY_FILE` (defaults to `apps/server/data/identity.json`; empty disables — the persistent client-identity → token map).
 
 ### `@mara/web` — the UI app · `apps/web`
 

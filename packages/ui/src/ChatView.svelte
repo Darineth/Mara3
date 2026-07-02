@@ -10,12 +10,18 @@
     lines = [],
     users,
     sessionStart = 0,
+    hasMore = false,
+    onLoadOlder,
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
     /** Timestamp (ms) of this session's connect; a rule is drawn where the lines
      *  cross from older backlog (< this) into the session (>= this). 0 disables it. */
     sessionStart?: number;
+    /** True when older messages can be paged in (drives the scroll-up loader). */
+    hasMore?: boolean;
+    /** Called when the user scrolls near the top and `hasMore` — request older messages. */
+    onLoadOlder?: () => void;
   } = $props();
 
   let viewport = $state<HTMLDivElement | null>(null);
@@ -56,6 +62,14 @@
 
   // Last seen scrollTop, to tell a user scroll-up from content growing under us.
   let lastScrollTop = 0;
+  // Line count at the last effect run, to distinguish a prepend (older history paged in)
+  // from an append (live message) when the array grows.
+  let lastLen = 0;
+  // Set while an older-history page is loading: the pre-prepend scroll metrics, so we can
+  // restore the viewport position once the taller content renders (no jump). Also acts as
+  // the in-flight guard so we don't fire overlapping load requests.
+  let pendingAnchor = $state<{ prevHeight: number; prevTop: number } | null>(null);
+
   // Re-pin when at the bottom; only UNPIN when the user actively scrolls up. This
   // matters because our own scroll-to-bottom fires a `scroll` event asynchronously,
   // by which point an image may have grown the content — measuring a large distance
@@ -68,11 +82,31 @@
       pinnedToBottom = true; // at (or snapped back to) the bottom
     else if (st < lastScrollTop - 2) pinnedToBottom = false; // user scrolled up to read
     lastScrollTop = st;
+    // Near the top with more to load and no load in flight: page in older history.
+    // Capture the current metrics so the effect below can restore the position after
+    // the prepend grows the content upward.
+    if (st < 80 && hasMore && !pendingAnchor && onLoadOlder) {
+      pendingAnchor = { prevHeight: viewport.scrollHeight, prevTop: st };
+      onLoadOlder();
+    }
   }
 
   $effect(() => {
-    lines.length; // track new lines
-    if (pinnedToBottom && viewport) viewport.scrollTop = viewport.scrollHeight;
+    const len = lines.length; // track new lines
+    const el = viewport;
+    if (!el) {
+      lastLen = len;
+      return;
+    }
+    if (pendingAnchor && len > lastLen) {
+      // Older messages were prepended: shift down by the added height so the line the
+      // user was reading stays put, instead of jumping to the new top.
+      el.scrollTop = el.scrollHeight - pendingAnchor.prevHeight + pendingAnchor.prevTop;
+      pendingAnchor = null;
+    } else if (pinnedToBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+    lastLen = len;
   });
 
   // Keep pinned to the bottom as the content's height changes after the initial

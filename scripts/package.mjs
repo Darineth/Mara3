@@ -105,7 +105,8 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)
 
 # --- History ---
-#MARA_HISTORY_LIMIT=100      # messages retained per channel, replayed on join
+#MARA_HISTORY_LIMIT=1000     # messages retained per channel (persisted; deepest scroll-back)
+#MARA_HISTORY_CHUNK=50       # messages sent on join, and per "load older" page on scroll-up
 
 # --- Storage ---
 # Persistent state (history, identities, uploads) lives next to Mara3-Server.bat by

@@ -26,8 +26,10 @@ export interface ServerConfig {
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
   maxCacheBytes: number;
-  /** Recent messages retained per channel and replayed as backlog on join. */
+  /** Messages retained per channel (persisted, and the deepest a client can page back). */
   historyLimit: number;
+  /** Messages sent on join, and per "load older" page as the user scrolls up. */
+  historyChunk: number;
   /** Per-connection message rate limit (sustained msgs/sec, token bucket). `<= 0`
    *  disables flood control entirely (e.g. a trusted LAN). */
   msgRate: number;
@@ -109,7 +111,8 @@ const DEFAULTS = {
   defaultChannel: 'Main',
   maxUploadMb: 10,
   maxCacheMb: 512,
-  historyLimit: 100,
+  historyLimit: 1000,
+  historyChunk: 50,
   msgRate: 15,
   msgBurst: 30,
   msgFloodKick: 300,
@@ -202,6 +205,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
+    historyChunk: Math.max(1, num(env.MARA_HISTORY_CHUNK, DEFAULTS.historyChunk)),
     msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),
     msgBurst: Math.max(1, num(env.MARA_MSG_BURST, DEFAULTS.msgBurst)),
     msgFloodKick: Math.max(1, num(env.MARA_MSG_FLOOD_KICK, DEFAULTS.msgFloodKick)),

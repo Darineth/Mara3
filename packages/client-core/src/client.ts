@@ -51,6 +51,9 @@ export class MaraClient {
   readonly directory: Readable<Map<Token, UserInfo>>;
   readonly channels: Readable<Map<Token, ChannelState>>;
   readonly channelMessages: Readable<Map<Token, ChatLine[]>>;
+  /** Per-channel flag: true when older messages exist before the log's oldest line, so
+   *  the UI can offer "load older" on scroll-up. Set from `channelJoined`/`historyChunk`. */
+  readonly hasMoreHistory: Readable<Map<Token, boolean>>;
   readonly privateMessages: Readable<Map<Token, ChatLine[]>>;
   /** The server's reported version + served web build, from `welcome` (null until
    *  login, or if the server is too old to send it). */
@@ -64,6 +67,7 @@ export class MaraClient {
   private readonly _directory = writable<Map<Token, UserInfo>>(new Map());
   private readonly _channels = writable<Map<Token, ChannelState>>(new Map());
   private readonly _channelMessages = writable<Map<Token, ChatLine[]>>(new Map());
+  private readonly _hasMoreHistory = writable<Map<Token, boolean>>(new Map());
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _serverInfo = writable<ServerInfo | null>(null);
   private readonly _motd = writable('');
@@ -106,6 +110,7 @@ export class MaraClient {
     this.directory = { subscribe: this._directory.subscribe };
     this.channels = { subscribe: this._channels.subscribe };
     this.channelMessages = { subscribe: this._channelMessages.subscribe };
+    this.hasMoreHistory = { subscribe: this._hasMoreHistory.subscribe };
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
     this.serverInfo = { subscribe: this._serverInfo.subscribe };
     this.motd = { subscribe: this._motd.subscribe };
@@ -116,7 +121,9 @@ export class MaraClient {
     this.reconnectBaseDelayMs = opts.reconnectBaseDelayMs ?? 500;
     this.reconnectMaxDelayMs = opts.reconnectMaxDelayMs ?? 10_000;
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 25_000;
-    this.historyLimit = opts.historyLimit ?? 500;
+    // Generous per-conversation cap: it must comfortably exceed the server's retention
+    // so paged-in older history isn't trimmed away by later live messages.
+    this.historyLimit = opts.historyLimit ?? 2000;
     // Seed the intended set with the persisted "channels you were in" so the first
     // connect rejoins them (see the welcome handler).
     for (const name of opts.initialChannels ?? []) this.intendedChannels.add(name);
@@ -417,7 +424,8 @@ export class MaraClient {
           });
         }
         this.ensureLog(this._channelMessages, channel.token);
-        this.seedHistory(channel.token, msg.history);
+        this.mergeHistory(channel.token, msg.history, true);
+        this.setHasMore(channel.token, msg.historyHasMore);
         // Mark where we joined — after any backlog, before live messages — so the
         // start of our interaction in the channel is clear. Once per session per
         // channel name (a reconnect/token-churn rejoin keeps the original line via
@@ -502,6 +510,13 @@ export class MaraClient {
           serverId: msg.id,
         });
         this.events.emit('emote', { from: msg.from, channelToken: msg.channelToken, text });
+        return;
+      }
+
+      case 'historyChunk': {
+        // Paged-older messages: prepend without trimming, then update the "more?" flag.
+        this.mergeHistory(msg.channelToken, msg.messages, false);
+        this.setHasMore(msg.channelToken, msg.hasMore);
         return;
       }
 
@@ -660,13 +675,14 @@ export class MaraClient {
   }
 
   /**
-   * Merge a channel's join backlog into its log. Deduped by server message id (falling
-   * back to a (from, at, kind, text) composite for any id-less line) so a reconnect's
-   * replayed history doesn't double messages we still hold, then ordered by server
-   * timestamp. System lines (from === null, no id) never collide with backlog, so local
-   * join/leave notices are preserved.
+   * Merge channel history (join backlog or a paged-older chunk) into a channel's log.
+   * Deduped by server message id (falling back to a (from, at, kind, text) composite for
+   * any id-less line) so replayed history doesn't double messages we still hold, then
+   * ordered by server timestamp. System lines (from === null, no id) never collide with
+   * backlog, so local join/leave notices are preserved. `trim` caps to the newest
+   * `historyLimit` (join); paged-older chunks pass `false` so they aren't dropped.
    */
-  private seedHistory(channelToken: Token, history: ChannelHistoryEntry[]): void {
+  private mergeHistory(channelToken: Token, history: ChannelHistoryEntry[], trim: boolean): void {
     if (history.length === 0) return;
 
     // Record backlog authors' name/colour so their lines render even if they
@@ -696,9 +712,33 @@ export class MaraClient {
         added.push({ id: ++this.lineSeq, ...line });
       }
       if (added.length === 0) return map;
-      const merged = [...existing, ...added].sort((a, b) => a.at - b.at || a.id - b.id);
-      return new Map(map).set(channelToken, merged.slice(-this.historyLimit));
+      // Order by server time, breaking ties on the server id (true message order) so
+      // same-millisecond messages sort chronologically regardless of when we fetched
+      // them; id-less lines fall back to their client sequence.
+      const merged = [...existing, ...added].sort((a, b) => {
+        if (a.at !== b.at) return a.at - b.at;
+        if (a.serverId != null && b.serverId != null) return a.serverId - b.serverId;
+        return a.id - b.id;
+      });
+      return new Map(map).set(channelToken, trim ? merged.slice(-this.historyLimit) : merged);
     });
+  }
+
+  /** Record whether a channel has older messages beyond its oldest held line. */
+  private setHasMore(channelToken: Token, hasMore: boolean): void {
+    this._hasMoreHistory.update((m) => new Map(m).set(channelToken, hasMore));
+  }
+
+  /**
+   * Ask the server for the page of messages just older than what we hold in `channelToken`
+   * (cursor = our oldest server-id'd line). No-op if we hold nothing with a server id yet.
+   * The reply arrives as `historyChunk` and is prepended via {@link mergeHistory}.
+   */
+  requestOlderHistory(channelToken: Token): void {
+    const lines = get(this._channelMessages).get(channelToken) ?? [];
+    const oldest = lines.find((l) => l.serverId != null);
+    if (!oldest || oldest.serverId == null) return;
+    this.send({ type: 'requestHistory', channelToken, before: oldest.serverId });
   }
 
   private pushLine(

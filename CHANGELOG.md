@@ -12,6 +12,14 @@ and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [3.0.4] - 2026-07-01
 
+### Added
+
+- **Scroll-back history** — the server retains more messages per channel (default 1000)
+  and sends only a recent chunk on join; scrolling to the top of a channel pages in
+  older messages on demand, keeping your place. Tunable via `MARA_HISTORY_LIMIT`
+  (retention) and `MARA_HISTORY_CHUNK` (page size). Messages now carry a stable
+  server-assigned id used to order and de-duplicate history.
+
 ### Changed
 
 - The message composer now shows what you type in your own display colour, matching

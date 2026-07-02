@@ -81,6 +81,14 @@ const ping = z.object({
   id: z.number().int().nonnegative(),
 });
 
+/** Ask for older channel history: up to a server-decided page of messages with an id
+ *  BELOW `before` (the oldest message id the client currently holds). */
+const requestHistory = z.object({
+  type: z.literal('requestHistory'),
+  channelToken: tokenSchema,
+  before: z.number().int().nonnegative(),
+});
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   login,
   joinChannel,
@@ -91,6 +99,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   clientAway,
   clientSetProfile,
   ping,
+  requestHistory,
 ]);
 /** Any validated client→server message. */
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -182,8 +191,10 @@ const channelJoined = z.object({
   channel: z.string().min(1).max(64),
   /** Roster at the moment of joining. */
   users: z.array(userInfoSchema),
-  /** Recent messages (oldest first) so the joiner sees backlog. */
+  /** The most recent chunk of messages (oldest first) so the joiner sees backlog. */
   history: z.array(channelHistoryEntrySchema).default([]),
+  /** True when older messages exist before `history` (the client may page them in). */
+  historyHasMore: z.boolean().default(false),
   at: serverEventAt,
 });
 
@@ -246,6 +257,15 @@ const serverPrivateMessage = z.object({
   text: chatTextSchema,
 });
 
+/** A page of older messages (oldest first) in reply to `requestHistory`. */
+const historyChunk = z.object({
+  type: z.literal('historyChunk'),
+  channelToken: tokenSchema,
+  messages: z.array(channelHistoryEntrySchema),
+  /** True when still-older messages exist before this page. */
+  hasMore: z.boolean(),
+});
+
 const pong = z.object({
   type: z.literal('pong'),
   id: z.number().int().nonnegative(),
@@ -270,6 +290,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   serverAway,
   serverUserProfile,
   serverPrivateMessage,
+  historyChunk,
   pong,
   errorMessage,
 ]);

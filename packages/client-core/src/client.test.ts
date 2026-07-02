@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { WebSocket } from 'ws';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, startServer, createLogger, type MaraServer } from '@mara/server';
 import { MaraClient } from './client.js';
 import type { ClientEvents, ClientOptions, WebSocketCtor } from './types.js';
@@ -167,6 +167,63 @@ describe('channels + chat', () => {
 
     a.disconnect();
     b.disconnect();
+  });
+
+  it('pages older channel history on request, prepending and updating hasMore', async () => {
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        historyChunk: 2, // small so five messages span multiple pages
+      },
+      createLogger('silent'),
+    );
+    const u = `ws://127.0.0.1:${s.port}/ws`;
+    try {
+      const a = makeClient('alice', { url: u });
+      await connected(a);
+      const aJoined = waitEvent(a, 'channelJoined');
+      a.joinChannel('lobby');
+      const ch = await aJoined;
+      for (const t of ['m1', 'm2', 'm3', 'm4', 'm5']) {
+        const got = waitEvent(a, 'chat');
+        a.sendChat(ch.token, t);
+        await got;
+      }
+
+      const b = makeClient('bob', { url: u });
+      await connected(b);
+      const bJoined = waitEvent(b, 'channelJoined');
+      b.joinChannel('lobby');
+      const tok = (await bJoined).token;
+
+      const chatTexts = () =>
+        (get(b.channelMessages).get(tok) ?? []).filter((l) => l.kind === 'chat').map((l) => l.text);
+
+      // Join seeds only the newest chunk; more is available.
+      expect(chatTexts()).toEqual(['m4', 'm5']);
+      expect(get(b.hasMoreHistory).get(tok)).toBe(true);
+
+      // Paging prepends older messages without dropping the ones we already hold.
+      b.requestOlderHistory(tok);
+      await vi.waitFor(() => expect(chatTexts().length).toBe(4));
+      expect(chatTexts()).toEqual(['m2', 'm3', 'm4', 'm5']);
+      expect(get(b.hasMoreHistory).get(tok)).toBe(true);
+
+      b.requestOlderHistory(tok);
+      await vi.waitFor(() => expect(chatTexts().length).toBe(5));
+      expect(chatTexts()).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+      expect(get(b.hasMoreHistory).get(tok)).toBe(false);
+
+      a.disconnect();
+      b.disconnect();
+    } finally {
+      await s.close();
+    }
   });
 
   it('posts a "you joined" system line when joining a channel', async () => {

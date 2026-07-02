@@ -152,6 +152,8 @@ export class Hub {
         return this.handlePrivateMessage(session, conn, msg);
       case 'ping':
         return conn.send({ type: 'pong', id: msg.id });
+      case 'requestHistory':
+        return this.handleRequestHistory(session, conn, msg);
     }
   }
 
@@ -263,13 +265,41 @@ export class Hub {
       const member = this.state.sessions.get(token);
       if (member) users.push(member.info);
     }
+    // Send only the most recent chunk; the client pages older messages on scroll-up.
+    const { entries, hasMore } = this.history.recent(channel.name, this.cfg.historyChunk);
     conn.send({
       type: 'channelJoined',
       channelToken: channel.token,
       channel: channel.name,
       users,
-      history: this.history.get(channel.name),
+      history: entries,
+      historyHasMore: hasMore,
       at: this.now(),
+    });
+  }
+
+  /** Reply to a `requestHistory` with a page of older messages for a channel the session
+   *  is in. Cursor is `before` (a message id); the server decides the page size. */
+  private handleRequestHistory(
+    session: Session,
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: 'requestHistory' }>,
+  ): void {
+    const channel = this.state.channelsByToken.get(msg.channelToken);
+    if (!channel || !session.channels.has(channel.token)) {
+      conn.send({ type: 'error', message: 'not in that channel' });
+      return;
+    }
+    const { entries, hasMore } = this.history.before(
+      channel.name,
+      msg.before,
+      this.cfg.historyChunk,
+    );
+    conn.send({
+      type: 'historyChunk',
+      channelToken: channel.token,
+      messages: entries,
+      hasMore,
     });
   }
 

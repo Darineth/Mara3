@@ -52,6 +52,7 @@
     directory,
     channels,
     channelMessages,
+    hasMoreHistory,
     privateMessages,
     serverInfo,
     motd,
@@ -681,7 +682,15 @@
       </div>
     {:else}
       <div class="convo" class:with-users={activeChannel !== null && showUsers}>
-        <ChatView lines={activeLines} users={$directory} {sessionStart} />
+        <ChatView
+          lines={activeLines}
+          users={$directory}
+          {sessionStart}
+          hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
+          onLoadOlder={() => {
+            if (activeChannel !== null) client.requestOlderHistory(activeChannel);
+          }}
+        />
         {#if activeChannel !== null && showUsers}
           <UserList
             users={membersOf(activeChannel)}

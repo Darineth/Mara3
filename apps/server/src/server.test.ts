@@ -437,6 +437,73 @@ describe('private messages, presence, ping', () => {
   });
 });
 
+describe('history pagination', () => {
+  it('sends a chunk on join and pages older messages on request', async () => {
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        historyChunk: 2, // small so five messages span multiple pages
+      },
+      createLogger('silent'),
+    );
+    try {
+      const wsUrl = `ws://127.0.0.1:${s.port}/ws`;
+      const a = await TestClient.connect(wsUrl);
+      await login(a, 'alice');
+      a.send({ type: 'joinChannel', channel: 'lobby' });
+      const aj = await a.waitFor('channelJoined');
+      for (const t of ['m1', 'm2', 'm3', 'm4', 'm5']) {
+        a.send({ type: 'chat', channelToken: aj.channelToken, text: t });
+        await a.waitFor('chat');
+      }
+
+      const b = await TestClient.connect(wsUrl);
+      await login(b, 'bob');
+      b.send({ type: 'joinChannel', channel: 'lobby' });
+      const bj = await b.waitFor('channelJoined');
+      // Join delivers only the newest chunk, flagged as having more before it.
+      expect(bj.history.map((h) => h.text)).toEqual(['m4', 'm5']);
+      expect(bj.historyHasMore).toBe(true);
+
+      // Page older: the two messages just before what we hold, still more remaining.
+      b.send({ type: 'requestHistory', channelToken: bj.channelToken, before: bj.history[0]!.id });
+      const page1 = await b.waitFor('historyChunk');
+      expect(page1.channelToken).toBe(bj.channelToken);
+      expect(page1.messages.map((m) => m.text)).toEqual(['m2', 'm3']);
+      expect(page1.hasMore).toBe(true);
+
+      // Page again reaches the start — no more.
+      b.send({
+        type: 'requestHistory',
+        channelToken: bj.channelToken,
+        before: page1.messages[0]!.id,
+      });
+      const page2 = await b.waitFor('historyChunk');
+      expect(page2.messages.map((m) => m.text)).toEqual(['m1']);
+      expect(page2.hasMore).toBe(false);
+
+      a.close();
+      b.close();
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('rejects a history request for a channel the session is not in', async () => {
+    const c = await TestClient.connect(url);
+    await login(c, 'alice');
+    c.send({ type: 'requestHistory', channelToken: 999999, before: 10 });
+    const err = await c.waitFor('error');
+    expect(err.message).toMatch(/not in that channel/i);
+    c.close();
+  });
+});
+
 describe('history persistence', () => {
   it('reloads channel backlog from disk after a restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mara-hist-'));

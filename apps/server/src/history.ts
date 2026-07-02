@@ -28,6 +28,26 @@ export class HistoryStore {
     return this.data.get(name) ?? [];
   }
 
+  /** The newest `limit` entries (oldest first), plus whether older ones exist. Used for
+   *  the initial join backlog so a client gets a chunk, not the whole retained history. */
+  recent(name: string, limit: number): { entries: ChannelHistoryEntry[]; hasMore: boolean } {
+    const all = this.get(name);
+    const entries = limit >= all.length ? all : all.slice(all.length - limit);
+    return { entries, hasMore: all.length > entries.length };
+  }
+
+  /** Up to `limit` entries with id < `beforeId` (the newest of those, oldest first), plus
+   *  whether still-older entries exist. Used to page older history on scroll-up. */
+  before(
+    name: string,
+    beforeId: number,
+    limit: number,
+  ): { entries: ChannelHistoryEntry[]; hasMore: boolean } {
+    const older = this.get(name).filter((e) => e.id < beforeId);
+    const entries = limit >= older.length ? older : older.slice(older.length - limit);
+    return { entries, hasMore: older.length > entries.length };
+  }
+
   /** Highest retained message id (0 if none). The hub seeds its id counter from this
    *  so newly-assigned ids keep increasing across restarts. */
   maxId(): number {
