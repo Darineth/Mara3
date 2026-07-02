@@ -19,12 +19,13 @@ what we really want.
 ## 1. Modern messaging core (next up)
 
 The highest value-for-effort cluster: all additive `@mara/protocol` messages over
-the existing WebSocket model, no accounts or new infrastructure required. Each
-needs a stable per-message id (today messages aren't individually addressable),
-so introducing a server-assigned message id is the shared prerequisite.
+the existing WebSocket model, no accounts or new infrastructure required. Each needs
+a stable per-message id; that shared prerequisite is now in place, so the rest build
+on it.
 
-- [ ] **Stable message ids** — server-assigned id on every chat/emote, carried in
-      history. Prerequisite for everything else in this section.
+- [x] **Stable message ids** — server-assigned id on every chat/emote, carried in
+      history (used to order and de-duplicate the backlog). The prerequisite for the
+      rest of this section.
 - [ ] **Reactions** — emoji reactions on a message; add/remove broadcast to the
       channel, tallied per emoji.
 - [ ] **Replies / threads** — reply to a specific message id; start with inline
@@ -56,14 +57,18 @@ notifications today.
       image URLs/uploads but not regular-link previews).
 - [ ] **Pinned messages** — pin/unpin per channel, with a pinned view.
 - [ ] **Typing indicators** — transient "X is typing…" per conversation.
-- [ ] **Custom emoji / emoji + GIF pickers** — beyond the current opt-in text
-      emoticons.
+- [x] **Custom emoji** — server-hosted `:shortcode:` image emoji (the operator drops
+      files in an emoji folder), with a composer picker and `:`-autocomplete; animated
+      GIFs render. A GIF _picker_ (Giphy-style search) could still follow.
 
 ## 4. Identity & social (lightweight)
 
 Profile polish that does **not** require real accounts — still display-name +
 identity-key based.
 
+- [x] **Portable shared identity** — your display name + colour belong to your identity
+      (persisted server-side) and follow it across clients; export/import your identity key
+      to act as one identity on several devices.
 - [ ] **Avatars** — per-user image (uploaded like attachments), shown in roster
       and message lines.
 - [ ] **Richer profile / custom status** — bio and a free-form status beyond the
@@ -73,17 +78,15 @@ identity-key based.
 
 - [ ] **Message search** — search channel (and eventually PM) history. Likely
       needs a real index/DB if history outgrows the current JSON-file store.
-- [ ] **Scroll to older history** — backlog is capped (~100/channel) with no way
-      to page further back; add server-side history paging.
-- [ ] **Persisted PM history** — private messages are intentionally not retained
-      across sessions today; make it opt-in.
-- [ ] **Remember joined channels** — auto-rejoin a user's channels on login
-      (carried over from PARITY's follow-ups).
+- [x] **Scroll to older history** — the server retains more per channel (default 1000,
+      `MARA_HISTORY_LIMIT`) and pages older messages in on scroll-up.
+- [x] **Remember joined channels** — the client persists the channels you're in and
+      rejoins them on login.
 
 ## 6. In-session profile editing
 
-- [ ] **Change name / colour / avatar without reconnecting** — today appearance is
-      set on the connect screen only.
+- [x] **Change name / colour without reconnecting** — edit them in-session via the options
+      dialog; changes broadcast live and follow your identity. Avatar follows the Avatars item.
 
 ## 7. Appearance & personalization (client-side)
 
@@ -160,3 +163,6 @@ intentionally doesn't have. Revisit only if the project's goals change.
 
 - **Global presence** — presence is per-channel on purpose (matches Mara 2):
   clients learn who's around from channel rosters, not a server-wide online list.
+- **Private messages are live-only** — PMs are never stored on the server (a deliberate
+  privacy decision — see [SECURITY-TODO.md](SECURITY-TODO.md)); they reach only the devices
+  connected when sent, and converge across a user's open windows. Not a gap.
