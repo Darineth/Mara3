@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -620,6 +621,126 @@ describe('identity persistence', () => {
       c3.close();
     } finally {
       await s2.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an identity's name + colour across a restart, overriding a later login", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-id-'));
+    const identityFile = join(dir, 'identity.json');
+    const cfg = {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile: '',
+      identityFile,
+    };
+
+    const s1 = await startServer(cfg, createLogger('silent'));
+    const c1 = await TestClient.connect(`ws://127.0.0.1:${s1.port}/ws`);
+    const first = await login(c1, 'Alice', '#112233', 'shared-key');
+    c1.close();
+    await s1.close(); // flushes name/colour to disk with the identity
+
+    const s2 = await startServer(cfg, createLogger('silent'));
+    try {
+      // A client adopts the identity but sends a different name/colour: the stored
+      // profile wins, so the identity looks identical wherever its key is used.
+      const c2 = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      c2.send({
+        type: 'login',
+        protocol: PROTOCOL_VERSION,
+        name: 'Impostor',
+        color: '#ffffff',
+        identityKey: 'shared-key',
+      });
+      const welcome = await c2.waitFor('welcome');
+      expect(welcome.self.token).toBe(first.token);
+      expect(welcome.self.name).toBe('Alice');
+      expect(welcome.self.color).toBe('#112233');
+      c2.close();
+    } finally {
+      await s2.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists an in-session name/colour change to the identity', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-id-'));
+    const identityFile = join(dir, 'identity.json');
+    const cfg = {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile: '',
+      identityFile,
+    };
+
+    const s1 = await startServer(cfg, createLogger('silent'));
+    const c1 = await TestClient.connect(`ws://127.0.0.1:${s1.port}/ws`);
+    await login(c1, 'Alice', '#112233', 'edit-key');
+    c1.send({ type: 'setProfile', name: 'Alicia', color: '#445566' });
+    await c1.waitFor('userProfile');
+    c1.close();
+    await s1.close();
+
+    const s2 = await startServer(cfg, createLogger('silent'));
+    try {
+      const c2 = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      // Log in with the *original* name/colour; the persisted edit still takes over.
+      c2.send({
+        type: 'login',
+        protocol: PROTOCOL_VERSION,
+        name: 'Alice',
+        color: '#112233',
+        identityKey: 'edit-key',
+      });
+      const welcome = await c2.waitFor('welcome');
+      expect(welcome.self.name).toBe('Alicia');
+      expect(welcome.self.color).toBe('#445566');
+      c2.close();
+    } finally {
+      await s2.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('honours a legacy identity file that maps a key straight to a token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mara-id-'));
+    const identityFile = join(dir, 'identity.json');
+    // v1 on-disk format: hash(key) -> bare token number, no profile.
+    const legacyToken = 4242;
+    const hash = createHash('sha256').update('legacy-key').digest('hex');
+    writeFileSync(identityFile, JSON.stringify({ [hash]: legacyToken }));
+
+    const cfg = {
+      ...loadConfig(),
+      host: '127.0.0.1',
+      port: 0,
+      defaultChannel: '',
+      historyFile: '',
+      identityFile,
+    };
+    const s = await startServer(cfg, createLogger('silent'));
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s.port}/ws`);
+      c.send({
+        type: 'login',
+        protocol: PROTOCOL_VERSION,
+        name: 'Legacy',
+        color: '#abcdef',
+        identityKey: 'legacy-key',
+      });
+      const welcome = await c.waitFor('welcome');
+      // The legacy token is honoured; with no stored profile, this login seeds it.
+      expect(welcome.self.token).toBe(legacyToken);
+      expect(welcome.self.name).toBe('Legacy');
+      expect(welcome.self.color).toBe('#abcdef');
+      c.close();
+    } finally {
+      await s.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

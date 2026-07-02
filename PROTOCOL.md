@@ -88,6 +88,14 @@ channel membership survive a drop without per-message reconciliation. The map is
 persisted to disk (`MARA_IDENTITY_FILE`; only the hash is stored, never the raw
 key). Omitting `identityKey` yields a fresh one-off token each login.
 
+The **others-visible profile — display name and colour — belongs to the identity**,
+not the client: the server persists it alongside the token and, on login, a stored
+profile overrides the `name`/`color` the client sent (so `welcome.self` reflects the
+identity's canonical values). This is what makes a single identity look identical
+across clients that share its key; a fresh identity seeds its profile from its first
+login, and `setProfile` updates the stored copy. Client-only settings (theme, macros,
+which channels to rejoin) are **not** server-side — they stay per-device.
+
 Because two browser tabs share the same persisted `identityKey`, opening a second
 window logs in as the **same user** rather than a duplicate: the new socket
 multiplexes onto the live session (it receives a `welcome` and a `channelJoined`

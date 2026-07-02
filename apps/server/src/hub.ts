@@ -12,7 +12,7 @@ import {
 import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
 import { HistoryStore } from './history.js';
-import { IdentityStore } from './identity.js';
+import { IdentityStore, type IdentityProfile } from './identity.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
@@ -263,7 +263,7 @@ export class Hub {
       return;
     }
 
-    const token = this.resolveToken(msg.identityKey);
+    const { token, profile } = this.resolveIdentity(msg.identityKey);
     const sessionToken = makeSessionToken();
     conn.userToken = token;
     conn.sessionToken = sessionToken;
@@ -295,10 +295,18 @@ export class Hub {
       return;
     }
 
-    const name = this.uniqueName(msg.name);
-    const info: UserInfo = { token, name, color: msg.color, away: '' };
+    // Others-visible presence (name + colour) belongs to the identity, so a stored
+    // profile wins over whatever this client sent at login — that's what lets the same
+    // identity look identical across clients. `uniqueName` still runs, to sidestep a
+    // live clash with a *different* user (that dedupe isn't persisted below).
+    const name = this.uniqueName(profile?.name ?? msg.name);
+    const color = profile?.color ?? msg.color;
+    const info: UserInfo = { token, name, color, away: '' };
     const session: Session = { info, connections: new Set([conn]), channels: new Set() };
     this.state.addSession(session);
+    // Seed the identity's profile on first sight (no-op for an anonymous, unbound token),
+    // so this name/colour follows it to its next client.
+    if (!profile) this.identity.setProfile(token, { name, color });
     this.log.info({ user: name, token }, 'logged in');
 
     conn.send({
@@ -486,7 +494,15 @@ export class Hub {
         changed = true;
       }
     }
-    if (changed) this.broadcastAll({ type: 'userProfile', user: session.info });
+    if (changed) {
+      this.broadcastAll({ type: 'userProfile', user: session.info });
+      // Persist the new name/colour to the identity so it sticks across restarts and
+      // follows the user to other clients (no-op for an anonymous token).
+      this.identity.setProfile(session.info.token, {
+        name: session.info.name,
+        color: session.info.color,
+      });
+    }
   }
 
   private handlePrivateMessage(
@@ -517,20 +533,25 @@ export class Hub {
   // -- helpers --------------------------------------------------------------
 
   /**
-   * Map an identity key to a stable user token: reuse the bound token if the
-   * identity is known (whether or not it is currently online — a live one means a
-   * second window that handleLogin multiplexes onto the same user); mint + bind on
-   * first sight; and fall back to a fresh one-off token when no key was given.
+   * Map an identity key to its stable user token and stored profile: reuse the bound
+   * token if the identity is known (whether or not it is currently online — a live one
+   * means a second window that handleLogin multiplexes onto the same user), carrying its
+   * others-visible profile if one has been set; mint + bind on first sight; and fall back
+   * to a fresh one-off token (no profile, never persisted) when no key was given.
    */
-  private resolveToken(identityKey: string | undefined): Token {
+  private resolveIdentity(identityKey: string | undefined): {
+    token: Token;
+    profile?: IdentityProfile;
+  } {
     if (identityKey) {
       const known = this.identity.tokenFor(identityKey);
-      if (known !== undefined) return known;
+      if (known !== undefined)
+        return { token: known, profile: this.identity.profileFor(identityKey) };
       const token = this.state.allocUserToken();
       this.identity.bind(identityKey, token);
-      return token;
+      return { token };
     }
-    return this.state.allocUserToken();
+    return { token: this.state.allocUserToken() };
   }
 
   // Resolve a free display name, suffixing "2", "3"… on a case-insensitive clash.

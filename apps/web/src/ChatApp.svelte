@@ -175,11 +175,37 @@
     }
   });
 
+  // The identity's others-visible profile (name + colour) is owned by the server, so
+  // adopt whatever it hands back — a name dedupe, another client's edit to this shared
+  // identity, or the profile a fresh device inherits on login — into local settings, so
+  // this device stays in step (and the options/login fields show the real values).
+  function syncProfile(name?: string, color?: string) {
+    let changed = false;
+    if (name && name !== settings.name) {
+      settings.name = name;
+      changed = true;
+    }
+    if (color && color !== settings.color) {
+      settings.color = color;
+      changed = true;
+    }
+    if (changed) persist();
+  }
+
   // Subscribe to client events for the life of the component. Each `.on` returns
   // an unsubscribe fn; the cleanup runs them all so handlers don't leak or fire
   // against a stale closure if the effect re-runs.
   $effect(() => {
     const offs = [
+      // Reconcile local settings with the server-owned identity profile: on login the
+      // canonical name arrives via `connected` (colour rides in the roster), and any
+      // later change to this identity — here or on another client — via `userProfile`.
+      client.events.on('connected', ({ token, name }) =>
+        syncProfile(name, get(users).get(token)?.color),
+      ),
+      client.events.on('userProfile', (u) => {
+        if (u.token === get(self)?.token) syncProfile(u.name, u.color);
+      }),
       client.events.on('channelJoined', (ch) => {
         // Focus the channel when the user deliberately joined it (via +) or when it's
         // the first view of the session — the server's default channel, which joins
