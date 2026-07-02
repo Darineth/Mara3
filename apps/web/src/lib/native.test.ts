@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isDesktop, nativeLog } from './native.js';
+import { isDesktop, nativeLog, requestAttention } from './native.js';
 
 type Invoke = ReturnType<typeof vi.fn>;
 type G = {
@@ -61,5 +61,18 @@ describe('native bridge', () => {
     const invoke = vi.fn().mockRejectedValue(new Error('boom'));
     (globalThis as G).__TAURI__ = { core: { invoke } };
     await expect(nativeLog('system', 'x')).resolves.toBeUndefined();
+  });
+
+  it('forwards a request-attention call to the native command', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    (globalThis as G).__TAURI__ = { core: { invoke } };
+    await requestAttention();
+    expect(invoke).toHaveBeenCalledWith('request_attention', undefined);
+  });
+
+  it('no-ops request-attention in a plain browser', async () => {
+    const invoke = vi.fn();
+    await expect(requestAttention()).resolves.toBeUndefined();
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

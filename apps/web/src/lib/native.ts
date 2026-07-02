@@ -84,6 +84,22 @@ export async function switchServer(): Promise<void> {
 }
 
 /**
+ * Ask the desktop shell to flash its taskbar button (Windows) / bounce its dock icon
+ * (macOS) / set the window urgency hint (Linux), to alert the user to a private message
+ * that arrived while the window was in the background. No-op in a plain browser, and the
+ * shell itself ignores it when the window is already focused. Best-effort: a missing
+ * grant or unsupported shell must never break message handling.
+ */
+export async function requestAttention(): Promise<void> {
+  if (!isDesktop()) return;
+  try {
+    await rawInvoke('request_attention');
+  } catch {
+    /* attention is a nicety — never let it disrupt the chat */
+  }
+}
+
+/**
  * Open a URL in the system browser via the shell's opener plugin (so it doesn't
  * navigate this window away from the chat). Falls back to a new tab in a plain
  * browser. Used for the desktop update-download link.

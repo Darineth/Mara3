@@ -10,7 +10,13 @@
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
-  import { isDesktop, nativeLog, openExternal, switchServer } from './lib/native.js';
+  import {
+    isDesktop,
+    nativeLog,
+    openExternal,
+    requestAttention,
+    switchServer,
+  } from './lib/native.js';
   import { runSlashCommand, type CommandContext } from './lib/commands.js';
   import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
@@ -207,6 +213,10 @@
         // flag it unread so we don't yank the user out of their current view.
         if (activePm === null && activeChannel === null) activePm = pm.from;
         markPmUnread(pm.from);
+        // On the desktop shell, flash the taskbar/dock when a PM lands while the window
+        // is in the background, so it's noticed without stealing focus. The shell also
+        // guards on focus; this avoids a needless IPC hop when we're already in front.
+        if (!document.hasFocus()) void requestAttention();
       }),
       client.events.on('chat', (m) => markChannelUnread(m.channelToken)),
       client.events.on('emote', (m) => markChannelUnread(m.channelToken)),

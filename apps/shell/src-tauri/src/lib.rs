@@ -406,7 +406,8 @@ fn grant_remote_ipc(app: &AppHandle, url: &tauri::Url) {
         // `allow-<command>` permissions (see build.rs AppManifest) to clear the ACL.
         .permission("allow-mara-log")
         .permission("allow-switch-server")
-        .permission("allow-open-external");
+        .permission("allow-open-external")
+        .permission("allow-request-attention");
     let _ = app.add_capability(cap);
 }
 
@@ -455,6 +456,26 @@ fn switch_server(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "main window missing".to_string())?;
     window.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Flash the taskbar button (Windows) / bounce the dock (macOS) / set the urgency hint
+/// (Linux) to alert the user to a private message that arrived while the window was in the
+/// background. `Critical` keeps the taskbar flashing until the window regains focus (the OS
+/// clears it automatically), which is the standard "you have a message" behaviour. Called
+/// from the hosted chat page only when it's already determined the window is unfocused; we
+/// additionally guard on `is_focused()` here so a call while the window is in front is a
+/// no-op (never flash the window the user is looking at).
+#[tauri::command]
+fn request_attention(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window missing".to_string())?;
+    if window.is_focused().unwrap_or(false) {
+        return Ok(());
+    }
+    window
+        .request_user_attention(Some(tauri::UserAttentionType::Critical))
+        .map_err(|e| e.to_string())
 }
 
 /// True when Windows relaunched us after a Restart Manager reboot — i.e. we were running
@@ -507,7 +528,8 @@ pub fn run() {
             set_auto_connect,
             open_app,
             switch_server,
-            open_external
+            open_external,
+            request_attention
         ]);
 
     // Signed auto-update is desktop-only; mobile updates ship through app stores.
