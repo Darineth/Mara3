@@ -22,6 +22,7 @@ beforeEach(async () => {
     defaultChannel: '',
     historyFile: '',
     identityFile: '', // in-memory; persistence tested explicitly below
+    disconnectGraceMs: 0, // announce disconnects immediately (grace tested explicitly below)
   };
   server = await startServer(cfg, createLogger('silent'));
   url = `ws://127.0.0.1:${server.port}/ws`;
@@ -675,6 +676,219 @@ describe('multiplexed windows (same identity)', () => {
     const gone = await watcher.waitFor('userDisconnect');
     expect(gone.token).toBe(alice.token);
 
+    watcher.close();
+  });
+});
+
+describe('disconnect grace period', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let graceServer: MaraServer;
+  let graceUrl: string;
+  const GRACE_MS = 200;
+
+  beforeEach(async () => {
+    graceServer = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        disconnectGraceMs: GRACE_MS,
+      },
+      createLogger('silent'),
+    );
+    graceUrl = `ws://127.0.0.1:${graceServer.port}/ws`;
+  });
+
+  afterEach(async () => {
+    await graceServer.close();
+  });
+
+  it('suppresses leave/join churn when a user reconnects within the grace window', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(graceUrl);
+    const alice = await login(w1, 'alice', '#ffffff', 'alice-key');
+    expect((await watcher.waitFor('userConnect')).user.token).toBe(alice.token);
+
+    // The socket drops (mobile backgrounded / network switch) then comes straight
+    // back with the same identity — well inside the grace window.
+    w1.close();
+    await sleep(GRACE_MS / 4);
+    const w2 = await TestClient.connect(graceUrl);
+    const back = await login(w2, 'alice', '#ffffff', 'alice-key');
+    expect(back.token).toBe(alice.token);
+
+    // The watcher must see NEITHER a disconnect nor a fresh connect: from its point
+    // of view alice never left. Wait out the original grace window, then prove the
+    // channel is quiet with a ping round-trip.
+    await sleep(GRACE_MS + 50);
+    watcher.send({ type: 'ping', id: 1 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    w2.close();
+    watcher.close();
+  });
+
+  it('announces the disconnect once the grace window elapses with no reconnect', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(graceUrl);
+    const alice = await login(w1, 'alice', '#ffffff', 'alice-key');
+    await watcher.waitFor('userConnect');
+
+    // No reconnect: the held disconnect fires after the grace window.
+    w1.close();
+    const gone = await watcher.waitFor('userDisconnect', GRACE_MS + 1000);
+    expect(gone.token).toBe(alice.token);
+
+    watcher.close();
+  });
+
+  it('keeps channel membership intact across a within-grace reconnect', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+    watcher.send({ type: 'joinChannel', channel: 'lobby' });
+    const lobby = await watcher.waitFor('channelJoined');
+
+    const w1 = await TestClient.connect(graceUrl);
+    await login(w1, 'alice', '#ffffff', 'alice-key');
+    w1.send({ type: 'joinChannel', channel: 'lobby' });
+    await w1.waitFor('channelJoined');
+    // watcher sees alice join the channel exactly once.
+    const joined = await watcher.waitFor('userJoinedChannel');
+    expect(joined.channelToken).toBe(lobby.channelToken);
+
+    // Drop + reconnect within grace: no channel leave/re-join is broadcast, and
+    // alice is auto-resynced into lobby (membership was never scrubbed).
+    w1.close();
+    await sleep(GRACE_MS / 4);
+    const w2 = await TestClient.connect(graceUrl);
+    await login(w2, 'alice', '#ffffff', 'alice-key');
+    const resynced = await w2.waitFor('channelJoined');
+    expect(resynced.channel).toBe('lobby');
+
+    await sleep(GRACE_MS + 50);
+    watcher.send({ type: 'ping', id: 2 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    w2.close();
+    watcher.close();
+  });
+});
+
+describe('flap damping (long-term reconnect churn)', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const BASE_GRACE = 40;
+  const FLAP_SETTLE = 1500; // must comfortably exceed the warm-up cycles below
+  let s: MaraServer;
+  let u: string;
+
+  beforeEach(async () => {
+    s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        disconnectGraceMs: BASE_GRACE,
+        flapSettleMs: FLAP_SETTLE,
+      },
+      createLogger('silent'),
+    );
+    u = `ws://127.0.0.1:${s.port}/ws`;
+  });
+  afterEach(async () => {
+    await s.close();
+  });
+
+  // Discard everything currently buffered/incoming for a client (used to ignore the
+  // bounded warm-up churn before the interesting, post-damping assertions).
+  async function drain(c: TestClient): Promise<void> {
+    for (;;) {
+      try {
+        await c.next(40);
+      } catch {
+        return;
+      }
+    }
+  }
+
+  // One full connect → join lobby → drop cycle for the flapper identity. Each drop
+  // (a last-window close) is what the flap detector counts.
+  async function flapCycle(): Promise<void> {
+    const w = await TestClient.connect(u);
+    await login(w, 'flapper', '#ffffff', 'flap-key');
+    w.send({ type: 'joinChannel', channel: 'lobby' });
+    await w.waitFor('channelJoined');
+    w.close();
+  }
+
+  it('falls silent once a user is flapping, then resumes after they participate', async () => {
+    const watcher = await TestClient.connect(u);
+    await login(watcher, 'bob');
+    watcher.send({ type: 'joinChannel', channel: 'lobby' });
+    const lobby = await watcher.waitFor('channelJoined');
+
+    // Three drops in the window trip the flap detector (a little churn is expected
+    // during this warm-up — we only care that it goes quiet afterwards).
+    for (let i = 0; i < 3; i++) {
+      await flapCycle();
+      await sleep(BASE_GRACE + 40);
+    }
+    await drain(watcher);
+
+    // Now flagged flapping: the session is held on the long window, so a reconnect
+    // is a silent multiplex — bob sees no connect/join at all.
+    const back = await TestClient.connect(u);
+    const flapper = await login(back, 'flapper', '#ffffff', 'flap-key');
+    await back.waitFor('channelJoined'); // auto-resynced into lobby by the multiplex path
+    watcher.send({ type: 'ping', id: 1 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    // They finally speak → participation clears the flap flag.
+    back.send({ type: 'chat', channelToken: lobby.channelToken, text: 'anyone there?' });
+    expect((await watcher.waitFor('chat')).text).toBe('anyone there?');
+
+    // ...so their next real drop is announced again on the ordinary short grace.
+    back.close();
+    const gone = await watcher.waitFor('userDisconnect', BASE_GRACE + 1000);
+    expect(gone.token).toBe(flapper.token);
+    watcher.close();
+  });
+
+  it('announces one disconnect only after a flapping user stays gone past the settle window', async () => {
+    const watcher = await TestClient.connect(u);
+    await login(watcher, 'bob');
+    watcher.send({ type: 'joinChannel', channel: 'lobby' });
+    await watcher.waitFor('channelJoined');
+
+    for (let i = 0; i < 3; i++) {
+      await flapCycle();
+      await sleep(BASE_GRACE + 40);
+    }
+    await drain(watcher);
+
+    // Reconnect (silent multiplex), then vanish for good.
+    const back = await TestClient.connect(u);
+    const flapper = await login(back, 'flapper', '#ffffff', 'flap-key');
+    await back.waitFor('channelJoined');
+    back.close();
+
+    // The disconnect is held for the LONG window: nothing at the short-grace mark.
+    await sleep(BASE_GRACE + 60);
+    watcher.send({ type: 'ping', id: 1 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    // ...then exactly one disconnect once the settle window elapses.
+    const gone = await watcher.waitFor('userDisconnect', FLAP_SETTLE + 1000);
+    expect(gone.token).toBe(flapper.token);
     watcher.close();
   });
 });

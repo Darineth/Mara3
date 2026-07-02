@@ -32,6 +32,18 @@ export class Hub {
   private nextMessageId: number;
   /** Our version + the web build we serve; echoed in every `welcome`. */
   readonly serverInfo: ServerInfo;
+  /** Users whose last socket has closed but whose disconnect is being held back
+   *  for the grace window (keyed by user token → its pending timer). A reconnect
+   *  clears the entry silently; otherwise the timer announces the disconnect. */
+  private readonly pendingDisconnects = new Map<Token, ReturnType<typeof setTimeout>>();
+  /** Per-user flap history (keyed by user token, outliving individual sessions):
+   *  timestamps of recent last-window closes, and whether the user is currently
+   *  *damped* — flapping enough that we hold their session on the long settle
+   *  window so the churn stays silent, until they participate or truly leave.
+   *  See {@link scheduleDisconnect}. */
+  private readonly flap = new Map<Token, { drops: number[]; damped: boolean }>();
+  /** Last-window closes within `flapSettleMs` that flag a user as flapping. */
+  private static readonly FLAP_THRESHOLD = 3;
 
   constructor(
     private readonly cfg: ServerConfig,
@@ -48,6 +60,11 @@ export class Hub {
 
   /** Persist any pending history + identities synchronously (call on shutdown). */
   flush(): void {
+    // Cancel any in-flight disconnect timers so a teardown doesn't fire a stray
+    // broadcast (and the process isn't held open waiting on them).
+    for (const timer of this.pendingDisconnects.values()) clearTimeout(timer);
+    this.pendingDisconnects.clear();
+    this.flap.clear();
     this.history.flush();
     this.identity.flush();
   }
@@ -107,17 +124,88 @@ export class Hub {
     // Detach this socket. A pre-login drop (userToken null) leaves nothing to do.
     // For a multiplexed user we only announce a disconnect once their *last*
     // window closes — other windows keep them present.
-    const result = this.state.removeConnection(conn);
+    const result = this.state.detachConnection(conn);
     if (result?.lastClosed) {
-      this.log.info({ user: result.session.info.name }, 'disconnected');
-      this.broadcastAll(
-        { type: 'userDisconnect', token: result.session.info.token, at: this.now() },
-        result.session.info.token,
-      );
+      // Hold the disconnect for the grace window: a reconnect within it (common on
+      // mobile, where the socket drops on backgrounding/network switches) cancels
+      // this quietly, so other users never see leave/join churn.
+      this.scheduleDisconnect(result.session);
     } else if (result) {
       this.log.debug({ user: result.session.info.name }, 'window closed (still online elsewhere)');
     }
     conn.state = 'closed';
+  }
+
+  /**
+   * Arm (or immediately fire) the pending-disconnect for a user whose last socket
+   * just closed. Each such drop is recorded; once a user racks up
+   * {@link FLAP_THRESHOLD} of them inside the `flapSettleMs` window they're flagged
+   * as *flapping* and switched from the ordinary `disconnectGraceMs` to the much
+   * longer `flapSettleMs` window. The session is *held* for that whole window, so
+   * every reconnect inside it is a silent multiplex (no connect/join/disconnect
+   * lines) — which is what tames a backgrounded mobile tab that drops and reconnects
+   * for minutes on end. With the chosen window `<= 0` we announce synchronously
+   * (pre-grace behaviour).
+   */
+  private scheduleDisconnect(session: Session): void {
+    const token = session.info.token;
+    // A prior timer shouldn't exist (the reconnect path clears it), but be safe.
+    const existing = this.pendingDisconnects.get(token);
+    if (existing) clearTimeout(existing);
+
+    let graceMs = this.cfg.disconnectGraceMs;
+    if (this.cfg.flapSettleMs > 0) {
+      const now = this.now();
+      const rec = this.flap.get(token);
+      const drops = (rec?.drops ?? []).filter((t) => now - t < this.cfg.flapSettleMs);
+      drops.push(now);
+      const damped = (rec?.damped ?? false) || drops.length >= Hub.FLAP_THRESHOLD;
+      this.flap.set(token, { drops, damped });
+      if (damped) {
+        graceMs = this.cfg.flapSettleMs;
+        this.log.debug({ user: session.info.name }, 'flapping — holding presence (long window)');
+      }
+    }
+
+    if (graceMs <= 0) {
+      this.finalizeDisconnect(token);
+      return;
+    }
+    this.log.debug({ user: session.info.name, graceMs }, 'last window closed (holding for grace)');
+    const timer = setTimeout(() => this.finalizeDisconnect(token), graceMs);
+    // Don't let a pending disconnect keep the process alive on its own.
+    timer.unref?.();
+    this.pendingDisconnects.set(token, timer);
+  }
+
+  /** Clear a held disconnect because the user reconnected within the grace window. */
+  private cancelPendingDisconnect(token: Token): void {
+    const timer = this.pendingDisconnects.get(token);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.pendingDisconnects.delete(token);
+  }
+
+  /** Forget a user's flap history — they've stabilised (participated, or gone for good). */
+  private clearFlap(token: Token): void {
+    this.flap.delete(token);
+  }
+
+  /**
+   * The grace window elapsed with no reconnect: retire the session and announce the
+   * departure. `dropSession` is a no-op if the user came back (has sockets again),
+   * so a late timer can't evict a live user. A flapping user reaching here has
+   * finally stayed away past the long window — announce once and forget them, so a
+   * later return starts clean.
+   */
+  private finalizeDisconnect(token: Token): void {
+    this.pendingDisconnects.delete(token);
+    const session = this.state.dropSession(token);
+    if (!session) return; // reconnected in the meantime, or already gone
+    const wasFlapping = this.flap.get(token)?.damped ?? false;
+    if (wasFlapping) this.clearFlap(token);
+    this.log.info({ user: session.info.name, flapping: wasFlapping }, 'disconnected');
+    this.broadcastAll({ type: 'userDisconnect', token, at: this.now() }, token);
   }
 
   // -- dispatch -------------------------------------------------------------
@@ -181,11 +269,15 @@ export class Hub {
     conn.sessionToken = sessionToken;
     conn.state = 'active';
 
-    // Second window for an identity that is already online: multiplex this socket
-    // onto the live user instead of spawning a duplicate. No new presence is
-    // announced — they were already here — we just bring this window into sync.
+    // An identity that is still live: either a genuine second window, or the same
+    // user reconnecting inside the grace window after their last socket dropped.
+    // Either way we multiplex this socket onto the existing session instead of
+    // spawning a duplicate — no new presence is announced (they never left as far
+    // as anyone else is concerned) — we just bring this window into sync.
     const live = this.state.sessions.get(token);
     if (live) {
+      // If a disconnect was being held for this user, they're back: cancel it.
+      this.cancelPendingDisconnect(token);
       this.state.attachConnection(live, conn);
       this.log.info({ user: live.info.name, token }, 'additional window');
       conn.send({
@@ -334,6 +426,10 @@ export class Hub {
       conn.send({ type: 'error', message: 'not in that channel' });
       return;
     }
+    // Actively participating proves the user is really here, not just a flapping
+    // background tab: forget any flap history so their next disconnect uses the
+    // ordinary short grace and announces normally again.
+    this.clearFlap(session.info.token);
     // Server-stamp the message, retain it as capped (persisted) backlog, then
     // broadcast it. The author's name/colour are snapshotted so backlog renders
     // even after a restart, when the author's token is gone.

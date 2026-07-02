@@ -69,23 +69,34 @@ export class ServerState {
 
   /**
    * Detach a closing socket from its user. Returns the session and whether this
-   * was the user's *last* connection — only then is the user truly offline, so
-   * only then should the caller scrub channels and announce a disconnect.
+   * was the user's *last* connection — only then is the user (potentially)
+   * offline. The session itself is left in place even when its last socket goes,
+   * so a fast reconnect can multiplex back onto it during the disconnect grace
+   * window; the hub calls {@link dropSession} once that window elapses.
    */
-  removeConnection(conn: Connection): { session: Session; lastClosed: boolean } | undefined {
+  detachConnection(conn: Connection): { session: Session; lastClosed: boolean } | undefined {
     if (conn.userToken === null) return undefined;
     const session = this.sessions.get(conn.userToken);
     if (!session) return undefined;
     session.connections.delete(conn);
     if (conn.sessionToken) this.sessionTokens.delete(conn.sessionToken);
-    if (session.connections.size > 0) return { session, lastClosed: false };
-    // Last socket gone: scrub stale membership so broadcasts never target a gone
-    // user. Empty channels are left behind here; pruneChannel handles explicit leave.
+    return { session, lastClosed: session.connections.size === 0 };
+  }
+
+  /**
+   * Retire a session for good: scrub its channel membership so broadcasts never
+   * target a gone user, then forget it. Empty channels are left behind here;
+   * pruneChannel handles explicit leaves. A no-op if the token is already gone or
+   * the session has since reconnected (has live sockets again).
+   */
+  dropSession(token: Token): Session | undefined {
+    const session = this.sessions.get(token);
+    if (!session || session.connections.size > 0) return undefined;
     for (const channelToken of session.channels) {
-      this.channelsByToken.get(channelToken)?.members.delete(session.info.token);
+      this.channelsByToken.get(channelToken)?.members.delete(token);
     }
-    this.sessions.delete(session.info.token);
-    return { session, lastClosed: true };
+    this.sessions.delete(token);
+    return session;
   }
 
   /** Resolve a session from its per-session secret (the upload bearer credential). */

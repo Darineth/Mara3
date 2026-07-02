@@ -38,6 +38,21 @@ export interface ServerConfig {
   /** Consecutive over-limit (dropped) messages before the flooding socket is closed. */
   msgFloodKick: number;
   /**
+   * Grace period (ms) between a user's *last* socket closing and announcing their
+   * disconnect. A reconnect within this window (same identity) is treated as
+   * continuous presence — no leave/join churn — which matters on mobile, where
+   * backgrounding a tab or switching networks drops and re-opens the socket
+   * constantly. `<= 0` disables it (immediate disconnect, as before). */
+  disconnectGraceMs: number;
+  /**
+   * Longer grace applied to a user detected *flapping* (repeatedly dropping and
+   * reconnecting over a long stretch — the classic backgrounded-Android-tab
+   * pattern). Once flagged, their presence churn is suppressed: reconnects within
+   * this window stay silent (no join/disconnect lines), and only a continuous
+   * absence past it announces the departure. Actively participating (sending a
+   * chat/emote) clears the flag. `<= 0` disables flap damping entirely. */
+  flapSettleMs: number;
+  /**
    * File the per-channel message history is persisted to (so backlog survives a
    * restart). On by default (`apps/server/data/history.json`); set
    * `MARA_HISTORY_FILE` empty to disable — history then stays in-memory only
@@ -116,6 +131,8 @@ const DEFAULTS = {
   msgRate: 15,
   msgBurst: 30,
   msgFloodKick: 300,
+  disconnectGraceMs: 15_000,
+  flapSettleMs: 300_000,
 };
 
 // Parse a numeric env var, falling back on missing/blank/non-finite input
@@ -209,6 +226,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),
     msgBurst: Math.max(1, num(env.MARA_MSG_BURST, DEFAULTS.msgBurst)),
     msgFloodKick: Math.max(1, num(env.MARA_MSG_FLOOD_KICK, DEFAULTS.msgFloodKick)),
+    disconnectGraceMs: Math.max(0, num(env.MARA_DISCONNECT_GRACE_MS, DEFAULTS.disconnectGraceMs)),
+    flapSettleMs: Math.max(0, num(env.MARA_FLAP_SETTLE_MS, DEFAULTS.flapSettleMs)),
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
     historyFile: (env.MARA_HISTORY_FILE ?? join(base, 'data', 'history.json')).trim(),
     identityFile: (env.MARA_IDENTITY_FILE ?? join(base, 'data', 'identity.json')).trim(),

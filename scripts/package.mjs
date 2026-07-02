@@ -95,6 +95,15 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 # --- WebSocket ---
 #MARA_WS_PATH=/ws            # must match what a reverse proxy forwards
 
+# --- Presence ---
+#MARA_DISCONNECT_GRACE_MS=15000  # hold a user's "disconnected" for this long after their
+                                 # last socket drops; a reconnect within it is silent (no
+                                 # leave/join spam from flaky mobile connections). 0 = off.
+#MARA_FLAP_SETTLE_MS=300000      # a user who keeps dropping/reconnecting (a backgrounded
+                                 # mobile tab) is flagged "flapping" and held on THIS longer
+                                 # window instead, so their churn stays silent until they send
+                                 # a message or stay gone this long. 0 = disable flap damping.
+
 # --- Flood control (per-connection message rate limit) ---
 #MARA_MSG_RATE=15           # sustained messages/sec allowed; 0 disables the limit
 #MARA_MSG_BURST=30          # how many messages may be sent in a quick burst
