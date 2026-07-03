@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { channelHistoryEntrySchema, type ChannelHistoryEntry } from '@mara/protocol';
 import type { Logger } from './logger.js';
@@ -67,42 +67,66 @@ export class HistoryStore {
 
   private load(): void {
     if (!this.file) return; // persistence disabled
+    let raw: string;
     try {
-      // Shape: { [channelName]: entry[] }. Validate each entry via the protocol
-      // schema so a corrupt/tampered file can't smuggle in malformed data.
-      const obj = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, unknown>;
-      // Backfill ids for entries written before message ids existed, so an old history
-      // file migrates transparently: find the max id already present, then assign the
-      // rest in stored (chronological) order. Newer files already carry ids, so this is a
-      // no-op for them.
-      let maxId = 0;
-      for (const arr of Object.values(obj)) {
-        if (!Array.isArray(arr)) continue;
-        for (const e of arr) {
-          const id = (e as { id?: unknown })?.id;
-          if (typeof id === 'number' && id > maxId) maxId = id;
-        }
-      }
-      for (const [name, arr] of Object.entries(obj)) {
-        if (!Array.isArray(arr)) continue;
-        this.data.set(
-          name,
-          arr.map((e) => {
-            if (e && typeof e === 'object' && (e as { id?: unknown }).id == null) {
-              (e as { id: number }).id = ++maxId;
-            }
-            return channelHistoryEntrySchema.parse(e);
-          }),
-        );
-      }
-      this.log.info({ channels: this.data.size, file: this.file }, 'loaded message history');
+      raw = readFileSync(this.file, 'utf8');
     } catch (err) {
-      // Missing file is normal on first run; anything else we note but tolerate
-      // (start empty rather than refuse to boot on a corrupt history file).
+      // Missing file is normal on first run; anything else we note but tolerate.
       if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        this.log.warn({ err, file: this.file }, 'could not load history; starting empty');
+        this.log.warn({ err, file: this.file }, 'could not read history; starting empty');
+      }
+      return;
+    }
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(raw) as Record<string, unknown>;
+    } catch (err) {
+      // Unparseable file (e.g. a truncated write from a crash). Start empty, but move
+      // the file aside first — otherwise the next save would overwrite it, turning a
+      // recoverable accident into permanent loss.
+      const rescue = `${this.file}.corrupt`;
+      try {
+        renameSync(this.file, rescue);
+        this.log.error({ err, file: this.file, rescue }, 'history file corrupt; moved aside');
+      } catch (renameErr) {
+        this.log.error({ err, renameErr, file: this.file }, 'history file corrupt and un-movable');
+      }
+      return;
+    }
+    // Shape: { [channelName]: entry[] }. Validate each entry via the protocol schema so
+    // a corrupt/tampered file can't smuggle in malformed data. Validation is PER ENTRY:
+    // a bad entry is dropped (and counted), never allowed to take the rest of the
+    // history down with it — an all-or-nothing parse here once meant one invalid entry
+    // silently discarded everything after it, made permanent by the next save.
+    // Backfill ids for entries written before message ids existed, so an old history
+    // file migrates transparently: find the max id already present, then assign the
+    // rest in stored (chronological) order. Newer files already carry ids.
+    let maxId = 0;
+    for (const arr of Object.values(obj)) {
+      if (!Array.isArray(arr)) continue;
+      for (const e of arr) {
+        const id = (e as { id?: unknown })?.id;
+        if (typeof id === 'number' && id > maxId) maxId = id;
       }
     }
+    let dropped = 0;
+    for (const [name, arr] of Object.entries(obj)) {
+      if (!Array.isArray(arr)) continue;
+      const entries: ChannelHistoryEntry[] = [];
+      for (const e of arr) {
+        if (e && typeof e === 'object' && (e as { id?: unknown }).id == null) {
+          (e as { id: number }).id = ++maxId;
+        }
+        const parsed = channelHistoryEntrySchema.safeParse(e);
+        if (parsed.success) entries.push(parsed.data);
+        else dropped++;
+      }
+      this.data.set(name, entries);
+    }
+    if (dropped > 0) {
+      this.log.warn({ dropped, file: this.file }, 'dropped invalid history entries on load');
+    }
+    this.log.info({ channels: this.data.size, file: this.file }, 'loaded message history');
   }
 
   private schedule(): void {
@@ -125,11 +149,20 @@ export class HistoryStore {
     if (!this.dirty) return;
     this.dirty = false;
     try {
+      // Atomic: write a temp file, then rename over the real one. An in-place write
+      // interrupted by a crash/power cut leaves truncated JSON — which the next boot
+      // can't parse, and whose replacement would erase the history for good.
       mkdirSync(dirname(this.file), { recursive: true });
-      await writeFile(this.file, this.snapshot());
+      const tmp = `${this.file}.tmp`;
+      await writeFile(tmp, this.snapshot());
+      await rename(tmp, this.file);
     } catch (err) {
-      this.log.error({ err, file: this.file }, 'failed to persist history');
-      this.dirty = true; // retry on the next change
+      this.log.error({ err, file: this.file }, 'failed to persist history; will retry');
+      // Retry on our own schedule — "on the next change" isn't enough, because if no
+      // further message ever arrives the tail would sit unwritten until shutdown (or
+      // be lost in a crash). Transient Windows file locks make this path real.
+      this.dirty = true;
+      this.schedule();
     }
   }
 
@@ -143,7 +176,9 @@ export class HistoryStore {
     this.dirty = false;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, this.snapshot());
+      const tmp = `${this.file}.tmp`;
+      writeFileSync(tmp, this.snapshot());
+      renameSync(tmp, this.file);
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to flush history on shutdown');
     }

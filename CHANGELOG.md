@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.14] - unreleased
 
-_In development._
+### Fixed
+
+- Message-history persistence is now crash-safe. History saves are atomic
+  (temp file + rename), so a crash mid-write can no longer truncate the file;
+  an unparseable history file is moved aside to `history.json.corrupt` for
+  recovery instead of being silently replaced; a single invalid entry on load
+  now drops only that entry rather than discarding everything after it; and a
+  failed save retries on its own schedule instead of waiting for the next
+  message.
 
 ## [3.0.13] - 2026-07-03
 
