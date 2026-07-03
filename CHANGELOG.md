@@ -6,6 +6,11 @@ All notable changes to Mara 3 are documented here.
 
 ### Added
 
+- @Mentions: a channel message containing `@YourName` now requests attention like
+  a PM — on the desktop clients the taskbar button flashes when the window is in
+  the background. Matching is case-insensitive and whole-name (`@Rosa` doesn't
+  fire for Rosalind, `mail@host` fires for no one); your own messages never page
+  you, and a pop-out window only reacts to mentions in its own conversation.
 - `/join <channel>` and `/leave [channel]` slash commands. `/join` accepts an optional
   leading `#` and switches to the channel if you're already in it; `/leave` with no
   argument leaves the channel you're looking at, or a named one from anywhere.
@@ -28,6 +33,9 @@ All notable changes to Mara 3 are documented here.
   and raise themselves natively (webview `window.close()`/`focus()` are no-ops). A
   PM pop-out flashes its own taskbar button on new messages. On an older desktop
   client, pop-out requests gracefully fall back to tabs.
+- The Windows 7 client now honours attention requests: it never had the
+  `request_attention` command, so PM (and now @mention) taskbar flashes silently
+  did nothing there. Requires the rebuilt Win7 client.
 - New option: "Open private messages in their own windows" — with it on, PM
   conversations skip the tab bar entirely: opening one (user list, `/msg`) and
   new incoming conversations go straight to pop-out windows, and closing a PM

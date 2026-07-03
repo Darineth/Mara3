@@ -539,6 +539,22 @@ async fn open_popout(
     Ok(())
 }
 
+/// Flash the calling window's taskbar button to alert the user to a PM or an
+/// @mention that arrived while the window is in the background. Mirrors the modern
+/// shell's `request_attention`: flashes the *calling* window (so a pop-out flashes
+/// its own taskbar entry), and is a no-op when that window is already focused —
+/// never flash the window the user is looking at. `Critical` keeps flashing until
+/// the window regains focus (the OS clears it automatically).
+#[tauri::command]
+fn request_attention(window: tauri::Window) -> Result<(), String> {
+    if window.is_focused().unwrap_or(false) {
+        return Ok(());
+    }
+    window
+        .request_user_attention(Some(tauri::UserAttentionType::Critical))
+        .map_err(|e| e.to_string())
+}
+
 /// Close the calling pop-out window (JS `window.close()` is a no-op in a webview).
 /// Restricted to pop-outs: the loaded page must never be able to close the main window.
 #[tauri::command]
@@ -584,6 +600,7 @@ fn main() {
             set_auto_connect,
             open_app,
             open_popout,
+            request_attention,
             close_self,
             focus_self
         ])

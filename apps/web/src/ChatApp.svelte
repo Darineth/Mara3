@@ -19,6 +19,7 @@
     requestAttention,
     switchServer,
   } from './lib/native.js';
+  import { mentionsUser } from './lib/mentions.js';
   import { runSlashCommand, type CommandContext } from './lib/commands.js';
   import {
     clearPmHistory,
@@ -271,6 +272,19 @@
     if (activePm === token) return;
     if (!unreadPms.has(token)) unreadPms = new Set(unreadPms).add(token);
   }
+  // A channel message: badge the tab, and treat an @mention of our name like a
+  // PM — flash the taskbar/dock when this window is in the background, so being
+  // called out in a channel is noticed like a direct message. Your own echoed
+  // messages never page you, and a pop-out only reacts to mentions in its own
+  // pinned conversation (the main window listens everywhere).
+  function onChannelMessage(m: { from: Token; channelToken: Token; text: string }) {
+    markChannelUnread(m.channelToken, m.from);
+    const me = get(self);
+    if (!me || m.from === me.token) return;
+    if (solo && !(solo.kind === 'channel' && activeChannel === m.channelToken)) return;
+    if (mentionsUser(m.text, me.name) && !document.hasFocus()) void requestAttention();
+  }
+
   // Copy-on-write: return a new Set so $state sees a fresh reference and
   // re-renders; return the original unchanged when there's nothing to clear.
   function clearUnread(set: Set<Token>, token: Token): Set<Token> {
@@ -465,8 +479,8 @@
       }),
       // Only real messages badge a tab — joins/leaves/away and other system lines
       // arrive as their own event types and deliberately don't mark anything unread.
-      client.events.on('chat', (m) => markChannelUnread(m.channelToken, m.from)),
-      client.events.on('emote', (m) => markChannelUnread(m.channelToken, m.from)),
+      client.events.on('chat', onChannelMessage),
+      client.events.on('emote', onChannelMessage),
       client.events.on('statusChanged', (status) => {
         const notice = connectionNotice(status, noticeState);
         if (notice) pushSystem(notice);
