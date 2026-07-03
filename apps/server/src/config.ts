@@ -56,6 +56,13 @@ export interface ServerConfig {
    * chat/emote) clears the flag. `<= 0` disables flap damping entirely. */
   flapSettleMs: number;
   /**
+   * Consecutive join→leave cycles a client racks up *without ever sending a message*
+   * before it's flagged **unreliable** — after which its join/disconnect churn is muted
+   * entirely until it next interacts (then it's revealed and the count resets). Catches a
+   * flap-y client whose reconnects are spaced too far apart for `flapSettleMs` to hold the
+   * session. `<= 0` disables the flag (every join/disconnect always announces). */
+  unreliableDrops: number;
+  /**
    * File the per-channel message history is persisted to (so backlog survives a
    * restart). On by default (`apps/server/data/history.json`); set
    * `MARA_HISTORY_FILE` empty to disable — history then stays in-memory only
@@ -136,6 +143,7 @@ const DEFAULTS = {
   msgFloodKick: 300,
   disconnectGraceMs: 15_000,
   flapSettleMs: 300_000,
+  unreliableDrops: 2,
 };
 
 // Parse a numeric env var, falling back on missing/blank/non-finite input
@@ -232,6 +240,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     msgFloodKick: Math.max(1, num(env.MARA_MSG_FLOOD_KICK, DEFAULTS.msgFloodKick)),
     disconnectGraceMs: Math.max(0, num(env.MARA_DISCONNECT_GRACE_MS, DEFAULTS.disconnectGraceMs)),
     flapSettleMs: Math.max(0, num(env.MARA_FLAP_SETTLE_MS, DEFAULTS.flapSettleMs)),
+    unreliableDrops: Math.max(0, num(env.MARA_UNRELIABLE_DROPS, DEFAULTS.unreliableDrops)),
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
     historyFile: (env.MARA_HISTORY_FILE ?? join(base, 'data', 'history.json')).trim(),
     identityFile: (env.MARA_IDENTITY_FILE ?? join(base, 'data', 'identity.json')).trim(),

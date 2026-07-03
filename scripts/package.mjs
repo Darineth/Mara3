@@ -106,6 +106,10 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
                                  # mobile tab) is flagged "flapping" and held on THIS longer
                                  # window instead, so their churn stays silent until they send
                                  # a message or stay gone this long. 0 = disable flap damping.
+#MARA_UNRELIABLE_DROPS=2         # after this many join->leave cycles with NO message sent, a
+                                 # client is flagged "unreliable" and its join/disconnect are
+                                 # muted entirely until it next interacts (catches slow churn
+                                 # that spaces reconnects past the flap window). 0 = off.
 
 # --- Flood control (per-connection message rate limit) ---
 #MARA_MSG_RATE=15           # sustained messages/sec allowed; 0 disables the limit

@@ -47,6 +47,12 @@ export class Hub {
   private readonly flap = new Map<Token, { drops: number[]; damped: boolean }>();
   /** Last-window closes within `flapSettleMs` that flag a user as flapping. */
   private static readonly FLAP_THRESHOLD = 3;
+  /** Interaction-based *unreliable* flag (keyed by user token, outliving sessions): how
+   *  many consecutive sessions ended with no chat/emote, and whether the user is currently
+   *  flagged unreliable — join/disconnect muted until they next interact. Catches slow
+   *  join/leave churn that `flapSettleMs` (a time window) misses. See
+   *  {@link finalizeDisconnect} / {@link revealIfUnreliable}. */
+  private readonly quiet = new Map<Token, { drops: number; unreliable: boolean }>();
 
   constructor(
     private readonly cfg: ServerConfig,
@@ -69,6 +75,7 @@ export class Hub {
     for (const timer of this.pendingDisconnects.values()) clearTimeout(timer);
     this.pendingDisconnects.clear();
     this.flap.clear();
+    this.quiet.clear();
     this.history.flush();
     this.identity.flush();
   }
@@ -195,6 +202,32 @@ export class Hub {
     this.flap.delete(token);
   }
 
+  /** Whether a token is currently flagged unreliable (join/disconnect muted). */
+  private isUnreliable(token: Token): boolean {
+    return this.quiet.get(token)?.unreliable ?? false;
+  }
+
+  /**
+   * A user just interacted for the first time this session: clear their churn count, and if
+   * they were muted as unreliable, announce the presence that was suppressed — their
+   * connect, and a join for each channel they're in — so everyone sees them now. No-op when
+   * they weren't muted (the common case).
+   */
+  private revealIfUnreliable(session: Session): void {
+    const token = session.info.token;
+    const wasUnreliable = this.isUnreliable(token);
+    this.quiet.delete(token);
+    if (!wasUnreliable) return;
+    this.broadcastAll({ type: 'userConnect', user: session.info }, token);
+    for (const channelToken of session.channels) {
+      this.broadcastChannel(
+        channelToken,
+        { type: 'userJoinedChannel', token, channelToken, at: this.now() },
+        token,
+      );
+    }
+  }
+
   /**
    * The grace window elapsed with no reconnect: retire the session and announce the
    * departure. `dropSession` is a no-op if the user came back (has sockets again),
@@ -208,6 +241,24 @@ export class Hub {
     if (!session) return; // reconnected in the meantime, or already gone
     const wasFlapping = this.flap.get(token)?.damped ?? false;
     if (wasFlapping) this.clearFlap(token);
+
+    // Whether this token was ALREADY flagged unreliable coming into this disconnect decides
+    // if we announce it. Then update the count: a session that ended without a single
+    // chat/emote is another quiet cycle (flag once it reaches the threshold); one that
+    // interacted was a real presence, so forget the count and announce normally.
+    const muted = this.isUnreliable(token);
+    if (session.interacted) {
+      this.quiet.delete(token);
+    } else if (this.cfg.unreliableDrops > 0) {
+      const rec = this.quiet.get(token) ?? { drops: 0, unreliable: false };
+      rec.drops += 1;
+      rec.unreliable = rec.unreliable || rec.drops >= this.cfg.unreliableDrops;
+      this.quiet.set(token, rec);
+    }
+    if (muted) {
+      this.log.debug({ user: session.info.name }, 'disconnected (muted — unreliable)');
+      return;
+    }
     this.log.info({ user: session.info.name, flapping: wasFlapping }, 'disconnected');
     this.broadcastAll({ type: 'userDisconnect', token, at: this.now() }, token);
   }
@@ -307,7 +358,12 @@ export class Hub {
     const name = this.uniqueName(profile?.name ?? msg.name);
     const color = profile?.color ?? msg.color;
     const info: UserInfo = { token, name, color, away: '' };
-    const session: Session = { info, connections: new Set([conn]), channels: new Set() };
+    const session: Session = {
+      info,
+      connections: new Set([conn]),
+      channels: new Set(),
+      interacted: false,
+    };
     this.state.addSession(session);
     // Seed the identity's profile on first sight (no-op for an anonymous, unbound token),
     // so this name/colour follows it to its next client.
@@ -323,7 +379,9 @@ export class Hub {
       emoji: this.emoji.manifest(),
       at: this.now(),
     });
-    this.broadcastAll({ type: 'userConnect', user: info }, token);
+    // A client already flagged unreliable (flap-y, never interacts) reconnects silently —
+    // no connect/join churn — until it actually says something (see revealIfUnreliable).
+    if (!this.isUnreliable(token)) this.broadcastAll({ type: 'userConnect', user: info }, token);
 
     // Drop everyone into the shared default channel automatically.
     if (this.cfg.defaultChannel) this.joinChannelByName(session, this.cfg.defaultChannel);
@@ -346,8 +404,9 @@ export class Hub {
 
     // Membership is per-user, so every window of this user reflects the join.
     for (const conn of session.connections) this.sendChannelSnapshot(conn, channel);
-    // Only announce a genuinely new membership (idempotent on rejoin/resume).
-    if (!alreadyMember) {
+    // Only announce a genuinely new membership (idempotent on rejoin/resume), and stay
+    // silent for an unreliable client until it interacts (revealIfUnreliable announces then).
+    if (!alreadyMember && !this.isUnreliable(session.info.token)) {
       this.broadcastChannel(
         channel.token,
         {
@@ -440,9 +499,13 @@ export class Hub {
       conn.send({ type: 'error', message: 'not in that channel' });
       return;
     }
-    // Actively participating proves the user is really here, not just a flapping
-    // background tab: forget any flap history so their next disconnect uses the
-    // ordinary short grace and announces normally again.
+    // First words this session prove a real presence: reveal the user if they were muted as
+    // unreliable (announce the connect + joins that were suppressed) and reset the churn
+    // count, then forget any flap history so their next disconnect announces normally.
+    if (!session.interacted) {
+      session.interacted = true;
+      this.revealIfUnreliable(session);
+    }
     this.clearFlap(session.info.token);
     // Server-stamp the message, retain it as capped (persisted) backlog, then
     // broadcast it. The author's name/colour are snapshotted so backlog renders

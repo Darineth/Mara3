@@ -4,7 +4,13 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.10] - unreleased
 
-_In development._
+### Changed
+
+- A client that keeps joining and leaving without ever sending a message is now flagged
+  "unreliable" after two such cycles, and its join/disconnect notices are muted until it
+  next interacts (then it's revealed and the count resets). This tames the presence spam
+  from flap-y mobile connections whose reconnects are spaced too far apart for the existing
+  flap window to catch. Tunable via `MARA_UNRELIABLE_DROPS` (default 2; 0 disables).
 
 ## [3.0.9] - 2026-07-02
 

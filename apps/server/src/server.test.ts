@@ -1026,6 +1026,7 @@ describe('flap damping (long-term reconnect churn)', () => {
         identityFile: '',
         disconnectGraceMs: BASE_GRACE,
         flapSettleMs: FLAP_SETTLE,
+        unreliableDrops: 0, // isolate the time-windowed flap from the interaction-based flag
       },
       createLogger('silent'),
     );
@@ -1117,5 +1118,80 @@ describe('flap damping (long-term reconnect churn)', () => {
     const gone = await watcher.waitFor('userDisconnect', FLAP_SETTLE + 1000);
     expect(gone.token).toBe(flapper.token);
     watcher.close();
+  });
+});
+
+describe('unreliable-client suppression (silent join/leave churn)', () => {
+  let s: MaraServer;
+  let u: string;
+
+  beforeEach(async () => {
+    s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: 'lobby', // both parties auto-join, so join/disconnect is visible
+        historyFile: '',
+        identityFile: '',
+        disconnectGraceMs: 0, // finalize immediately
+        flapSettleMs: 0, // isolate the interaction-based flag from the time-windowed one
+        unreliableDrops: 2,
+      },
+      createLogger('silent'),
+    );
+    u = `ws://127.0.0.1:${s.port}/ws`;
+  });
+  afterEach(async () => {
+    await s.close();
+  });
+
+  // One connect → auto-join lobby → drop cycle for the flapper identity, with no interaction.
+  async function silentCycle(): Promise<void> {
+    const w = await TestClient.connect(u);
+    await login(w, 'star', '#cccccc', 'star-key');
+    await w.waitFor('channelJoined');
+    w.close();
+    await w.closed;
+  }
+
+  it('mutes join/disconnect after two no-interaction cycles, until the client speaks', async () => {
+    const bob = await TestClient.connect(u);
+    await login(bob, 'bob');
+    await bob.waitFor('channelJoined'); // bob's own lobby join
+
+    // Two silent cycles are still announced (some churn is expected before flagging).
+    await silentCycle();
+    const j1 = await bob.waitFor('userJoinedChannel');
+    await bob.waitFor('userDisconnect');
+    await silentCycle();
+    await bob.waitFor('userJoinedChannel');
+    await bob.waitFor('userDisconnect');
+
+    // Now flagged unreliable: a third silent cycle is fully muted. Prove it by connecting a
+    // DIFFERENT user right after — bob's next join is that user, not the (muted) flapper.
+    await silentCycle();
+    const charlie = await TestClient.connect(u);
+    const c = await login(charlie, 'charlie');
+    const nextJoin = await bob.waitFor('userJoinedChannel');
+    expect(nextJoin.token).toBe(c.token);
+    expect(nextJoin.token).not.toBe(j1.token);
+    charlie.close();
+    await bob.waitFor('userDisconnect'); // charlie leaves (reliable → still announced)
+
+    // The flapper reconnects (still muted) and finally SPEAKS — which reveals it: bob sees
+    // its join, then its message.
+    const star = await TestClient.connect(u);
+    const sid = await login(star, 'star', '#cccccc', 'star-key');
+    const lobby = await star.waitFor('channelJoined');
+    expect(sid.token).toBe(j1.token); // same identity throughout
+    star.send({ type: 'chat', channelToken: lobby.channelToken, text: 'hello at last' });
+    const reveal = await bob.waitFor('userJoinedChannel');
+    expect(reveal.token).toBe(j1.token);
+    const msg = await bob.waitFor('chat');
+    expect(msg.text).toBe('hello at last');
+    expect(msg.from).toBe(j1.token);
+    star.close();
+    bob.close();
   });
 });

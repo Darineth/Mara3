@@ -14,6 +14,10 @@ export interface Session {
   /** All live sockets for this user (more than one = same identity in >1 window). */
   connections: Set<Connection>;
   channels: Set<Token>;
+  /** True once the user sends a chat/emote this session — proof of a real presence, not a
+   *  silent join/leave. Reset per session (a full reconnect starts a fresh one), and used
+   *  to flag flap-y clients that never interact so their join/disconnect churn is muted. */
+  interacted: boolean;
 }
 
 /** A chat channel and its current membership (by user token). Message backlog
