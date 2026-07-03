@@ -512,6 +512,23 @@
         selectPm(token);
         client.sendPrivateMessage(token, t);
       },
+      joinChannel: (name) => {
+        // Already a member (case-insensitively)? Focus the existing tab rather than
+        // asking the server for a channel that differs only in case.
+        for (const c of $channels.values())
+          if (c.name.toLowerCase() === name.toLowerCase()) return openChannel(c.token);
+        pendingFocusJoin = name; // a deliberate join: focus it once the server confirms
+        client.joinChannel(name);
+      },
+      leaveChannel: (name) => {
+        if (name === null) {
+          if (activeChannel !== null) client.leaveChannel(activeChannel);
+          return;
+        }
+        for (const c of $channels.values())
+          if (c.name.toLowerCase() === name.toLowerCase()) return client.leaveChannel(c.token);
+        pushSystem(`/leave: you're not in #${name}.`);
+      },
       setAway: (t) => client.sendAway(t),
       setName: (name) => {
         client.setProfile({ name });

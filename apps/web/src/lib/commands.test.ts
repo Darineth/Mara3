@@ -10,6 +10,8 @@ function ctx(overrides: Partial<CommandContext> = {}): CommandContext {
     resolveUser: (name) => (name.toLowerCase() === 'bob' ? bob : null),
     emote: vi.fn(),
     privateMessage: vi.fn(),
+    joinChannel: vi.fn(),
+    leaveChannel: vi.fn(),
     setAway: vi.fn(),
     setName: vi.fn(),
     notice: vi.fn(),
@@ -78,6 +80,40 @@ describe('runSlashCommand', () => {
     runSlashCommand('/msg bob', c2); // no message body
     expect(c2.privateMessage).not.toHaveBeenCalled();
     expect(c2.notice).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+  });
+
+  it('/join joins the channel, accepting an optional leading #', () => {
+    const c = ctx();
+    expect(runSlashCommand('/join general', c)).toBe(true);
+    expect(c.joinChannel).toHaveBeenCalledWith('general');
+
+    const c2 = ctx();
+    runSlashCommand('/join #two words', c2);
+    expect(c2.joinChannel).toHaveBeenCalledWith('two words');
+  });
+
+  it('/join without a name shows usage', () => {
+    const c = ctx();
+    runSlashCommand('/join', c);
+    expect(c.joinChannel).not.toHaveBeenCalled();
+    expect(c.notice).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+  });
+
+  it('/leave leaves the active channel when bare, a named one otherwise', () => {
+    const c = ctx();
+    expect(runSlashCommand('/leave', c)).toBe(true);
+    expect(c.leaveChannel).toHaveBeenCalledWith(null);
+
+    const c2 = ctx();
+    runSlashCommand('/leave #general', c2);
+    expect(c2.leaveChannel).toHaveBeenCalledWith('general');
+  });
+
+  it('/leave bare outside a channel shows an error instead', () => {
+    const c = ctx({ activeChannel: null });
+    runSlashCommand('/leave', c);
+    expect(c.leaveChannel).not.toHaveBeenCalled();
+    expect(c.notice).toHaveBeenCalledWith(expect.stringContaining('/leave <channel>'));
   });
 
   it('/away sets a note, and clears it when bare', () => {

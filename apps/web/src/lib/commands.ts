@@ -18,6 +18,10 @@ export interface CommandContext {
   emote(text: string): void;
   /** Open/focus a PM with the user and send `text` to them. */
   privateMessage(token: Token, text: string): void;
+  /** Join the named channel (focused once it lands), or focus it if already joined. */
+  joinChannel(name: string): void;
+  /** Leave a joined channel by name, or the active channel when `name` is null. */
+  leaveChannel(name: string | null): void;
   /** Set (non-empty) or clear (empty) away status. */
   setAway(text: string): void;
   /** Change our display name. */
@@ -68,6 +72,28 @@ const COMMANDS: Command[] = [
       const user = ctx.resolveUser(name);
       if (!user) return ctx.notice(`No connected user named "${name}".`);
       ctx.privateMessage(user.token, body);
+    },
+  },
+  {
+    name: 'join',
+    args: '<channel>',
+    help: 'Join a channel (or switch to it if already joined)',
+    run(rest, ctx) {
+      // Accept "#name" as well as "name" — tabs show the # but the server stores the bare name.
+      const name = rest.replace(/^#/, '').trim();
+      if (!name) return ctx.notice('Usage: /join <channel>');
+      ctx.joinChannel(name);
+    },
+  },
+  {
+    name: 'leave',
+    args: '[channel]',
+    help: 'Leave the current channel (or the named one)',
+    run(rest, ctx) {
+      const name = rest.replace(/^#/, '').trim();
+      if (!name && ctx.activeChannel === null)
+        return ctx.notice('/leave: not in a channel — use /leave <channel>.');
+      ctx.leaveChannel(name || null);
     },
   },
   {

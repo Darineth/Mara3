@@ -4,7 +4,11 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.12] - unreleased
 
-_In development._
+### Added
+
+- `/join <channel>` and `/leave [channel]` slash commands. `/join` accepts an optional
+  leading `#` and switches to the channel if you're already in it; `/leave` with no
+  argument leaves the channel you're looking at, or a named one from anywhere.
 
 ## [3.0.11] - 2026-07-03
 
