@@ -72,10 +72,13 @@
   const stale = $derived(!!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId);
 
   // Once connected, show the server's name in the browser tab; restore the original
-  // title (e.g. "Mara 3") when the session ends.
+  // title (e.g. "Mara 3") when the session ends. A leading "* " flags unread messages
+  // in any channel or PM, so a backgrounded tab shows activity at a glance.
   const baseTitle = typeof document !== 'undefined' ? document.title : '';
   $effect(() => {
-    if (typeof document !== 'undefined') document.title = $serverInfo?.name ?? baseTitle;
+    if (typeof document === 'undefined') return;
+    const title = $serverInfo?.name ?? baseTitle;
+    document.title = unreadChannels.size + unreadPms.size > 0 ? `* ${title}` : title;
   });
   onDestroy(() => {
     if (typeof document !== 'undefined') document.title = baseTitle;

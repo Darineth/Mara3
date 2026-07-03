@@ -9,6 +9,8 @@ All notable changes to Mara 3 are documented here.
 - `/join <channel>` and `/leave [channel]` slash commands. `/join` accepts an optional
   leading `#` and switches to the channel if you're already in it; `/leave` with no
   argument leaves the channel you're looking at, or a named one from anywhere.
+- The browser tab title gains a leading `* ` while any channel or PM has unread
+  messages, so a backgrounded Mara tab shows pending activity at a glance.
 
 ## [3.0.11] - 2026-07-03
 
