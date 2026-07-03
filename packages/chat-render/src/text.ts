@@ -331,6 +331,9 @@ export interface RenderTextOptions {
   /** Set false to skip block-level markdown (headers/subtext/quotes/lists) and apply only
    *  inline formatting — for single-line contexts like emotes and away lines. */
   blocks?: boolean;
+  /** Known users: an `@Name` mention of one renders bold in that user's colour with a
+   *  matching glow (default: off). `color` is `#rrggbb`; an invalid one renders unstyled. */
+  mentions?: { name: string; color: string }[];
 }
 
 /** Turn a raw message body into safe, display-ready HTML. */
@@ -428,6 +431,37 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
       const isImg = options.images !== false && (forced || isImageUrl(url));
       return stash(isImg ? imageTag(safe) : anchor(safe));
     });
+  }
+
+  // @Mentions of known display names render bold. Matched on the remaining raw text —
+  // AFTER code/URL/image stashing, so a mention inside a code span or an image's alt
+  // text stays literal — case-insensitively, longest name first (so `@Rosa` never
+  // half-bolds a known `@Rosalind`), with the same standing-alone boundaries as the
+  // notification matcher: not glued to a preceding word (`mail@host` is never a
+  // mention) and not a prefix of a longer word. The name is escaped and stashed, so
+  // markdown can't re-parse a name that happens to contain marker characters.
+  if (options.mentions && options.mentions.length > 0) {
+    const colorOf = new Map<string, string>();
+    const names: string[] = [];
+    for (const user of options.mentions) {
+      const name = user.name.split(SENTINEL).join(''); // a control char in a name must never match a placeholder
+      if (name.length === 0) continue;
+      names.push(name);
+      colorOf.set(name.toLowerCase(), user.color);
+    }
+    if (names.length > 0) {
+      names.sort((a, b) => b.length - a.length);
+      const re = new RegExp(`(?<![\\w-])@(?:${names.map(escapeRegExp).join('|')})(?![\\w-])`, 'gi');
+      s = s.replace(re, (match) => {
+        // The colour is the one mention-controlled value placed in a style attribute —
+        // validate it like renderLine does the author colour; invalid → unstyled bold.
+        const color = colorOf.get(match.slice(1).toLowerCase()) ?? '';
+        const style = /^#[0-9a-fA-F]{6}$/.test(color)
+          ? ` style="color:${color};text-shadow:0 0 6px ${color}"`
+          : '';
+        return stash(`<strong class="mara-mention"${style}>${escapeHtml(match)}</strong>`);
+      });
+    }
   }
 
   // Escape the remaining plain text. Placeholders are null chars + digits, which

@@ -31,6 +31,11 @@
     emoji?: Record<string, string>;
   } = $props();
 
+  // Known users for `@Name` mention styling (bold in the target's colour + glow) —
+  // from the same map that names the lines, so mentions of departed users in
+  // backlog still render styled.
+  const mentionUsers = $derived([...users.values()].map((u) => ({ name: u.name, color: u.color })));
+
   let viewport = $state<HTMLDivElement | null>(null);
   let content = $state<HTMLDivElement | null>(null);
   // Auto-scroll unless the user has scrolled up to read history ("freeze").
@@ -211,7 +216,7 @@
         <hr class="mara-sep" />
       {/if}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-      {@html renderLine(toModel(line), { emoji })}
+      {@html renderLine(toModel(line), { emoji, mentions: mentionUsers })}
     {/each}
     {#if lines.length === 0}
       <div class="mara-empty">No messages yet.</div>

@@ -4,6 +4,16 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.14] - unreleased
 
+### Added
+
+- @Mentions of known users render bold in the mentioned user's colour, with a
+  soft glow in that colour (matching is case-insensitive and whole-name, same
+  rules as the mention notification; mentions inside code spans stay literal).
+- @Mention autocomplete in the composer: typing `@` offers the connected users
+  (a bare `@` lists everyone; typing narrows, including names with spaces), with
+  the same Up/Down + Enter/Tab + Esc interaction as the emoji autocomplete.
+  Email-style `name@host` never triggers it.
+
 ### Fixed
 
 - The unread `* ` title star now also fires for activity in the conversation you're

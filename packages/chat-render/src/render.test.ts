@@ -421,6 +421,58 @@ describe('renderText — Markdown image syntax', () => {
   });
 });
 
+describe('renderText — @mentions', () => {
+  const user = (name: string, color = '#3366cc') => ({ name, color });
+  const opts = { mentions: ['alice', 'Bob Smith', 'Rosalind', 'Rosa'].map((n) => user(n)) };
+
+  it('styles a known @name in the target user colour with a matching glow', () => {
+    const html = renderText('hey @alice look', opts);
+    expect(html).toContain(
+      '<strong class="mara-mention" style="color:#3366cc;text-shadow:0 0 6px #3366cc">@alice</strong>',
+    );
+  });
+
+  it('matches case-insensitively, keeping the typed form', () => {
+    expect(renderText('hey @ALICE look', opts)).toContain('>@ALICE</strong>');
+  });
+
+  it('matches multi-word names, longest first', () => {
+    expect(renderText('cc @Bob Smith please', opts)).toContain('>@Bob Smith</strong>');
+    // Longest-first: a known @Rosalind is never half-styled as @Rosa.
+    expect(renderText('ping @Rosalind', opts)).toContain('>@Rosalind</strong>');
+  });
+
+  it('never matches unknown names, glued @s, or longer words', () => {
+    expect(renderText('hi @stranger', opts)).not.toContain('mara-mention');
+    expect(renderText('mail me at bob@alice', opts)).not.toContain('mara-mention');
+    expect(renderText('ping @alicespring', opts)).not.toContain('mara-mention');
+  });
+
+  it('leaves mentions inside code spans literal', () => {
+    const html = renderText('run `git blame @alice` ok', opts);
+    expect(html).toContain('git blame @alice');
+    expect(html).not.toContain('mara-mention');
+  });
+
+  it('escapes names with HTML-special characters', () => {
+    const html = renderText('hi @<b>evil</b>', { mentions: [user('<b>evil</b>')] });
+    expect(html).toContain('>@&lt;b&gt;evil&lt;/b&gt;</strong>');
+    expect(html).not.toContain('<b>evil</b>');
+  });
+
+  it('drops the style (still bold) when the colour is not clean #rrggbb', () => {
+    const html = renderText('hi @eve', {
+      mentions: [{ name: 'eve', color: 'red;background:url(x)' }],
+    });
+    expect(html).toContain('<strong class="mara-mention">@eve</strong>');
+    expect(html).not.toContain('style=');
+  });
+
+  it('does nothing without the option (default off)', () => {
+    expect(renderText('hey @alice')).not.toContain('mara-mention');
+  });
+});
+
 describe('renderText — legacy Mara 2 tags', () => {
   it('forces [img] contents inline as an image regardless of extension', () => {
     const html = renderText('[img]https://example.com/pic[/img]');
