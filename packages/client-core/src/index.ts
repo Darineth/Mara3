@@ -10,6 +10,7 @@ export type {
   ClientEvents,
   ClientOptions,
   ConnectionState,
+  RestoredPmConversation,
   WebSocketCtor,
   WebSocketLike,
 } from './types.js';

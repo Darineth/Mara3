@@ -59,6 +59,30 @@ async function connected(client: MaraClient): Promise<ClientEvents['connected']>
   return p;
 }
 
+describe('restored PM history', () => {
+  it('seeds privateMessages and the directory, reassigning line ids', () => {
+    const client = makeClient('alice', {
+      initialPrivateMessages: [
+        {
+          peer: 42,
+          name: 'Bob',
+          color: '#3366cc',
+          lines: [
+            { kind: 'chat', from: 42, text: 'hi', at: 1000 },
+            { kind: 'chat', from: 1, text: 'hey back', at: 2000 },
+          ],
+        },
+      ],
+    });
+    const pms = get(client.privateMessages).get(42)!;
+    expect(pms.map((l) => l.text)).toEqual(['hi', 'hey back']);
+    // Ids are (re)assigned locally and unique, so live lines can't collide.
+    expect(new Set(pms.map((l) => l.id)).size).toBe(2);
+    // The snapshot fills the directory so the offline peer's lines render.
+    expect(get(client.directory).get(42)?.name).toBe('Bob');
+  });
+});
+
 describe('handshake + session', () => {
   it('logs in and reaches active with self populated', async () => {
     const client = makeClient('alice');

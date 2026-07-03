@@ -22,6 +22,9 @@ export interface MaraSettings {
   /** Channel names the user was in, persisted so a fresh session rejoins them
    *  (seeded into the client as `initialChannels`). */
   channels: string[];
+  /** Keep PM history on this device (localStorage) so a refresh restores open
+   *  conversations. Purely client-local — the server never stores PMs. */
+  keepPmHistory: boolean;
 }
 
 const KEY = 'mara3.settings';
@@ -100,6 +103,7 @@ export const defaultSettings: MaraSettings = {
   macros: defaultMacros(),
   identityKey: '',
   channels: [],
+  keepPmHistory: true,
 };
 
 /** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;

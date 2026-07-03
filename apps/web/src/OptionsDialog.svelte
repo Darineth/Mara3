@@ -13,7 +13,7 @@
     onClose,
   }: {
     settings: MaraSettings;
-    onApply: (next: { name: string; color: string; theme: Theme }) => void;
+    onApply: (next: { name: string; color: string; theme: Theme; keepPmHistory: boolean }) => void;
     onClose: () => void;
   } = $props();
 
@@ -24,6 +24,8 @@
   let color = $state(settings.color);
   // svelte-ignore state_referenced_locally
   let theme = $state<Theme>(settings.theme);
+  // svelte-ignore state_referenced_locally
+  let keepPmHistory = $state(settings.keepPmHistory);
   let backdrop = $state<HTMLDivElement | null>(null);
 
   // Close on backdrop click and Escape (mirrors MacrosDialog).
@@ -45,7 +47,7 @@
   });
 
   function save() {
-    onApply({ name: name.trim() || settings.name, color, theme });
+    onApply({ name: name.trim() || settings.name, color, theme, keepPmHistory });
     onClose();
   }
 </script>
@@ -72,6 +74,13 @@
           <option value="dark">Dark</option>
           <option value="light">Light</option>
         </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={keepPmHistory} />
+        <span>
+          Keep private-message history on this device
+          <small>Restores your PM conversations after a refresh. Never stored on the server.</small>
+        </span>
       </label>
       <IdentityControls identityKey={settings.identityKey} />
       <footer>
@@ -143,6 +152,18 @@
     padding: 0;
     height: 2.4rem;
     width: 3rem;
+  }
+  .check {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .check input[type='checkbox'] {
+    margin-top: 0.15rem;
+  }
+  .check small {
+    display: block;
+    opacity: 0.65;
   }
   footer {
     display: flex;

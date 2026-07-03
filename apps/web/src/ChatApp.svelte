@@ -18,6 +18,7 @@
     switchServer,
   } from './lib/native.js';
   import { runSlashCommand, type CommandContext } from './lib/commands.js';
+  import { clearPmHistory, removePmConversation, savePmHistory } from './lib/pmHistory.js';
   import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
@@ -105,6 +106,34 @@
     persist();
   });
   onDestroy(unsubChannels);
+
+  // Mirror the open PM conversations to device-local storage so a refresh restores
+  // them (the server never stores PMs — see lib/pmHistory.ts). What persists is the
+  // pmTabs set, in tab order, with peer name/colour snapshots so restored lines
+  // render while the peer is offline. Debounced so a burst of lines lands as one
+  // write. Rebuilds when the option toggles; closePm handles its own removal.
+  $effect(() => {
+    if (!settings.keepPmHistory) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = privateMessages.subscribe((map) => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const dir = get(directory);
+        const conversations = pmTabs
+          .map((peer) => ({ peer, lines: map.get(peer) ?? [] }))
+          .filter((c) => c.lines.length > 0)
+          .map((c) => {
+            const info = dir.get(c.peer);
+            return { ...c, name: info?.name ?? `#${c.peer}`, color: info?.color ?? '#888888' };
+          });
+        savePmHistory(settings.identityKey, conversations);
+      }, 300);
+    });
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      unsub();
+    };
+  });
 
   // Active view: a channel token, a private-message peer token, or neither
   // (placeholder). Mutually exclusive — at most one is non-null at a time;
@@ -444,6 +473,9 @@
     const wasActive = activePm === token;
     pmTabs = pmTabs.filter((t) => t !== token);
     unreadPms = clearUnread(unreadPms, token);
+    // Closing the tab also forgets the conversation on this device (in-memory
+    // history survives for this session — a reopened tab still shows it).
+    removePmConversation(settings.identityKey, token);
     if (!wasActive) return;
     // Fall back to another open PM, else a channel, else the empty placeholder.
     activePm = null;
@@ -458,7 +490,12 @@
   // Apply in-session options: broadcast a name/colour change (server dedupes + tells
   // everyone via userProfile, which updates our own roster/self), apply the theme via
   // the shared settings (App's $effect re-applies it), and persist.
-  function applyOptions(next: { name: string; color: string; theme: Theme }) {
+  function applyOptions(next: {
+    name: string;
+    color: string;
+    theme: Theme;
+    keepPmHistory: boolean;
+  }) {
     const newName = next.name.trim();
     const update: { name?: string; color?: string } = {};
     if (newName && newName !== settings.name) update.name = newName;
@@ -467,6 +504,10 @@
     if (newName) settings.name = newName;
     settings.color = next.color;
     settings.theme = next.theme;
+    // Turning PM history off forgets what this device already stored, not just
+    // future writes — that's what a user unchecking a privacy option expects.
+    if (!next.keepPmHistory && settings.keepPmHistory) clearPmHistory();
+    settings.keepPmHistory = next.keepPmHistory;
     persist();
   }
 

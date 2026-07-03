@@ -132,6 +132,24 @@ export class MaraClient {
     // Seed the intended set with the persisted "channels you were in" so the first
     // connect rejoins them (see the welcome handler).
     for (const name of opts.initialChannels ?? []) this.intendedChannels.add(name);
+    // Restore device-local PM history. Ids are (re)assigned from this client's own
+    // sequence so restored and live lines never collide as render keys, and each
+    // peer's snapshot pre-fills the directory so their lines render while they're
+    // offline (live roster data later overwrites these gap-fill entries).
+    const restored = opts.initialPrivateMessages ?? [];
+    if (restored.length > 0) {
+      const pms = new Map<Token, ChatLine[]>();
+      const dir = new Map<Token, UserInfo>();
+      for (const convo of restored) {
+        pms.set(
+          convo.peer,
+          convo.lines.slice(-this.historyLimit).map((l) => ({ ...l, id: ++this.lineSeq })),
+        );
+        dir.set(convo.peer, { token: convo.peer, name: convo.name, color: convo.color, away: '' });
+      }
+      this._privateMessages.set(pms);
+      this._directory.set(dir);
+    }
   }
 
   // -- lifecycle ------------------------------------------------------------

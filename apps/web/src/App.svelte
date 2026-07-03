@@ -14,6 +14,7 @@
     serverUrl,
     type MaraSettings,
   } from './lib/settings.js';
+  import { loadPmHistory } from './lib/pmHistory.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { desktopVersion } from './lib/update.js';
   import ChatApp from './ChatApp.svelte';
@@ -66,6 +67,9 @@
       color: settings.color,
       identityKey: settings.identityKey,
       initialChannels: settings.channels,
+      // Restore this device's PM history (ChatApp writes it back as it changes).
+      // When the option is off the store was cleared, so this loads nothing.
+      initialPrivateMessages: settings.keepPmHistory ? loadPmHistory(settings.identityKey) : [],
       plugins,
     });
     c.events.on('loginDenied', (d) => {

@@ -46,6 +46,19 @@ export interface ChatLine {
   at: number;
 }
 
+/**
+ * A device-locally persisted PM conversation, restored at client construction.
+ * The server deliberately never stores or replays PMs, so restored lines can't
+ * collide with live ones. The name/colour snapshot lets restored lines render
+ * while the peer is offline; line ids are reassigned on restore.
+ */
+export interface RestoredPmConversation {
+  peer: Token;
+  name: string;
+  color: Color;
+  lines: Omit<ChatLine, 'id'>[];
+}
+
 /** Options for {@link MaraClient}. */
 export interface ClientOptions {
   url: string;
@@ -71,6 +84,9 @@ export interface ClientOptions {
   /** Channel names to (re)join on connect — the persisted "channels you were in",
    *  so a fresh session restores them. Rejoining is idempotent server-side. */
   initialChannels?: string[];
+  /** Device-local PM history to restore, symmetric with `initialChannels` (see
+   *  {@link RestoredPmConversation}; the server never stores PMs). */
+  initialPrivateMessages?: RestoredPmConversation[];
   /** Plugin pipeline applied to outgoing and incoming chat/emote text. */
   plugins?: TextPipeline;
   /** Clock injection point (defaults to Date.now); lets tests drive timestamps/RTT. */

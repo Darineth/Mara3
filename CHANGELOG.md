@@ -11,6 +11,12 @@ All notable changes to Mara 3 are documented here.
   argument leaves the channel you're looking at, or a named one from anywhere.
 - The browser tab title gains a leading `* ` while any channel or PM has unread
   messages, so a backgrounded Mara tab shows pending activity at a glance.
+- Private-message conversations now survive a refresh: open PM tabs and their
+  recent lines are kept on this device (localStorage, capped, bound to your
+  identity) and restored on the next session. The server still never stores
+  PMs — delivery remains live-only, and other devices are unaffected. Closing
+  a PM tab forgets that conversation; an Options toggle ("Keep private-message
+  history on this device") turns the feature off and wipes what was stored.
 
 ## [3.0.11] - 2026-07-03
 
