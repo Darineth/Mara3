@@ -4,7 +4,13 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.11] - unreleased
 
-_In development._
+### Changed
+
+- Channel tabs with unread messages now get the same strong highlight private-message
+  tabs already had (bold, accent colour, leading dot) instead of a subtle semibold.
+  Only real chat and emote lines count: join/leave/away and other system notices never
+  badge a tab, and neither does your own message echoed back or mirrored from another
+  window/device on the same identity.
 
 ## [3.0.10] - 2026-07-02
 

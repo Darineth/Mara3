@@ -123,7 +123,10 @@
   let unreadChannels = $state(new Set<Token>());
   let unreadPms = $state(new Set<Token>());
 
-  function markChannelUnread(token: Token) {
+  function markChannelUnread(token: Token, from: Token) {
+    // Our own message — the server's echo of what we just sent, or the mirror from
+    // another window/device on this identity — is not "unread" (same rule as PMs).
+    if (from === get(self)?.token) return;
     // "Looking at it" requires the channel active AND no PM in front of it.
     if (activeChannel === token && activePm === null) return;
     if (!unreadChannels.has(token)) unreadChannels = new Set(unreadChannels).add(token);
@@ -251,8 +254,10 @@
         // same conversation list (no unread badge: it's our own message).
         addPmTab(pm.to);
       }),
-      client.events.on('chat', (m) => markChannelUnread(m.channelToken)),
-      client.events.on('emote', (m) => markChannelUnread(m.channelToken)),
+      // Only real messages badge a tab — joins/leaves/away and other system lines
+      // arrive as their own event types and deliberately don't mark anything unread.
+      client.events.on('chat', (m) => markChannelUnread(m.channelToken, m.from)),
+      client.events.on('emote', (m) => markChannelUnread(m.channelToken, m.from)),
       client.events.on('statusChanged', (status) => {
         const notice = connectionNotice(status, noticeState);
         if (notice) pushSystem(notice);
@@ -882,9 +887,24 @@
     background: var(--mara-accent);
     color: #fff;
   }
-  /* Unread channels go semibold. */
-  .tabs button.unread:not(.active) {
-    font-weight: 600;
+  /* Unread conversations — channel tabs and PM tabs alike — get the same strong
+     treatment: bold, accent colour, and a leading dot. (The PM variant lives on the
+     inner .tab-main since the pill wraps a label + close button.) */
+  .tabs > button.unread:not(.active),
+  .tabs .pmtab.unread:not(.active) .tab-main {
+    font-weight: 700;
+    color: var(--mara-link, #5aa9ff);
+  }
+  .tabs > button.unread:not(.active)::before,
+  .tabs .pmtab.unread:not(.active) .tab-main::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mara-accent);
+    margin-right: 0.4rem;
+    vertical-align: middle;
   }
   /* PM tabs are a pill wrapping a label button and a close (×) button. */
   .tabs .pmtab {
@@ -914,21 +934,6 @@
   }
   .tabs .pmtab .tab-x:hover {
     opacity: 1;
-  }
-  /* Unread PMs are stronger than channels: bold + a leading dot. */
-  .tabs .pmtab.unread:not(.active) .tab-main {
-    font-weight: 700;
-    color: var(--mara-link, #5aa9ff);
-  }
-  .tabs .pmtab.unread:not(.active) .tab-main::before {
-    content: '';
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--mara-accent);
-    margin-right: 0.4rem;
-    vertical-align: middle;
   }
   .tabsep {
     width: 1px;
