@@ -264,14 +264,28 @@
     // Our own message — the server's echo of what we just sent, or the mirror from
     // another window/device on this identity — is not "unread" (same rule as PMs).
     if (from === get(self)?.token) return;
-    // "Looking at it" requires the channel active AND no PM in front of it.
-    if (activeChannel === token && activePm === null) return;
+    // "Looking at it" requires the channel active, no PM in front of it, AND the
+    // window actually focused — a backgrounded window sees nothing, so activity in
+    // the conversation you're parked on still stars the title until you come back.
+    if (activeChannel === token && activePm === null && document.hasFocus()) return;
     if (!unreadChannels.has(token)) unreadChannels = new Set(unreadChannels).add(token);
   }
   function markPmUnread(token: Token) {
-    if (activePm === token) return;
+    if (activePm === token && document.hasFocus()) return;
     if (!unreadPms.has(token)) unreadPms = new Set(unreadPms).add(token);
   }
+
+  // Coming back to the window means the active conversation is now actually seen:
+  // clear any unread mark it collected while we were backgrounded, so the title
+  // star (and the tab badge, if the user switched conversations first) lets go.
+  $effect(() => {
+    const onFocus = () => {
+      if (activePm !== null) unreadPms = clearUnread(unreadPms, activePm);
+      else if (activeChannel !== null) unreadChannels = clearUnread(unreadChannels, activeChannel);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  });
   // A channel message: badge the tab, and treat an @mention of our name like a
   // PM — flash the taskbar/dock when this window is in the background, so being
   // called out in a channel is noticed like a direct message. Your own echoed

@@ -6,6 +6,11 @@ All notable changes to Mara 3 are documented here.
 
 ### Fixed
 
+- The unread `* ` title star now also fires for activity in the conversation you're
+  currently viewing when the window itself is in the background — being parked on a
+  channel no longer hides that things happened there while you were off the tab.
+  Coming back to the window clears it.
+
 - Message-history persistence is now crash-safe. History saves are atomic
   (temp file + rename), so a crash mid-write can no longer truncate the file;
   an unparseable history file is moved aside to `history.json.corrupt` for
