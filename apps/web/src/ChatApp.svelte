@@ -1091,6 +1091,7 @@
         focusKey={activeKey}
         color={settings.color}
         emoji={$emoji}
+        mentionNames={[...$users.values()].map((u) => u.name)}
       />
     {/if}
   </main>

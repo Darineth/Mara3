@@ -5,6 +5,7 @@
   import { tick } from 'svelte';
   import { openLightbox, closeLightboxFor } from './lightbox.js';
   import { emojiSrc, matchEmojiShortcode } from './emojiComplete.js';
+  import { matchMention } from './mentionComplete.js';
 
   let {
     onsend,
@@ -16,6 +17,7 @@
     focusKey = null,
     color = null,
     emoji = {},
+    mentionNames = [],
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -35,6 +37,9 @@
     /** The user's own display colour (`#rrggbb`), echoed as the composer text colour so
      *  typing matches how their messages appear. Null/invalid falls back to the theme fg. */
     color?: string | null;
+    /** Display names offered by the `@name` mention autocomplete (typically the
+     *  connected roster). Empty = mentions don't autocomplete. */
+    mentionNames?: string[];
   } = $props();
 
   // Validate before it's interpolated into an inline style (as renderLine does for the
@@ -57,6 +62,17 @@
   }
   let emojiMenu = $state<EmojiMenu | null>(null);
   let acList = $state<HTMLElement | null>(null);
+
+  // Inline `@name` mention autocomplete: same interaction as the emoji menu (only one of
+  // the two can be active — each is anchored to its own trigger token at the caret).
+  interface MentionMenu {
+    items: string[];
+    active: number;
+    /** Index in `text` of the triggering `@`, so accepting replaces from there. */
+    start: number;
+  }
+  let mentionMenu = $state<MentionMenu | null>(null);
+  let mentionList = $state<HTMLElement | null>(null);
 
   function chooseEmoji(name: string) {
     void insertAtCursor(`:${name}:`);
@@ -221,22 +237,22 @@
     autosize();
   }
 
-  // Recompute the `:shortcode` autocomplete from the text just before a collapsed caret.
-  // Triggers on a `:` at the start of a token (line start or after whitespace) followed by
-  // the shortcode charset — so a clock (`12:30`) or a completed `:smile:` doesn't open it.
-  function updateEmojiMenu() {
+  // Recompute the inline autocompletes from the text just before a collapsed caret:
+  // `:shortcode` (emoji) and `@name` (mentions). Each is anchored to its own trigger
+  // token at the caret, so at most one is active; emoji wins the (impossible) tie.
+  function updateMenus() {
     const ta = textarea;
-    if (!ta || emojiList.length === 0) {
-      emojiMenu = null;
+    const caret = ta?.selectionStart ?? text.length;
+    if (!ta || caret !== (ta.selectionEnd ?? caret)) {
+      emojiMenu = null; // no field, or a non-empty selection: not typing a token
+      mentionMenu = null;
       return;
     }
-    const caret = ta.selectionStart ?? text.length;
-    if (caret !== (ta.selectionEnd ?? caret)) {
-      emojiMenu = null; // a non-empty selection: not typing a shortcode
-      return;
-    }
-    const match = matchEmojiShortcode(text.slice(0, caret), emojiList);
-    emojiMenu = match ? { items: match.items, active: 0, start: match.start } : null;
+    const before = text.slice(0, caret);
+    const em = emojiList.length > 0 ? matchEmojiShortcode(before, emojiList) : null;
+    emojiMenu = em ? { items: em.items, active: 0, start: em.start } : null;
+    const mm = !em && mentionNames.length > 0 ? matchMention(before, mentionNames) : null;
+    mentionMenu = mm ? { items: mm.items, active: 0, start: mm.start } : null;
   }
 
   // Accept the autocomplete entry at `index`: replace the typed `:query` with `:name: `.
@@ -257,15 +273,37 @@
     autosize();
   }
 
+  // Accept the mention entry at `index`: replace the typed `@query` with `@Name `.
+  async function acceptMention(index: number) {
+    const menu = mentionMenu;
+    const ta = textarea;
+    if (!menu || !ta) return;
+    const name = menu.items[index];
+    if (name === undefined) return;
+    const caret = ta.selectionStart ?? text.length;
+    const insert = `@${name} `;
+    text = text.slice(0, menu.start) + insert + text.slice(caret);
+    mentionMenu = null;
+    await tick();
+    const pos = menu.start + insert.length;
+    ta.setSelectionRange(pos, pos);
+    ta.focus();
+    autosize();
+  }
+
   // Only caret-moving keys need a recompute on keyup; typing already recomputes via oninput.
   function onKeyup(event: KeyboardEvent) {
-    if (/^(ArrowLeft|ArrowRight|Home|End)$/.test(event.key)) updateEmojiMenu();
+    if (/^(ArrowLeft|ArrowRight|Home|End)$/.test(event.key)) updateMenus();
   }
 
   // Keep the highlighted suggestion scrolled into view as Up/Down move it.
   $effect(() => {
     void emojiMenu?.active;
     acList?.querySelector('.emoji-ac-item.active')?.scrollIntoView({ block: 'nearest' });
+  });
+  $effect(() => {
+    void mentionMenu?.active;
+    mentionList?.querySelector('.emoji-ac-item.active')?.scrollIntoView({ block: 'nearest' });
   });
 
   // Grow the textarea to fit its content, capped at 160px (matches the CSS
@@ -350,28 +388,35 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    // While the emoji autocomplete is open it owns the navigation/commit keys, so they
-    // move/accept a suggestion instead of submitting or recalling history.
-    if (emojiMenu) {
-      const len = emojiMenu.items.length;
+    // While an autocomplete (emoji or mention) is open it owns the navigation/commit
+    // keys, so they move/accept a suggestion instead of submitting or recalling history.
+    const menu = emojiMenu ?? mentionMenu;
+    if (menu) {
+      const len = menu.items.length;
+      const set = (active: number) => {
+        if (emojiMenu) emojiMenu = { ...emojiMenu, active };
+        else if (mentionMenu) mentionMenu = { ...mentionMenu, active };
+      };
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        emojiMenu = { ...emojiMenu, active: (emojiMenu.active + 1) % len };
+        set((menu.active + 1) % len);
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        emojiMenu = { ...emojiMenu, active: (emojiMenu.active - 1 + len) % len };
+        set((menu.active - 1 + len) % len);
         return;
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault();
-        void acceptEmoji(emojiMenu.active);
+        if (emojiMenu) void acceptEmoji(menu.active);
+        else void acceptMention(menu.active);
         return;
       }
       if (event.key === 'Escape') {
         event.preventDefault();
         emojiMenu = null;
+        mentionMenu = null;
         return;
       }
     }
@@ -451,11 +496,14 @@
       onkeydown={onKeydown}
       oninput={() => {
         autosize();
-        updateEmojiMenu();
+        updateMenus();
       }}
       onkeyup={onKeyup}
-      onclick={updateEmojiMenu}
-      onblur={() => (emojiMenu = null)}
+      onclick={updateMenus}
+      onblur={() => {
+        emojiMenu = null;
+        mentionMenu = null;
+      }}
       onpaste={onPaste}
     ></textarea>
     {#if emojiMenu}
@@ -478,6 +526,30 @@
             >
               <img src={emojiSrc(url)} alt="" loading="lazy" />
               <span class="emoji-ac-name">:{name}:</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if mentionMenu}
+      <ul class="emoji-ac" role="listbox" aria-label="Mention suggestions" bind:this={mentionList}>
+        {#each mentionMenu.items as name, i (name)}
+          <li>
+            <button
+              type="button"
+              class="emoji-ac-item"
+              class:active={i === mentionMenu.active}
+              role="option"
+              aria-selected={i === mentionMenu.active}
+              onmousedown={(e) => {
+                e.preventDefault(); // keep focus in the field so accepting doesn't blur it
+                void acceptMention(i);
+              }}
+              onmouseenter={() => {
+                if (mentionMenu) mentionMenu = { ...mentionMenu, active: i };
+              }}
+            >
+              <span class="emoji-ac-name">@{name}</span>
             </button>
           </li>
         {/each}
