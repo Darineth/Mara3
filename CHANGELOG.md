@@ -4,7 +4,10 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.13] - unreleased
 
-_In development._
+### Fixed
+
+- The Options dialog now stays on screen and scrolls internally when the window is
+  short, matching the other dialogs, so the Save button is always reachable.
 
 ## [3.0.12] - 2026-07-03
 

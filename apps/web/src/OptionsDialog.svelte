@@ -120,6 +120,9 @@
   }
   .dialog {
     width: min(380px, 92vw);
+    /* Short windows: stay on screen and scroll (same as MacrosDialog/FormattingHelp). */
+    max-height: 86vh;
+    overflow-y: auto;
     background: var(--mara-bg-alt, #252526);
     color: var(--mara-fg, #e6e6e6);
     border: 1px solid var(--mara-border, #333);
