@@ -13,7 +13,13 @@
     onClose,
   }: {
     settings: MaraSettings;
-    onApply: (next: { name: string; color: string; theme: Theme; keepPmHistory: boolean }) => void;
+    onApply: (next: {
+      name: string;
+      color: string;
+      theme: Theme;
+      keepPmHistory: boolean;
+      pmsInWindows: boolean;
+    }) => void;
     onClose: () => void;
   } = $props();
 
@@ -26,6 +32,8 @@
   let theme = $state<Theme>(settings.theme);
   // svelte-ignore state_referenced_locally
   let keepPmHistory = $state(settings.keepPmHistory);
+  // svelte-ignore state_referenced_locally
+  let pmsInWindows = $state(settings.pmsInWindows);
   let backdrop = $state<HTMLDivElement | null>(null);
 
   // Close on backdrop click and Escape (mirrors MacrosDialog).
@@ -47,7 +55,7 @@
   });
 
   function save() {
-    onApply({ name: name.trim() || settings.name, color, theme, keepPmHistory });
+    onApply({ name: name.trim() || settings.name, color, theme, keepPmHistory, pmsInWindows });
     onClose();
   }
 </script>
@@ -80,6 +88,16 @@
         <span>
           Keep private-message history on this device
           <small>Restores your PM conversations after a refresh. Never stored on the server.</small>
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={pmsInWindows} />
+        <span>
+          Open private messages in their own windows
+          <small
+            >New PM conversations pop out instead of opening a tab. Works best with history kept on
+            this device.</small
+          >
         </span>
       </label>
       <IdentityControls identityKey={settings.identityKey} />

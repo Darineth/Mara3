@@ -15,6 +15,7 @@
     type MaraSettings,
   } from './lib/settings.js';
   import { loadPmHistory } from './lib/pmHistory.js';
+  import { parseSoloView } from './lib/popout.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { desktopVersion } from './lib/update.js';
   import ChatApp from './ChatApp.svelte';
@@ -24,6 +25,10 @@
   // Build-time plugin registry (CSP-safe for web/mobile). Add text-transform plugins
   // here (see @mara/plugin-api, e.g. censorPlugin). Empty by default.
   const plugins = createPipeline([]);
+
+  // Pop-out mode: pin this window to one conversation (see lib/popout.ts).
+  // Parsed once — the view is the window's identity, not switchable state.
+  const solo = typeof location !== 'undefined' ? parseSoloView(location.search) : null;
 
   let settings = $state<MaraSettings>(loadSettings());
   let client = $state<MaraClient | null>(null);
@@ -66,7 +71,12 @@
       name: settings.name.trim() || 'guest',
       color: settings.color,
       identityKey: settings.identityKey,
-      initialChannels: settings.channels,
+      // A solo channel window joins its channel even if it wasn't in the persisted
+      // set (e.g. a hand-typed pop-out URL); joins are idempotent server-side.
+      initialChannels:
+        solo?.kind === 'channel' && !settings.channels.includes(solo.name)
+          ? [...settings.channels, solo.name]
+          : settings.channels,
       // Restore this device's PM history (ChatApp writes it back as it changes).
       // When the option is off the store was cleared, so this loads nothing.
       initialPrivateMessages: settings.keepPmHistory ? loadPmHistory(settings.identityKey) : [],
@@ -147,7 +157,13 @@
 <UpdateBanner />
 
 {#if client}
-  <ChatApp {client} {settings} onDisconnect={disconnect} persist={() => saveSettings(settings)} />
+  <ChatApp
+    {client}
+    {settings}
+    {solo}
+    onDisconnect={disconnect}
+    persist={() => saveSettings(settings)}
+  />
 {:else}
   <div class="connect">
     <form onsubmit={onSubmit}>

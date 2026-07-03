@@ -7,6 +7,7 @@ import {
   loadPmHistory,
   removePmConversation,
   savePmHistory,
+  upsertPmConversation,
 } from './pmHistory.js';
 
 /** In-memory Storage stand-in. */
@@ -98,6 +99,22 @@ describe('pmHistory', () => {
     expect(loaded).toHaveLength(PM_HISTORY_MAX_CONVERSATIONS);
     // The two stalest (peers 0 and 1) are gone; the rest keep their original order.
     expect(loaded.map((c) => c.peer)).toEqual(convos.slice(2).map((c) => c.peer));
+  });
+
+  it('upsertPmConversation merges one thread without touching the others', () => {
+    const s = fakeStorage();
+    savePmHistory('key', [convo(7, [line('a')]), convo(8, [line('b')])], s);
+    // Replace an existing thread…
+    upsertPmConversation('key', convo(8, [line('b'), line('b2', 2000)]), s);
+    let loaded = loadPmHistory('key', s);
+    expect(loaded.map((c) => c.peer)).toEqual([7, 8]);
+    expect(loaded[1]!.lines.map((l) => l.text)).toEqual(['b', 'b2']);
+    expect(loaded[0]!.lines.map((l) => l.text)).toEqual(['a']);
+    // …and append a new one, ids stripped either way.
+    upsertPmConversation('key', convo(9, [line('c')]), s);
+    loaded = loadPmHistory('key', s);
+    expect(loaded.map((c) => c.peer)).toEqual([7, 8, 9]);
+    expect(loaded[2]!.lines[0]).not.toHaveProperty('id');
   });
 
   it('removePmConversation forgets one thread; clearPmHistory forgets all', () => {

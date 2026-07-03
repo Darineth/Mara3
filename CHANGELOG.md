@@ -11,6 +11,23 @@ All notable changes to Mara 3 are documented here.
   argument leaves the channel you're looking at, or a named one from anywhere.
 - The browser tab title gains a leading `* ` while any channel or PM has unread
   messages, so a backgrounded Mara tab shows pending activity at a glance.
+- Conversations can be popped out into their own browser windows: shift-click a
+  channel or PM tab. A popped-out PM *moves* — its tab leaves the main window and
+  new messages go only to the pop-out until that window closes (then the tab comes
+  back; a pop-out that dies without saying goodbye forfeits the conversation back
+  automatically). Channel pop-outs are extra views: the channel tab stays in the
+  main window, and the pop-out closes itself when you leave the channel. PM
+  pop-outs restore the conversation from the device-local history, and popping
+  the same conversation out twice refocuses the existing window. Direct URLs work
+  too: `?view=channel:<name>` / `?view=pm:<user token>`.
+- New option: "Open private messages in their own windows" — with it on, PM
+  conversations skip the tab bar entirely: opening one (user list, `/msg`) and
+  new incoming conversations go straight to pop-out windows, and closing a PM
+  window closes the conversation (a later message opens a fresh one) instead of
+  returning a tab. If the browser blocks the popup, it falls back to a normal
+  tab. Auto-opening on an incoming message requires device-local PM history
+  (the window restores the triggering message from it). Pop-out windows also
+  open quiet — no connect notice or MOTD, which the main window already shows.
 - Private-message conversations now survive a refresh: open PM tabs and their
   recent lines are kept on this device (localStorage, capped, bound to your
   identity) and restored on the next session. The server still never stores

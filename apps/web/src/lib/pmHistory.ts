@@ -115,6 +115,36 @@ export function savePmHistory(
   }
 }
 
+/**
+ * Merge a single conversation into the stored blob, leaving the rest untouched.
+ * Used by PM pop-out windows: they own exactly one conversation and must not
+ * clobber the main window's full tab set — but they must persist lines they
+ * received while the main window wasn't around to write them.
+ */
+export function upsertPmConversation(
+  identityKey: string,
+  convo: { peer: Token; name: string; color: string; lines: ChatLine[] },
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (!storage) return;
+  const stored = {
+    peer: convo.peer,
+    name: convo.name,
+    color: convo.color,
+    lines: convo.lines.slice(-PM_HISTORY_MAX_LINES).map(({ id: _id, ...line }) => line),
+  };
+  const conversations = loadPmHistory(identityKey, storage);
+  const i = conversations.findIndex((c) => c.peer === convo.peer);
+  if (i >= 0) conversations[i] = stored;
+  else conversations.push(stored);
+  const blob: StoredBlob = { identityKey, conversations };
+  try {
+    storage.setItem(KEY, JSON.stringify(blob));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Forget one conversation (the user closed its tab — this device stops remembering it). */
 export function removePmConversation(
   identityKey: string,

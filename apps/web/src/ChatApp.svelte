@@ -18,7 +18,13 @@
     switchServer,
   } from './lib/native.js';
   import { runSlashCommand, type CommandContext } from './lib/commands.js';
-  import { clearPmHistory, removePmConversation, savePmHistory } from './lib/pmHistory.js';
+  import {
+    clearPmHistory,
+    removePmConversation,
+    savePmHistory,
+    upsertPmConversation,
+  } from './lib/pmHistory.js';
+  import { openPopout, popoutBus, type PopoutBusMessage, type SoloView } from './lib/popout.js';
   import type { MaraSettings, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
@@ -30,11 +36,15 @@
   let {
     client,
     settings,
+    solo = null,
     onDisconnect,
     persist,
   }: {
     client: MaraClient;
     settings: MaraSettings;
+    /** Pop-out mode: pin this window to one conversation (no tabs, no join UI).
+     *  The main window keeps the conversation too — pop-outs are mirrors. */
+    solo?: SoloView | null;
     onDisconnect: () => void;
     persist: () => void;
   } = $props();
@@ -74,12 +84,15 @@
 
   // Once connected, show the server's name in the browser tab; restore the original
   // title (e.g. "Mara 3") when the session ends. A leading "* " flags unread messages
-  // in any channel or PM, so a backgrounded tab shows activity at a glance.
+  // in any channel or PM, so a backgrounded tab shows activity at a glance. A pop-out
+  // is titled by its conversation, and only ever shows that conversation, so the
+  // whole-session unread star would mislead there — skip it.
   const baseTitle = typeof document !== 'undefined' ? document.title : '';
   $effect(() => {
     if (typeof document === 'undefined') return;
-    const title = $serverInfo?.name ?? baseTitle;
-    document.title = unreadChannels.size + unreadPms.size > 0 ? `* ${title}` : title;
+    const server = $serverInfo?.name ?? baseTitle;
+    const t = solo ? `${title} · ${server}` : server;
+    document.title = !solo && unreadChannels.size + unreadPms.size > 0 ? `* ${t}` : t;
   });
   onDestroy(() => {
     if (typeof document !== 'undefined') document.title = baseTitle;
@@ -108,24 +121,38 @@
   onDestroy(unsubChannels);
 
   // Mirror the open PM conversations to device-local storage so a refresh restores
-  // them (the server never stores PMs — see lib/pmHistory.ts). What persists is the
-  // pmTabs set, in tab order, with peer name/colour snapshots so restored lines
-  // render while the peer is offline. Debounced so a burst of lines lands as one
-  // write. Rebuilds when the option toggles; closePm handles its own removal.
+  // them (the server never stores PMs — see lib/pmHistory.ts). The main window
+  // persists the whole set — its tabs plus conversations away in pop-outs, in tab
+  // order — while a PM pop-out merges in just its own conversation (so lines it
+  // received while no main window was around still survive a refresh). A channel
+  // pop-out writes nothing. Debounced so a burst of lines lands as one write.
+  // Rebuilds when the option toggles; closePm handles its own removal.
   $effect(() => {
-    if (!settings.keepPmHistory) return;
+    if (!settings.keepPmHistory || solo?.kind === 'channel') return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const unsub = privateMessages.subscribe((map) => {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         const dir = get(directory);
-        const conversations = pmTabs
-          .map((peer) => ({ peer, lines: map.get(peer) ?? [] }))
-          .filter((c) => c.lines.length > 0)
-          .map((c) => {
-            const info = dir.get(c.peer);
-            return { ...c, name: info?.name ?? `#${c.peer}`, color: info?.color ?? '#888888' };
-          });
+        const snapshot = (peer: Token, lines: ChatLine[]) => {
+          const info = dir.get(peer);
+          return {
+            peer,
+            lines,
+            name: info?.name ?? `#${peer}`,
+            color: info?.color ?? '#888888',
+          };
+        };
+        if (solo?.kind === 'pm') {
+          const lines = map.get(solo.peer) ?? [];
+          if (lines.length > 0)
+            upsertPmConversation(settings.identityKey, snapshot(solo.peer, lines));
+          return;
+        }
+        const open = [...pmTabs, ...[...poppedOutPms].filter((p) => !pmTabs.includes(p))];
+        const conversations = open
+          .map((peer) => snapshot(peer, map.get(peer) ?? []))
+          .filter((c) => c.lines.length > 0);
         savePmHistory(settings.identityKey, conversations);
       }, 300);
     });
@@ -140,7 +167,10 @@
   // every selector below nulls the other to preserve that invariant, which the
   // title/baseLines deriveds rely on to pick which conversation to show.
   let activeChannel = $state<Token | null>(null);
-  let activePm = $state<Token | null>(null);
+  // A solo PM window is born pinned to its peer (also keeps rejoining channels
+  // from stealing the view before any PM line arrives).
+  // svelte-ignore state_referenced_locally
+  let activePm = $state<Token | null>(solo?.kind === 'pm' ? solo.peer : null);
   // Name of a channel the user just asked to join (via the + popover) and wants
   // focused once it lands — distinguishes a deliberate join from the channels we
   // silently rejoin on a fresh session.
@@ -154,6 +184,75 @@
   // Conversations with unread messages (reassigned, not mutated, for reactivity).
   let unreadChannels = $state(new Set<Token>());
   let unreadPms = $state(new Set<Token>());
+  // PM conversations currently owned by a pop-out window (move semantics): their
+  // tabs are hidden here and incoming messages stay quiet until the pop-out
+  // closes. Maintained over the popout bus (see lib/popout.ts) — and re-learned
+  // on mount via a query, so reloading this window re-hides popped-out tabs.
+  let poppedOutPms = $state(new Set<Token>());
+  // Pending are-you-alive checks per peer: if a pop-out doesn't answer before the
+  // timeout, this window adopts the conversation back (see the privateMessage handler).
+  const popoutChecks = new Map<Token, ReturnType<typeof setTimeout>>();
+  let popoutPost: ((m: PopoutBusMessage) => void) | null = null;
+
+  // Main-window side of the popout bus.
+  $effect(() => {
+    if (solo) return;
+    const bus = popoutBus((m) => {
+      if (m.type === 'pm-open') {
+        const check = popoutChecks.get(m.peer);
+        if (check !== undefined) {
+          clearTimeout(check);
+          popoutChecks.delete(m.peer);
+        }
+        if (!poppedOutPms.has(m.peer)) poppedOutPms = new Set(poppedOutPms).add(m.peer);
+        hidePmTab(m.peer);
+      } else if (m.type === 'pm-closed' && poppedOutPms.has(m.peer)) {
+        const next = new Set(poppedOutPms);
+        next.delete(m.peer);
+        poppedOutPms = next;
+        // The conversation moves back as a tab — unless PMs live in windows, in
+        // which case closing the window closes the conversation (a later message
+        // simply opens a fresh window).
+        if (!settings.pmsInWindows) addPmTab(m.peer);
+      }
+    });
+    popoutPost = bus?.post ?? null;
+    // Learn about pop-outs that already exist (this window just loaded/reloaded).
+    bus?.post({ type: 'pm-query' });
+    return () => {
+      popoutPost = null;
+      for (const t of popoutChecks.values()) clearTimeout(t);
+      popoutChecks.clear();
+      bus?.close();
+    };
+  });
+
+  // Pop-out side: announce ownership on start and in answer to queries, and hand
+  // the conversation back on the way out (pagehide covers the window closing;
+  // the effect teardown covers in-app unmounts).
+  $effect(() => {
+    if (solo?.kind !== 'pm') return;
+    const peer = solo.peer;
+    let respond: ((m: PopoutBusMessage) => void) | null = null;
+    const bus = popoutBus((m) => {
+      if (m.type === 'pm-query' && (m.peer === undefined || m.peer === peer))
+        respond?.({ type: 'pm-open', peer });
+      if (m.type === 'pm-focus' && m.peer === peer) window.focus();
+    });
+    respond = bus?.post ?? null;
+    bus?.post({ type: 'pm-open', peer });
+    let said = false;
+    const goodbye = () => {
+      if (!said) bus?.post({ type: 'pm-closed', peer });
+      said = true;
+    };
+    window.addEventListener('pagehide', goodbye);
+    return () => {
+      goodbye();
+      window.removeEventListener('pagehide', goodbye);
+      bus?.close();
+    };
+  });
 
   function markChannelUnread(token: Token, from: Token) {
     // Our own message — the server's echo of what we just sent, or the mirror from
@@ -197,7 +296,11 @@
   // welcome payload). Fires a single time per session; reconnects are covered by the
   // drop/reconnect notices in the statusChanged handler below.
   let connectAnnounced = false;
-  let motdShown = false;
+  // Pop-outs open quiet: no connect announcement and no MOTD — the main window
+  // already shows both, and a pinned conversation shouldn't start with noise.
+  // (Drop/reconnect notices still show; a dead pop-out must say so.)
+  // svelte-ignore state_referenced_locally
+  let motdShown = solo !== null;
   $effect(() => {
     if ($serverInfo && !connectAnnounced) {
       connectAnnounced = true;
@@ -205,7 +308,7 @@
       // at the boundary). Captured before the first notice so all session lines
       // (Connected/joined/MOTD/live) sort at or after it.
       sessionStart = client.serverNow();
-      pushSystem(`Connected to ${$serverInfo.name}.`);
+      if (!solo) pushSystem(`Connected to ${$serverInfo.name}.`);
       // The MOTD is pushed later, on the first channel join, so it reads
       // Connected → joined → MOTD.
     }
@@ -247,7 +350,14 @@
         // the first view of the session — the server's default channel, which joins
         // first on connect. The other channels we silently rejoin on a fresh session
         // stay background tabs, so a returning user lands on the main channel.
-        if (ch.name === pendingFocusJoin || (activeChannel === null && activePm === null)) {
+        // A solo window focuses exactly its own channel (also re-pinning after a
+        // reconnect's token churn) and lets everything else pass by.
+        if (solo) {
+          if (solo.kind === 'channel' && ch.name === solo.name) {
+            activeChannel = ch.token;
+            activePm = null;
+          }
+        } else if (ch.name === pendingFocusJoin || (activeChannel === null && activePm === null)) {
           activeChannel = ch.token;
           activePm = null;
         }
@@ -264,16 +374,56 @@
         }
       }),
       client.events.on('channelLeft', (ev) => {
+        if (solo) {
+          // The conversation this window exists for is gone — close the pop-out.
+          // ('replaced' is reconnect token churn; the rejoin re-pins the view.)
+          if (solo.kind === 'channel' && ev.name === solo.name && ev.reason === 'left') {
+            window.close();
+            // If the browser refused (e.g. a hand-opened tab), say why the view died.
+            pushSystem(`You left #${ev.name} — this window can be closed.`);
+          }
+          return;
+        }
         if (activeChannel === ev.channelToken) {
           // Fall back to another channel we're still in, rather than an empty view.
           activeChannel = [...$channels.keys()].find((t) => t !== ev.channelToken) ?? null;
         }
       }),
       client.events.on('privateMessage', (pm) => {
+        // A pop-out owns this conversation — stay quiet here (no tab, no badge,
+        // no attention flash; the pop-out does all that). But confirm it's still
+        // alive: if it doesn't answer the query in time (crashed without a
+        // goodbye), adopt the conversation back so the message isn't stranded.
+        if (!solo && poppedOutPms.has(pm.from)) {
+          popoutPost?.({ type: 'pm-query', peer: pm.from });
+          if (!popoutChecks.has(pm.from)) {
+            popoutChecks.set(
+              pm.from,
+              setTimeout(() => {
+                popoutChecks.delete(pm.from);
+                const next = new Set(poppedOutPms);
+                next.delete(pm.from);
+                poppedOutPms = next;
+                // Adopt the conversation back the way the user prefers it: a
+                // fresh window when PMs live in windows (blocked → tab), else a tab.
+                if (settings.pmsInWindows && settings.keepPmHistory && popOutPm(pm.from)) return;
+                addPmTab(pm.from);
+                markPmUnread(pm.from);
+              }, 2500),
+            );
+          }
+          return;
+        }
+        // "PMs in windows": a new conversation opens as a pop-out. Only with
+        // device-local history on — the pop-out hydrates the triggering message
+        // from storage (there's no server backlog), so without it the first
+        // message would render nowhere. Popup blocked (no gesture) → tab.
+        if (!solo && settings.pmsInWindows && settings.keepPmHistory && popOutPm(pm.from)) return;
         addPmTab(pm.from);
         // Only auto-focus an incoming PM when nothing is open yet; otherwise just
         // flag it unread so we don't yank the user out of their current view.
-        if (activePm === null && activeChannel === null) activePm = pm.from;
+        // (Never in a pop-out — its view is pinned.)
+        if (!solo && activePm === null && activeChannel === null) activePm = pm.from;
         markPmUnread(pm.from);
         // On the desktop shell, flash the taskbar/dock when a PM lands while the window
         // is in the background, so it's noticed without stealing focus. The shell also
@@ -283,7 +433,10 @@
       client.events.on('privateMessageSent', (pm) => {
         // Fires for our own sent PM — including the copy the server mirrors to our other
         // windows/devices. Surface the thread here too so linked clients converge on the
-        // same conversation list (no unread badge: it's our own message).
+        // same conversation list (no unread badge: it's our own message). Unless a
+        // pop-out owns the conversation — the mirror of a message sent *from* that
+        // pop-out must not resurrect the tab here.
+        if (!solo && poppedOutPms.has(pm.to)) return;
         addPmTab(pm.to);
       }),
       // Only real messages badge a tab — joins/leaves/away and other system lines
@@ -304,7 +457,9 @@
   // auto-join), so dedupe by name like client-core's own "You joined" guard does.
   const loggedJoins = new Set<string>();
   $effect(() => {
-    if (!isDesktop()) return;
+    // Solo windows skip logging — the main window already logs everything, and
+    // two writers would double every line.
+    if (!isDesktop() || solo) return;
     // Log files are split per channel by its (human-readable) name, falling back to the
     // numeric token if the channel isn't in the store yet.
     const channelFolder = (token: Token): string =>
@@ -420,7 +575,7 @@
   const pmPeers = $derived(pmTabs);
   // Channels are a light-touch feature: only show the switcher when there's more
   // than one conversation (e.g. you've joined another channel or opened a DM).
-  const showTabs = $derived(channelList.length + pmPeers.length > 1);
+  const showTabs = $derived(!solo && channelList.length + pmPeers.length > 1);
   const title = $derived(
     activePm !== null
       ? `@${nameOf(activePm)}`
@@ -459,6 +614,16 @@
   }
 
   function selectPm(token: Token) {
+    // The conversation lives in a pop-out — nudge that window to the front
+    // instead (deliberately opening it from the user list or /msg must not
+    // resurrect a tab here, and must not reload the pop-out via window.open).
+    if (!solo && poppedOutPms.has(token)) {
+      popoutPost?.({ type: 'pm-focus', peer: token });
+      return;
+    }
+    // "PMs in windows": deliberate opens go straight to a pop-out (this click is
+    // the user gesture popup blockers want). Blocked → fall through to a tab.
+    if (!solo && settings.pmsInWindows && popOutPm(token)) return;
     addPmTab(token);
     activePm = token;
     activeChannel = null;
@@ -469,13 +634,12 @@
     selectPm(user.token);
   }
 
-  function closePm(token: Token) {
+  /** Take a PM tab out of the bar (view falls back if it was active) without
+   *  forgetting the conversation — used when it moves to a pop-out window. */
+  function hidePmTab(token: Token) {
     const wasActive = activePm === token;
     pmTabs = pmTabs.filter((t) => t !== token);
     unreadPms = clearUnread(unreadPms, token);
-    // Closing the tab also forgets the conversation on this device (in-memory
-    // history survives for this session — a reopened tab still shows it).
-    removePmConversation(settings.identityKey, token);
     if (!wasActive) return;
     // Fall back to another open PM, else a channel, else the empty placeholder.
     activePm = null;
@@ -487,6 +651,39 @@
     }
   }
 
+  function closePm(token: Token) {
+    // Closing the tab also forgets the conversation on this device (in-memory
+    // history survives for this session — a reopened tab still shows it).
+    removePmConversation(settings.identityKey, token);
+    hidePmTab(token);
+  }
+
+  // Pop out a PM: the conversation MOVES — this window hands it to the pop-out
+  // (tab hidden, no badges) until that window closes. Returns false when the
+  // popup was blocked, so callers can fall back to a tab instead of handing the
+  // conversation to a window that doesn't exist.
+  function popOutPm(peer: Token): boolean {
+    // Flush this conversation to device storage NOW, not on the debounce: the new
+    // window hydrates from storage as it loads, and it can win a race against a
+    // 300ms timer — losing the very message that opened it.
+    if (settings.keepPmHistory) {
+      const lines = get(privateMessages).get(peer) ?? [];
+      if (lines.length > 0) {
+        const info = get(directory).get(peer);
+        upsertPmConversation(settings.identityKey, {
+          peer,
+          lines,
+          name: info?.name ?? `#${peer}`,
+          color: info?.color ?? '#888888',
+        });
+      }
+    }
+    if (!openPopout({ kind: 'pm', peer })) return false;
+    if (!poppedOutPms.has(peer)) poppedOutPms = new Set(poppedOutPms).add(peer);
+    hidePmTab(peer);
+    return true;
+  }
+
   // Apply in-session options: broadcast a name/colour change (server dedupes + tells
   // everyone via userProfile, which updates our own roster/self), apply the theme via
   // the shared settings (App's $effect re-applies it), and persist.
@@ -495,6 +692,7 @@
     color: string;
     theme: Theme;
     keepPmHistory: boolean;
+    pmsInWindows: boolean;
   }) {
     const newName = next.name.trim();
     const update: { name?: string; color?: string } = {};
@@ -508,6 +706,7 @@
     // future writes — that's what a user unchecking a privacy option expects.
     if (!next.keepPmHistory && settings.keepPmHistory) clearPmHistory();
     settings.keepPmHistory = next.keepPmHistory;
+    settings.pmsInWindows = next.pmsInWindows;
     persist();
   }
 
@@ -553,8 +752,11 @@
         if (activeChannel !== null) client.sendEmote(activeChannel, t);
       },
       privateMessage: (token, t) => {
-        selectPm(token);
+        // Send before focusing: selectPm may pop the conversation out into a new
+        // window, which snapshots the store on the way — the sent line (pushed
+        // locally by sendPrivateMessage) must already be in it.
         client.sendPrivateMessage(token, t);
+        selectPm(token);
       },
       joinChannel: (name) => {
         // Already a member (case-insensitively)? Focus the existing tab rather than
@@ -638,7 +840,10 @@
             <button
               class:active={activePm === null && activeChannel === channel.token}
               class:unread={unreadChannels.has(channel.token)}
-              onclick={() => openChannel(channel.token)}
+              onclick={(e) =>
+                e.shiftKey
+                  ? openPopout({ kind: 'channel', name: channel.name })
+                  : openChannel(channel.token)}
               onmousedown={(e) => {
                 // Middle-click leaves the channel (and suppress the autoscroll cursor).
                 if (e.button === 1) {
@@ -646,7 +851,7 @@
                   client.leaveChannel(channel.token);
                 }
               }}
-              title="#{channel.name} — middle-click to leave"
+              title="#{channel.name} — middle-click to leave, shift-click to pop out"
             >
               #{channel.name}
             </button>
@@ -662,14 +867,15 @@
             >
               <button
                 class="tab-main"
-                onclick={() => selectPm(peer)}
+                onclick={(e) => (e.shiftKey ? popOutPm(peer) : selectPm(peer))}
                 onmousedown={(e) => {
                   if (e.button === 1) {
                     e.preventDefault();
                     closePm(peer);
                   }
                 }}
-                title="@{nameOf(peer)} — middle-click to close">@{nameOf(peer)}</button
+                title="@{nameOf(peer)} — middle-click to close, shift-click to pop out"
+                >@{nameOf(peer)}</button
               >
               <button
                 class="tab-x"
@@ -684,28 +890,30 @@
         <div class="title">{title}</div>
       {/if}
 
-      <div class="join-wrap" bind:this={joinEl}>
-        <button
-          class="addbtn"
-          aria-label="Join a channel"
-          aria-expanded={joinOpen}
-          onclick={() => (joinOpen = !joinOpen)}>+</button
-        >
-        {#if joinOpen}
-          <form class="join-pop" onsubmit={(e) => (e.preventDefault(), join())}>
-            <input
-              bind:this={joinInput}
-              bind:value={joinName}
-              placeholder="channel name"
-              aria-label="Channel name"
-              onkeydown={(e) => {
-                if (e.key === 'Escape') joinOpen = false;
-              }}
-            />
-            <button type="submit">Join</button>
-          </form>
-        {/if}
-      </div>
+      {#if !solo}
+        <div class="join-wrap" bind:this={joinEl}>
+          <button
+            class="addbtn"
+            aria-label="Join a channel"
+            aria-expanded={joinOpen}
+            onclick={() => (joinOpen = !joinOpen)}>+</button
+          >
+          {#if joinOpen}
+            <form class="join-pop" onsubmit={(e) => (e.preventDefault(), join())}>
+              <input
+                bind:this={joinInput}
+                bind:value={joinName}
+                placeholder="channel name"
+                aria-label="Channel name"
+                onkeydown={(e) => {
+                  if (e.key === 'Escape') joinOpen = false;
+                }}
+              />
+              <button type="submit">Join</button>
+            </form>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="actions">

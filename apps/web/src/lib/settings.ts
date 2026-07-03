@@ -25,6 +25,8 @@ export interface MaraSettings {
   /** Keep PM history on this device (localStorage) so a refresh restores open
    *  conversations. Purely client-local — the server never stores PMs. */
   keepPmHistory: boolean;
+  /** Open PM conversations in their own pop-out windows instead of tabs. */
+  pmsInWindows: boolean;
 }
 
 const KEY = 'mara3.settings';
@@ -104,6 +106,7 @@ export const defaultSettings: MaraSettings = {
   identityKey: '',
   channels: [],
   keepPmHistory: true,
+  pmsInWindows: false,
 };
 
 /** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;
