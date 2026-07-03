@@ -11,6 +11,8 @@
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import {
+    closeNativePopout,
+    focusNativePopout,
     isDesktop,
     nativeLog,
     openExternal,
@@ -237,7 +239,10 @@
     const bus = popoutBus((m) => {
       if (m.type === 'pm-query' && (m.peer === undefined || m.peer === peer))
         respond?.({ type: 'pm-open', peer });
-      if (m.type === 'pm-focus' && m.peer === peer) window.focus();
+      if (m.type === 'pm-focus' && m.peer === peer) {
+        window.focus();
+        void focusNativePopout(); // desktop shells: raise the native window
+      }
     });
     respond = bus?.post ?? null;
     bus?.post({ type: 'pm-open', peer });
@@ -306,9 +311,13 @@
       connectAnnounced = true;
       // Mark where the backlog ends and this session begins (ChatView draws a rule
       // at the boundary). Captured before the first notice so all session lines
-      // (Connected/joined/MOTD/live) sort at or after it.
-      sessionStart = client.serverNow();
-      if (!solo) pushSystem(`Connected to ${$serverInfo.name}.`);
+      // (Connected/joined/MOTD/live) sort at or after it. Not in pop-outs: they
+      // open mid-session, so the boundary would draw a meaningless rule right
+      // under whatever restored lines the window opened with (0 disables it).
+      if (!solo) {
+        sessionStart = client.serverNow();
+        pushSystem(`Connected to ${$serverInfo.name}.`);
+      }
       // The MOTD is pushed later, on the first channel join, so it reads
       // Connected → joined → MOTD.
     }
@@ -379,6 +388,7 @@
           // ('replaced' is reconnect token churn; the rejoin re-pins the view.)
           if (solo.kind === 'channel' && ev.name === solo.name && ev.reason === 'left') {
             window.close();
+            void closeNativePopout(); // desktop shells: window.close() is a webview no-op
             // If the browser refused (e.g. a hand-opened tab), say why the view died.
             pushSystem(`You left #${ev.name} — this window can be closed.`);
           }
@@ -390,6 +400,16 @@
         }
       }),
       client.events.on('privateMessage', (pm) => {
+        // The normal arrival: a tab, an unread badge, and (desktop) an attention
+        // flash. Auto-focus only when nothing is open yet, so an incoming PM never
+        // yanks the user out of their current view. (Never focus in a pop-out —
+        // its view is pinned.)
+        const arriveAsTab = () => {
+          addPmTab(pm.from);
+          if (!solo && activePm === null && activeChannel === null) activePm = pm.from;
+          markPmUnread(pm.from);
+          if (!document.hasFocus()) void requestAttention();
+        };
         // A pop-out owns this conversation — stay quiet here (no tab, no badge,
         // no attention flash; the pop-out does all that). But confirm it's still
         // alive: if it doesn't answer the query in time (crashed without a
@@ -405,8 +425,16 @@
                 next.delete(pm.from);
                 poppedOutPms = next;
                 // Adopt the conversation back the way the user prefers it: a
-                // fresh window when PMs live in windows (blocked → tab), else a tab.
-                if (settings.pmsInWindows && settings.keepPmHistory && popOutPm(pm.from)) return;
+                // fresh window when PMs live in windows (refused → tab), else a tab.
+                if (settings.pmsInWindows && settings.keepPmHistory) {
+                  void popOutPm(pm.from).then((opened) => {
+                    if (!opened) {
+                      addPmTab(pm.from);
+                      markPmUnread(pm.from);
+                    }
+                  });
+                  return;
+                }
                 addPmTab(pm.from);
                 markPmUnread(pm.from);
               }, 2500),
@@ -417,18 +445,14 @@
         // "PMs in windows": a new conversation opens as a pop-out. Only with
         // device-local history on — the pop-out hydrates the triggering message
         // from storage (there's no server backlog), so without it the first
-        // message would render nowhere. Popup blocked (no gesture) → tab.
-        if (!solo && settings.pmsInWindows && settings.keepPmHistory && popOutPm(pm.from)) return;
-        addPmTab(pm.from);
-        // Only auto-focus an incoming PM when nothing is open yet; otherwise just
-        // flag it unread so we don't yank the user out of their current view.
-        // (Never in a pop-out — its view is pinned.)
-        if (!solo && activePm === null && activeChannel === null) activePm = pm.from;
-        markPmUnread(pm.from);
-        // On the desktop shell, flash the taskbar/dock when a PM lands while the window
-        // is in the background, so it's noticed without stealing focus. The shell also
-        // guards on focus; this avoids a needless IPC hop when we're already in front.
-        if (!document.hasFocus()) void requestAttention();
+        // message would render nowhere. Open refused → tab.
+        if (!solo && settings.pmsInWindows && settings.keepPmHistory) {
+          void popOutPm(pm.from).then((opened) => {
+            if (!opened) arriveAsTab();
+          });
+          return;
+        }
+        arriveAsTab();
       }),
       client.events.on('privateMessageSent', (pm) => {
         // Fires for our own sent PM — including the copy the server mirrors to our other
@@ -613,6 +637,14 @@
     if (!pmTabs.includes(token)) pmTabs = [...pmTabs, token];
   }
 
+  /** Open a PM as a tab in this window and focus it (the non-pop-out path). */
+  function openPmTab(token: Token) {
+    addPmTab(token);
+    activePm = token;
+    activeChannel = null;
+    unreadPms = clearUnread(unreadPms, token);
+  }
+
   function selectPm(token: Token) {
     // The conversation lives in a pop-out — nudge that window to the front
     // instead (deliberately opening it from the user list or /msg must not
@@ -622,12 +654,14 @@
       return;
     }
     // "PMs in windows": deliberate opens go straight to a pop-out (this click is
-    // the user gesture popup blockers want). Blocked → fall through to a tab.
-    if (!solo && settings.pmsInWindows && popOutPm(token)) return;
-    addPmTab(token);
-    activePm = token;
-    activeChannel = null;
-    unreadPms = clearUnread(unreadPms, token);
+    // the user gesture popup blockers want). Refused → fall back to a tab.
+    if (!solo && settings.pmsInWindows) {
+      void popOutPm(token).then((opened) => {
+        if (!opened) openPmTab(token);
+      });
+      return;
+    }
+    openPmTab(token);
   }
 
   function openPm(user: UserInfo) {
@@ -659,10 +693,11 @@
   }
 
   // Pop out a PM: the conversation MOVES — this window hands it to the pop-out
-  // (tab hidden, no badges) until that window closes. Returns false when the
-  // popup was blocked, so callers can fall back to a tab instead of handing the
-  // conversation to a window that doesn't exist.
-  function popOutPm(peer: Token): boolean {
+  // (tab hidden, no badges) until that window closes. Resolves false when the
+  // open was refused (popup blocker, or a desktop shell too old for pop-outs),
+  // so callers can fall back to a tab instead of handing the conversation to a
+  // window that doesn't exist.
+  async function popOutPm(peer: Token): Promise<boolean> {
     // Flush this conversation to device storage NOW, not on the debounce: the new
     // window hydrates from storage as it loads, and it can win a race against a
     // 300ms timer — losing the very message that opened it.
@@ -678,7 +713,7 @@
         });
       }
     }
-    if (!openPopout({ kind: 'pm', peer })) return false;
+    if (!(await openPopout({ kind: 'pm', peer }))) return false;
     if (!poppedOutPms.has(peer)) poppedOutPms = new Set(poppedOutPms).add(peer);
     hidePmTab(peer);
     return true;

@@ -20,6 +20,14 @@ All notable changes to Mara 3 are documented here.
   pop-outs restore the conversation from the device-local history, and popping
   the same conversation out twice refocuses the existing window. Direct URLs work
   too: `?view=channel:<name>` / `?view=pm:<user token>`.
+- Pop-out windows work in the desktop clients too (both the modern shell and the
+  Windows 7 client, now versioned in step with the server at 3.0.12): pop-outs are
+  real native windows created
+  over shell IPC. The page only ever passes the conversation descriptor — the shell
+  builds the URL from its own saved server address — and pop-out windows can close
+  and raise themselves natively (webview `window.close()`/`focus()` are no-ops). A
+  PM pop-out flashes its own taskbar button on new messages. On an older desktop
+  client, pop-out requests gracefully fall back to tabs.
 - New option: "Open private messages in their own windows" — with it on, PM
   conversations skip the tab bar entirely: opening one (user list, `/msg`) and
   new incoming conversations go straight to pop-out windows, and closing a PM
@@ -27,7 +35,8 @@ All notable changes to Mara 3 are documented here.
   returning a tab. If the browser blocks the popup, it falls back to a normal
   tab. Auto-opening on an incoming message requires device-local PM history
   (the window restores the triggering message from it). Pop-out windows also
-  open quiet — no connect notice or MOTD, which the main window already shows.
+  open quiet — no connect notice, MOTD, or session-boundary rule, all of which
+  belong to the main window.
 - Private-message conversations now survive a refresh: open PM tabs and their
   recent lines are kept on this device (localStorage, capped, bound to your
   identity) and restored on the next session. The server still never stores

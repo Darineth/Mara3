@@ -1610,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "mara-client-legacy"
-version = "3.0.4"
+version = "3.0.12"
 dependencies = [
  "indexmap 1.9.3",
  "serde",

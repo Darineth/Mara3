@@ -100,6 +100,45 @@ export async function requestAttention(): Promise<void> {
 }
 
 /**
+ * Ask the desktop shell to open (or refocus) a native pop-out window for a
+ * conversation. The page passes only the view descriptor (`channel:<name>` /
+ * `pm:<token>`); the shell builds the URL from its own saved server address, so
+ * a page can never point a native window somewhere else. Returns false when the
+ * shell refused or predates pop-outs (an older client) — callers then fall back
+ * to tab behaviour, exactly like a blocked browser popup.
+ */
+export async function openNativePopout(view: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await rawInvoke('open_popout', { view });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Close this pop-out's native window (JS `window.close()` is a no-op in a webview).
+ *  The shell only honours it for pop-out windows. No-op in a plain browser. */
+export async function closeNativePopout(): Promise<void> {
+  if (!isDesktop()) return;
+  try {
+    await rawInvoke('close_self');
+  } catch {
+    /* an older shell just leaves the window open */
+  }
+}
+
+/** Raise this pop-out's native window (the pm-focus nudge). Best-effort. */
+export async function focusNativePopout(): Promise<void> {
+  if (!isDesktop()) return;
+  try {
+    await rawInvoke('focus_self');
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
  * Open a URL in the system browser via the shell's opener plugin (so it doesn't
  * navigate this window away from the chat). Falls back to a new tab in a plain
  * browser. Used for the desktop update-download link.

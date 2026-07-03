@@ -10,8 +10,14 @@
  * device-local store (lib/pmHistory.ts), so nothing new crosses the wire.
  */
 import type { Token } from '@mara/client-core';
+import { isDesktop, openNativePopout } from './native.js';
 
 export type SoloView = { kind: 'channel'; name: string } | { kind: 'pm'; peer: Token };
+
+/** The wire form of a view: the `?view=` value and what the shell IPC takes. */
+export function viewParam(view: SoloView): string {
+  return view.kind === 'channel' ? `channel:${view.name}` : `pm:${view.peer}`;
+}
 
 /** Parse a window.location.search into a solo view, or null for the normal app.
  *  Garbage values are ignored rather than erroring — the URL is user-editable. */
@@ -31,19 +37,19 @@ export function parseSoloView(search: string): SoloView | null {
  *  host/subpath; any existing `view` param is replaced). */
 export function soloViewUrl(view: SoloView, base: string): string {
   const url = new URL(base);
-  url.searchParams.set(
-    'view',
-    view.kind === 'channel' ? `channel:${view.name}` : `pm:${view.peer}`,
-  );
+  url.searchParams.set('view', viewParam(view));
   return url.toString();
 }
 
 /** Open (or refocus) the pop-out window for a view. The window target is derived
  *  from the view, so popping the same conversation out twice reuses one window.
- *  Returns false when the browser refused (popup blocker) — callers must not
- *  hand the conversation off to a window that doesn't exist. */
-export function openPopout(view: SoloView): boolean {
+ *  In the desktop shells this is a real native window created over IPC. Returns
+ *  false when the open was refused (popup blocker, or a desktop shell too old to
+ *  know pop-outs) — callers must not hand the conversation off to a window that
+ *  doesn't exist. */
+export async function openPopout(view: SoloView): Promise<boolean> {
   if (typeof window === 'undefined') return false;
+  if (isDesktop()) return openNativePopout(viewParam(view));
   const target =
     view.kind === 'channel' ? `mara-ch-${view.name.replace(/\W+/g, '_')}` : `mara-pm-${view.peer}`;
   const win = window.open(

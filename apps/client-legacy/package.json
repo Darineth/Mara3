@@ -1,6 +1,6 @@
 {
   "name": "@mara/client-legacy",
-  "version": "3.0.4",
+  "version": "3.0.12",
   "private": true,
   "type": "module",
   "description": "Mara 3 legacy desktop client (Windows 7) — a Tauri 1 shell with a bundled fixed-version WebView2 runtime.",

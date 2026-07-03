@@ -18,6 +18,9 @@ fn main() {
             "switch_server",
             "open_external",
             "request_attention",
+            "open_popout",
+            "close_self",
+            "focus_self",
         ]));
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }
