@@ -176,8 +176,17 @@
 
       const spoiler = target?.closest('.mara-spoiler');
       if (spoiler) {
-        spoiler.classList.toggle('revealed');
-        return;
+        if (!spoiler.classList.contains('revealed')) {
+          spoiler.classList.add('revealed'); // first click uncovers it
+          return;
+        }
+        // Revealed: only the little re-hide handle collapses it again, so a link or
+        // image inside stays independently clickable — a content click falls through
+        // to the image/link handlers instead of re-hiding the spoiler.
+        if (target.closest('.mara-spoiler-hide')) {
+          spoiler.classList.remove('revealed');
+          return;
+        }
       }
       const img = target?.closest('img.mara-img') as HTMLImageElement | null;
       if (img && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
@@ -412,14 +421,88 @@
     margin-top: 0;
   }
   .mara-chatview :global(.mara-spoiler) {
-    background: var(--mara-fg, #e6e6e6);
+    position: relative; /* containing block for the corner toggle */
+    /* inline-block so the cover/background fills the FULL box — including the height
+       of a tall image propping it up (a plain inline background only paints the
+       text-line strip, leaving the image area uncovered). max-width keeps a long
+       spoiler from overflowing its row. */
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
+    /* A subtle neutral tint while covered — a touch stronger than the revealed
+       background below so the two states are still distinguishable, without the
+       harsh near-text-colour bar it used to be. */
+    background: rgba(127, 127, 127, 0.3);
     color: transparent;
     border-radius: 4px;
     cursor: pointer;
-    padding: 0 0.2em;
+    /* Extra right padding reserves the top-right corner for the show/hide toggle so
+       content never runs under it. */
+    padding: 0 1.55em 0 0.25em;
+  }
+  /* `color: transparent` on the span only hides its own text. A link keeps its own
+     colour and an image ignores `color` entirely, so both leak through the spoiler —
+     blank every descendant until revealed (text/links transparent, images hidden).
+     `pointer-events: none` also makes a hidden link/image click-through to the span,
+     so clicking a covered spoiler reveals it instead of opening the link (the app's
+     document-level link handler never sees an <a> target). The show/hide handle is
+     excluded — it must stay visible and clickable in BOTH states. */
+  .mara-chatview :global(.mara-spoiler:not(.revealed) *:not(.mara-spoiler-hide)) {
+    color: transparent !important;
+    text-shadow: none !important;
+    pointer-events: none;
+  }
+  .mara-chatview :global(.mara-spoiler:not(.revealed) img) {
+    visibility: hidden;
   }
   .mara-chatview :global(.mara-spoiler.revealed) {
     background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
     color: inherit;
+  }
+  /* Persistent show/hide toggle icon, present in both states (kept out of the cover
+     blanking above): an eye to reveal while covered, an × to collapse once revealed.
+     Bare icon — no pill — coloured to contrast with each state's own background (the
+     covered bar is `--mara-fg`, the revealed bg is subtle), so it reads cleanly in
+     both light and dark themes. */
+  .mara-chatview :global(.mara-spoiler-hide) {
+    /* Feather-style eye, masked so it takes `currentColor`. */
+    --mara-eye: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23fff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M1%2012s4-7%2011-7%2011%207%2011%207-4%207-11%207S1%2012%201%2012z'/%3E%3Ccircle%20cx='12'%20cy='12'%20r='3'/%3E%3C/svg%3E");
+    /* Pinned to the spoiler's top-right corner (space reserved by the padding above). */
+    position: absolute;
+    top: 0.15em;
+    right: 0.2em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.15em;
+    height: 1.15em;
+    border-radius: 3px;
+    font-size: 0.85em;
+    line-height: 1;
+    opacity: 0.7;
+    cursor: pointer;
+    user-select: none;
+    /* Both states now sit on a subtle background, so the icon is just the text
+       colour (contrasts in either theme). */
+    color: var(--mara-fg, #ddd);
+  }
+  .mara-chatview :global(.mara-spoiler-hide:hover) {
+    opacity: 1;
+    background: rgba(127, 127, 127, 0.25);
+  }
+  /* Covered → an eye ("reveal"), drawn as a masked inline SVG so it takes the
+     handle's colour and stays crisp/identical on every platform. */
+  .mara-chatview :global(.mara-spoiler:not(.revealed) .mara-spoiler-hide)::before {
+    content: '';
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask: var(--mara-eye) center / contain no-repeat;
+    mask: var(--mara-eye) center / contain no-repeat;
+  }
+  /* Revealed → × ("collapse"). */
+  .mara-chatview :global(.mara-spoiler.revealed .mara-spoiler-hide)::before {
+    content: '\00d7';
+    font-size: 1.25em; /* the × glyph reads small; bump it to match the box */
   }
 </style>

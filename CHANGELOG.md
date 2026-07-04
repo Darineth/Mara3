@@ -4,7 +4,20 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.15] - unreleased
 
-_In development._
+### Fixed
+
+- Spoilers now actually hide a link or image inside them. Three separate problems:
+  a URL pressed against the closing `||` (or `[/spoiler]`) swallowed the delimiter
+  into its own address, breaking the link and leaving the spoiler unterminated
+  (URLs now stop at `|` and at a `[/…]` closing tag); the spoiler only blanked its
+  own text via `color: transparent`, so a link kept its own colour and an image
+  (which ignores `color`) showed straight through — the whole spoiler's contents
+  are now hidden until revealed (and a covered link isn't clickable — clicking a
+  spoiler reveals it rather than opening the hidden link); and `|| spaced ||` with
+  whitespace around the content is now recognised as a spoiler too, matching Discord.
+  A revealed spoiler keeps its contents independently clickable (a link or image
+  inside works normally), and each spoiler carries a persistent show/hide toggle so
+  it can be collapsed again without a content click re-hiding it.
 
 ## [3.0.14] - 2026-07-03
 

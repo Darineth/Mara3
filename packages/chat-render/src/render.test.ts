@@ -8,6 +8,11 @@ import {
   renderText,
 } from './index.js';
 
+// A rendered spoiler carries a trailing re-hide handle (a covered-spoiler affordance,
+// styled + wired by the client). Wrap expected spoiler content through this helper.
+const spoiler = (inner: string) =>
+  `<span class="mara-spoiler">${inner}<span class="mara-spoiler-hide" aria-hidden="true"></span></span>`;
+
 describe('escapeHtml', () => {
   it('neutralizes markup', () => {
     expect(escapeHtml('<script>alert("x")</script>')).toBe(
@@ -248,7 +253,7 @@ describe('renderText — Discord markdown', () => {
   it('renders underline, strikethrough, and spoilers', () => {
     expect(renderText('__u__')).toBe('<u>u</u>');
     expect(renderText('~~s~~')).toBe('<s>s</s>');
-    expect(renderText('||top secret||')).toBe('<span class="mara-spoiler">top secret</span>');
+    expect(renderText('||top secret||')).toBe(spoiler('top secret'));
   });
 
   it('renders inline code and code blocks without formatting inside', () => {
@@ -299,6 +304,63 @@ describe('renderText — Discord markdown', () => {
     );
     // No newline after the fence → no language hint, the whole thing is code.
     expect(renderText('```plain text```')).toBe('<code class="mara-codeblock">plain text</code>');
+  });
+});
+
+describe('renderText — spoilers wrapping links & images', () => {
+  const opts = { links: true, images: true };
+
+  it('wraps a bare link in a ||spoiler|| without the URL eating the closing ||', () => {
+    expect(renderText('||https://example.com||', opts)).toBe(
+      spoiler('<a href="https://example.com" rel="noopener noreferrer">https://example.com</a>'),
+    );
+  });
+
+  it('allows whitespace around spoiler content (unlike bold), matching Discord', () => {
+    // `|| x ||` is a spoiler containing " x " — a spoiler is a container, not emphasis.
+    expect(renderText('|| hidden ||')).toBe(spoiler(' hidden '));
+    expect(renderText('|| https://example.com ||', opts)).toBe(
+      spoiler(' <a href="https://example.com" rel="noopener noreferrer">https://example.com</a> '),
+    );
+  });
+
+  it('wraps an inline image (by extension) in a ||spoiler||', () => {
+    const html = renderText('||https://example.com/pic.png||', opts);
+    expect(html).toContain('<span class="mara-spoiler"><span class="mara-img-box">');
+    expect(html).toContain('src="https://example.com/pic.png"');
+    // The spoiler is terminated (not left as a literal leading `||`).
+    expect(html).not.toContain('||');
+  });
+
+  it('wraps a Markdown image in a ||spoiler||', () => {
+    const html = renderText('||![alt](/uploads/pic.png)||', opts);
+    expect(html).toContain('<span class="mara-spoiler"><span class="mara-img-box">');
+    expect(html).not.toContain('||');
+  });
+
+  it('wraps a link in a legacy [spoiler] tag without eating [/spoiler]', () => {
+    expect(renderText('[spoiler]https://example.com[/spoiler]', opts)).toBe(
+      spoiler('<a href="https://example.com" rel="noopener noreferrer">https://example.com</a>'),
+    );
+  });
+
+  it('does not let a URL swallow any [/tag] closing (e.g. [b]…[/b])', () => {
+    expect(renderText('[b]https://example.com[/b]', opts)).toBe(
+      '<strong><a href="https://example.com" rel="noopener noreferrer">https://example.com</a></strong>',
+    );
+  });
+
+  it('stops a URL at a pipe but keeps single brackets and IPv6 literals', () => {
+    // Single `|` ends the URL (Discord-like); the `|2` trails as text.
+    expect(renderText('https://example.com/a|b', opts)).toBe(
+      '<a href="https://example.com/a" rel="noopener noreferrer">https://example.com/a</a>|b',
+    );
+    // A single `[` (not a `[/` closing tag) stays in the URL.
+    expect(renderText('https://example.com/a[b]c', opts)).toContain(
+      'href="https://example.com/a[b]c"',
+    );
+    // IPv6 literal is preserved end to end.
+    expect(renderText('http://[2001:db8::1]/p', opts)).toContain('href="http://[2001:db8::1]/p"');
   });
 });
 
@@ -520,19 +582,15 @@ describe('renderText — legacy Mara 2 tags', () => {
   });
 
   it('renders the legacy [spoiler] tag like a ||spoiler||', () => {
-    expect(renderText('[spoiler]hidden[/spoiler]')).toBe(
-      '<span class="mara-spoiler">hidden</span>',
-    );
+    expect(renderText('[spoiler]hidden[/spoiler]')).toBe(spoiler('hidden'));
   });
 
   it('matches [spoiler] case-insensitively', () => {
-    expect(renderText('[Spoiler]x[/SPOILER]')).toBe('<span class="mara-spoiler">x</span>');
+    expect(renderText('[Spoiler]x[/SPOILER]')).toBe(spoiler('x'));
   });
 
   it('applies inner markdown inside a [spoiler] tag', () => {
-    expect(renderText('[spoiler]**bold**[/spoiler]')).toBe(
-      '<span class="mara-spoiler"><strong>bold</strong></span>',
-    );
+    expect(renderText('[spoiler]**bold**[/spoiler]')).toBe(spoiler('<strong>bold</strong>'));
   });
 
   it('leaves [spoiler] literal when markdown is disabled', () => {

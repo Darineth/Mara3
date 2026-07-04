@@ -46,7 +46,14 @@ const HTML_ESCAPES: Record<string, string> = {
 // origin it connected to, rather than a host baked in by the uploader. The
 // relative branch must start at a whitespace/line boundary so it doesn't match
 // inside a larger token (and an http URL's own `/uploads/` stays part of it).
-const URL_RE = /(?:https?:\/\/|(?<![^\s])\/uploads\/)[^\s<]+[^\s<.,!?;:)]/g;
+// The URL body stops at two things beyond whitespace/`<`, so a URL wrapped in
+// formatting doesn't swallow the closing delimiter into its href:
+//   - `|` — not a legal unencoded URL char; stopping there (like Discord) lets a
+//     spoiler-wrapped link work, else `||https://x.com||` eats the closing `||`.
+//   - `[/` — a legacy BBCode closing tag opener, so `[spoiler]https://x.com[/spoiler]`
+//     (and `[b]…[/b]`, etc.) don't lose their closing tag into the link.
+// Both only ever make a matched URL SHORTER, never longer.
+const URL_RE = /(?:https?:\/\/|(?<![^\s])\/uploads\/)(?:(?!\[\/)[^\s<|])+(?!\[\/)[^\s<|.,!?;:)]/g;
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]\S*)?$/i;
 // Some hosts carry no file extension but *declare* the image format in the query
 // string instead (`?format=jpg`, `&fm=png`, `?ext=webp`). Treat those as images
@@ -172,6 +179,14 @@ export function linkify(escaped: string): string {
  * start or end with whitespace (matches Discord), and underscore rules require
  * word boundaries so `snake_case` and URLs are left alone.
  */
+// Trailing handle inside a spoiler: a PERSISTENT show/hide toggle, visible in both
+// the covered and revealed states (the client labels it "show"/"hide" via CSS). It
+// lets a revealed spoiler be collapsed again WITHOUT a click on its contents, so a
+// link or image inside stays independently clickable. The client styles
+// `.mara-spoiler-hide` and drives it (see ChatView): it's kept out of the cover that
+// blanks the rest of the spoiler.
+const SPOILER_HANDLE = '<span class="mara-spoiler-hide" aria-hidden="true"></span>';
+
 export function applyMarkdown(input: string): string {
   return (
     input
@@ -181,7 +196,10 @@ export function applyMarkdown(input: string): string {
       .replace(/(?<!\w)__(?=\S)([\s\S]+?)(?<=\S)__(?!\w)/g, '<u>$1</u>')
       .replace(/(?<!\w)_(?=\S)([\s\S]+?)(?<=\S)_(?!\w)/g, '<em>$1</em>')
       .replace(/~~(?=\S)([\s\S]+?)(?<=\S)~~/g, '<s>$1</s>')
-      .replace(/\|\|(?=\S)([\s\S]+?)(?<=\S)\|\|/g, '<span class="mara-spoiler">$1</span>')
+      // Spoiler `||…||`. Unlike bold/italic, the content MAY start/end with whitespace
+      // (`|| hidden ||` works, matching Discord) — a spoiler is a container, and a link
+      // or image inside is often spaced off. Lazy so the first closing `||` ends it.
+      .replace(/\|\|([\s\S]+?)\|\|/g, `<span class="mara-spoiler">$1${SPOILER_HANDLE}</span>`)
       // Legacy Mara 2 BBCode tags (`[b]`/`[i]`/`[u]`/`[s]`/`[spoiler]`) — same output as
       // their markdown equivalents above. Run last so any inner markdown is already
       // applied; the literal brackets survive HTML-escaping untouched, so matching here on
@@ -191,7 +209,10 @@ export function applyMarkdown(input: string): string {
       .replace(/\[i\]([\s\S]+?)\[\/i\]/gi, '<em>$1</em>')
       .replace(/\[u\]([\s\S]+?)\[\/u\]/gi, '<u>$1</u>')
       .replace(/\[s\]([\s\S]+?)\[\/s\]/gi, '<s>$1</s>')
-      .replace(/\[spoiler\]([\s\S]+?)\[\/spoiler\]/gi, '<span class="mara-spoiler">$1</span>')
+      .replace(
+        /\[spoiler\]([\s\S]+?)\[\/spoiler\]/gi,
+        `<span class="mara-spoiler">$1${SPOILER_HANDLE}</span>`,
+      )
   );
 }
 
