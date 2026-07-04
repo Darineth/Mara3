@@ -82,8 +82,33 @@
   // The page is stale when the server reports serving a different web build than
   // the one this bundle was compiled as — i.e. the browser is running cached old
   // code and should be reloaded. Silent when the server doesn't report a build
-  // (dev, or an older server).
-  const stale = $derived(!!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId);
+  // (an older server). Gated to production builds: the Vite dev server (:5173)
+  // serves a freshly-compiled bundle whose id never matches the server's committed
+  // dist/version.json, so in dev this would ALWAYS read stale — a false alarm (HMR
+  // already keeps dev current). `import.meta.env.PROD` is false under the dev server
+  // and true in a `vite build` bundle (what the server and desktop clients serve).
+  const stale = $derived(
+    import.meta.env.PROD && !!$serverInfo?.webBuild && $serverInfo.webBuild !== clientBuild.buildId,
+  );
+
+  // Auto-refresh a stale page to pick up the newer build the server is serving.
+  // Guarded against a reload loop the same way onProtocolMismatch is: if a caching
+  // layer keeps handing back the old bundle, reloading would just come back stale,
+  // so only auto-reload once per window and otherwise leave the manual "Outdated —
+  // reload" button. Never fires in dev (stale is PROD-gated above).
+  const STALE_RELOAD_KEY = 'mara:stale-reload';
+  $effect(() => {
+    if (!stale || typeof window === 'undefined') return;
+    try {
+      const last = Number(sessionStorage.getItem(STALE_RELOAD_KEY) || '0');
+      if (Date.now() - last > 30_000) {
+        sessionStorage.setItem(STALE_RELOAD_KEY, String(Date.now()));
+        location.reload();
+      }
+    } catch {
+      /* sessionStorage blocked — the manual button still covers it */
+    }
+  });
 
   // Once connected, show the server's name in the browser tab; restore the original
   // title (e.g. "Mara 3") when the session ends. A leading "* " flags unread messages

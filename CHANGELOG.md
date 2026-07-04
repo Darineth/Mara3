@@ -4,7 +4,14 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.16] - unreleased
 
-_In development._
+### Changed
+
+- A client that connects and finds it's running an out-of-date web build now
+  auto-refreshes once to pick up the version the server is serving, instead of
+  only showing the "Outdated — reload" button. It reloads at most once per window
+  (so a cache that keeps serving the old bundle can't loop it — the manual button
+  remains as a fallback), and never in the dev server, where a build-id mismatch
+  is expected and HMR already keeps the page current.
 
 ## [3.0.15] - 2026-07-03
 
