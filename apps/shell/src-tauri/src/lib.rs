@@ -188,6 +188,8 @@ fn save_settings(settings: &Settings) -> Result<(), String> {
 
 /// Merge the window geometry into settings.json without disturbing the rest. Window
 /// state is non-critical, so failures are swallowed (we never block close on it).
+/// Desktop-only: mobile has a single OS-managed window with no geometry to persist.
+#[cfg(desktop)]
 fn save_window_state(window: &WindowState) {
     let mut s = load_settings();
     s.window = window.clone();
@@ -197,6 +199,7 @@ fn save_window_state(window: &WindowState) {
 /// True if the window has any visible overlap with a connected monitor. Guards against
 /// restoring onto a display that's since been unplugged or rearranged (which would
 /// strand the window off-screen). Unknown geometry/monitors → assume on-screen.
+#[cfg(desktop)]
 fn window_on_screen(window: &tauri::WebviewWindow) -> bool {
     let (Ok(pos), Ok(size), Ok(monitors)) = (
         window.outer_position(),
@@ -222,6 +225,7 @@ fn window_on_screen(window: &tauri::WebviewWindow) -> bool {
 /// Apply saved geometry to the freshly-built (still hidden) window: size, then
 /// position (recentering if it lands off-screen), then maximize. Setting the restored
 /// bounds before maximizing means un-maximizing later returns to them.
+#[cfg(desktop)]
 fn apply_window_state(window: &tauri::WebviewWindow, ws: &WindowState) {
     if let (Some(w), Some(h)) = (ws.width, ws.height) {
         let _ = window.set_size(tauri::PhysicalSize::new(w, h));
@@ -472,6 +476,8 @@ fn switch_server(app: AppHandle) -> Result<(), String> {
 /// additionally guard on `is_focused()` here so a call while the window is in front is a
 /// no-op (never flash the window the user is looking at). Flashes the *calling* window,
 /// so a PM pop-out flashes its own taskbar entry rather than the main window's.
+/// Desktop-only (no taskbar/dock urgency on mobile — the web app tolerates its absence).
+#[cfg(desktop)]
 #[tauri::command]
 fn request_attention(window: tauri::WebviewWindow) -> Result<(), String> {
     if window.is_focused().unwrap_or(false) {
@@ -486,6 +492,7 @@ fn request_attention(window: tauri::WebviewWindow) -> Result<(), String> {
 /// view is slugged; a hash rides along so distinct views that slug identically (e.g.
 /// `channel:a b` vs `channel:a-b`) still get their own windows. Deterministic within a
 /// process, which is all reuse-by-label needs.
+#[cfg(desktop)]
 fn popout_label(view: &str) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -504,6 +511,8 @@ fn popout_label(view: &str) -> String {
 /// server address, so a hostile page can never point a native window at another origin.
 // Async, not sync: window creation from a synchronous command deadlocks on
 // Windows (wry#583) — async commands run off the event loop thread.
+// Desktop-only: mobile has a single window; the web app falls back to tabs.
+#[cfg(desktop)]
 #[tauri::command]
 async fn open_popout(app: AppHandle, view: String) -> Result<(), String> {
     let valid_channel = view
@@ -542,6 +551,7 @@ async fn open_popout(app: AppHandle, view: String) -> Result<(), String> {
 
 /// Close the calling pop-out window (JS `window.close()` is a no-op in a webview).
 /// Restricted to pop-outs: the loaded page must never be able to close the main window.
+#[cfg(desktop)]
 #[tauri::command]
 fn close_self(window: tauri::WebviewWindow) -> Result<(), String> {
     if !window.label().starts_with("popout-") {
@@ -551,6 +561,7 @@ fn close_self(window: tauri::WebviewWindow) -> Result<(), String> {
 }
 
 /// Raise the calling pop-out window (the cross-window "focus this conversation" nudge).
+#[cfg(desktop)]
 #[tauri::command]
 fn focus_self(window: tauri::WebviewWindow) -> Result<(), String> {
     if !window.label().starts_with("popout-") {
@@ -601,21 +612,35 @@ fn register_for_restart() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            mara_log,
-            get_settings,
-            set_server_url,
-            set_auto_connect,
-            open_app,
-            switch_server,
-            open_external,
-            request_attention,
-            open_popout,
-            close_self,
-            focus_self
-        ]);
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+
+    // Pop-outs, taskbar attention, and window management are desktop-only, so the mobile
+    // build registers only the cross-platform commands — the web app tolerates the rest
+    // being absent (pop-outs fall back to tabs, attention just doesn't fire).
+    #[cfg(desktop)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        mara_log,
+        get_settings,
+        set_server_url,
+        set_auto_connect,
+        open_app,
+        switch_server,
+        open_external,
+        request_attention,
+        open_popout,
+        close_self,
+        focus_self
+    ]);
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        mara_log,
+        get_settings,
+        set_server_url,
+        set_auto_connect,
+        open_app,
+        switch_server,
+        open_external
+    ]);
 
     // Signed auto-update is desktop-only; mobile updates ship through app stores.
     #[cfg(desktop)]
@@ -659,51 +684,67 @@ pub fn run() {
                 log = log_location_json(),
                 resume = resumed_after_restart(),
             );
-            let window =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
-                    .inner_size(980.0, 720.0)
-                    .min_inner_size(480.0, 400.0)
-                    .visible(false) // restore saved geometry first, then show (no flash)
-                    .initialization_script(&init)
-                    .build()?;
-            apply_window_state(&window, &settings.window);
-            let _ = window.show();
+            // The main window loads the bundled picker page. On desktop we start it
+            // hidden, restore saved geometry, then show it, and track geometry to persist
+            // on close. Mobile has a single OS-managed fullscreen window — none of the
+            // sizing/geometry applies — so it just builds the window and loads the page.
+            #[cfg(desktop)]
+            {
+                let window =
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                        .title(concat!("Mara 3 v", env!("CARGO_PKG_VERSION")))
+                        .inner_size(980.0, 720.0)
+                        .min_inner_size(480.0, 400.0)
+                        .visible(false) // restore saved geometry first, then show (no flash)
+                        .initialization_script(&init)
+                        .build()?;
+                apply_window_state(&window, &settings.window);
+                let _ = window.show();
 
-            // Persist position/size/maximized so the next launch reopens here. Track
-            // the live geometry in-session — ignoring maximized/minimized frames so the
-            // stored bounds stay the *restored* ones — and write it back on close.
-            let tracked = std::sync::Arc::new(std::sync::Mutex::new(settings.window.clone()));
-            let ev_window = window.clone();
-            window.on_window_event(move |event| {
-                use tauri::WindowEvent;
-                match event {
-                    WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
-                        let maximized = ev_window.is_maximized().unwrap_or(false);
-                        let minimized = ev_window.is_minimized().unwrap_or(false);
-                        let mut t = tracked.lock().unwrap();
-                        t.maximized = maximized;
-                        if !maximized && !minimized {
-                            if let Ok(p) = ev_window.outer_position() {
-                                (t.x, t.y) = (Some(p.x), Some(p.y));
-                            }
-                            if let Ok(s) = ev_window.inner_size() {
-                                if s.width > 0 && s.height > 0 {
-                                    (t.width, t.height) = (Some(s.width), Some(s.height));
+                // Persist position/size/maximized so the next launch reopens here. Track
+                // the live geometry in-session — ignoring maximized/minimized frames so the
+                // stored bounds stay the *restored* ones — and write it back on close.
+                let tracked = std::sync::Arc::new(std::sync::Mutex::new(settings.window.clone()));
+                let ev_window = window.clone();
+                window.on_window_event(move |event| {
+                    use tauri::WindowEvent;
+                    match event {
+                        WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                            let maximized = ev_window.is_maximized().unwrap_or(false);
+                            let minimized = ev_window.is_minimized().unwrap_or(false);
+                            let mut t = tracked.lock().unwrap();
+                            t.maximized = maximized;
+                            if !maximized && !minimized {
+                                if let Ok(p) = ev_window.outer_position() {
+                                    (t.x, t.y) = (Some(p.x), Some(p.y));
+                                }
+                                if let Ok(s) = ev_window.inner_size() {
+                                    if s.width > 0 && s.height > 0 {
+                                        (t.width, t.height) = (Some(s.width), Some(s.height));
+                                    }
                                 }
                             }
                         }
+                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                            save_window_state(&tracked.lock().unwrap());
+                        }
+                        _ => {}
                     }
-                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
-                        save_window_state(&tracked.lock().unwrap());
-                    }
-                    _ => {}
-                }
-            });
+                });
 
-            // Remember the bundled picker URL so "Switch server" can return to it.
-            let boot = window.url().map(|u| u.to_string()).unwrap_or_default();
-            app.manage(BootstrapUrl(boot));
+                // Remember the bundled picker URL so "Switch server" can return to it.
+                let boot = window.url().map(|u| u.to_string()).unwrap_or_default();
+                app.manage(BootstrapUrl(boot));
+            }
+            #[cfg(mobile)]
+            {
+                let window =
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                        .initialization_script(&init)
+                        .build()?;
+                let boot = window.url().map(|u| u.to_string()).unwrap_or_default();
+                app.manage(BootstrapUrl(boot));
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

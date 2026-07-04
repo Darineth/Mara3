@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "updater:default",
     "allow-get-settings",
     "allow-set-server-url",
     "allow-set-auto-connect",

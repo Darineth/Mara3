@@ -4,7 +4,13 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.17] - unreleased
 
-_In development._
+### Added
+
+- **Android client** (initial build) — the Tauri 2 desktop shell now also targets
+  Android. The desktop-only native pieces (window geometry, taskbar attention, the
+  native pop-out windows) are compiled out on mobile, where the web app falls back
+  gracefully (pop-outs become tabs). Produces an installable APK via
+  `tauri android build`; the client track moves to 3.0.17 alongside this change.
 
 ## [3.0.16] - 2026-07-03
 
