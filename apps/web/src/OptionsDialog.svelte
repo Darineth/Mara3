@@ -19,6 +19,7 @@
       theme: Theme;
       keepPmHistory: boolean;
       pmsInWindows: boolean;
+      autoRefresh: boolean;
     }) => void;
     onClose: () => void;
   } = $props();
@@ -34,6 +35,8 @@
   let keepPmHistory = $state(settings.keepPmHistory);
   // svelte-ignore state_referenced_locally
   let pmsInWindows = $state(settings.pmsInWindows);
+  // svelte-ignore state_referenced_locally
+  let autoRefresh = $state(settings.autoRefresh);
   let backdrop = $state<HTMLDivElement | null>(null);
 
   // Close on backdrop click and Escape (mirrors MacrosDialog).
@@ -55,7 +58,14 @@
   });
 
   function save() {
-    onApply({ name: name.trim() || settings.name, color, theme, keepPmHistory, pmsInWindows });
+    onApply({
+      name: name.trim() || settings.name,
+      color,
+      theme,
+      keepPmHistory,
+      pmsInWindows,
+      autoRefresh,
+    });
     onClose();
   }
 </script>
@@ -98,6 +108,13 @@
             >New PM conversations pop out instead of opening a tab. Works best with history kept on
             this device.</small
           >
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={autoRefresh} />
+        <span>
+          Auto-refresh when out of date
+          <small>Reload automatically to pick up a newer version when the server has one.</small>
         </span>
       </label>
       <IdentityControls identityKey={settings.identityKey} />

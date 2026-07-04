@@ -92,13 +92,14 @@
   );
 
   // Auto-refresh a stale page to pick up the newer build the server is serving.
-  // Guarded against a reload loop the same way onProtocolMismatch is: if a caching
-  // layer keeps handing back the old bundle, reloading would just come back stale,
-  // so only auto-reload once per window and otherwise leave the manual "Outdated —
-  // reload" button. Never fires in dev (stale is PROD-gated above).
+  // Opt-out via the "Auto-refresh when out of date" option (on by default). Guarded
+  // against a reload loop the same way onProtocolMismatch is: if a caching layer
+  // keeps handing back the old bundle, reloading would just come back stale, so only
+  // auto-reload once per window and otherwise leave the manual "Outdated — reload"
+  // button. Never fires in dev (stale is PROD-gated above).
   const STALE_RELOAD_KEY = 'mara:stale-reload';
   $effect(() => {
-    if (!stale || typeof window === 'undefined') return;
+    if (!stale || !settings.autoRefresh || typeof window === 'undefined') return;
     try {
       const last = Number(sessionStorage.getItem(STALE_RELOAD_KEY) || '0');
       if (Date.now() - last > 30_000) {
@@ -781,6 +782,7 @@
     theme: Theme;
     keepPmHistory: boolean;
     pmsInWindows: boolean;
+    autoRefresh: boolean;
   }) {
     const newName = next.name.trim();
     const update: { name?: string; color?: string } = {};
@@ -795,6 +797,7 @@
     if (!next.keepPmHistory && settings.keepPmHistory) clearPmHistory();
     settings.keepPmHistory = next.keepPmHistory;
     settings.pmsInWindows = next.pmsInWindows;
+    settings.autoRefresh = next.autoRefresh;
     persist();
   }
 

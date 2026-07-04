@@ -11,7 +11,8 @@ All notable changes to Mara 3 are documented here.
   only showing the "Outdated — reload" button. It reloads at most once per window
   (so a cache that keeps serving the old bundle can't loop it — the manual button
   remains as a fallback), and never in the dev server, where a build-id mismatch
-  is expected and HMR already keeps the page current.
+  is expected and HMR already keeps the page current. On by default; toggle it
+  with the new "Auto-refresh when out of date" option.
 
 ## [3.0.15] - 2026-07-03
 

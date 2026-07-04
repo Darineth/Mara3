@@ -27,6 +27,9 @@ export interface MaraSettings {
   keepPmHistory: boolean;
   /** Open PM conversations in their own pop-out windows instead of tabs. */
   pmsInWindows: boolean;
+  /** Auto-refresh the page when the server reports a newer web build than this one
+   *  (production only; loop-guarded). On by default. */
+  autoRefresh: boolean;
 }
 
 const KEY = 'mara3.settings';
@@ -107,6 +110,7 @@ export const defaultSettings: MaraSettings = {
   channels: [],
   keepPmHistory: true,
   pmsInWindows: false,
+  autoRefresh: true,
 };
 
 /** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;
