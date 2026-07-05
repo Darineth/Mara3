@@ -6,7 +6,7 @@
 <script lang="ts">
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { isUploadableImage } from './lib/upload.js';
-  import { monogramInitial } from '@mara/ui';
+  import { monogramInitial, toRenderUrl } from '@mara/ui';
   import IdentityControls from './IdentityControls.svelte';
 
   let {
@@ -132,7 +132,7 @@
         <span class="lbl">Avatar</span>
         <div class="avatar-row">
           {#if avatar}
-            <img class="avatar-preview" src={avatar} alt="Your avatar" />
+            <img class="avatar-preview" src={toRenderUrl(avatar)} alt="Your avatar" />
           {:else}
             <span class="avatar-preview mono" style="background:{color}" aria-hidden="true"
               >{initial}</span

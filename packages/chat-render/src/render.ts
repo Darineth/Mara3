@@ -1,6 +1,12 @@
 // Line-level rendering: wraps the text→HTML pipeline (text.ts) in the per-kind
 // chat/emote/system markup the Svelte ChatView injects via {@html}.
-import { emojiOnlyCount, escapeHtml, renderText, type RenderTextOptions } from './text.js';
+import {
+  emojiOnlyCount,
+  escapeHtml,
+  renderText,
+  toRenderUrl,
+  type RenderTextOptions,
+} from './text.js';
 
 // A chat message that is nothing but emoji renders them large (Discord "jumbo"): `mara-jumbo`
 // on the text container, plus `mara-jumbo-lg` for just a few, so ChatView can size them up.
@@ -75,7 +81,9 @@ export function monogramInitial(name: string): string {
 function avatarHtml(line: LineModel, color: string, cls: string): string {
   const url = safeAvatarUrl(line.authorAvatar);
   if (url) {
-    return `<img class="mara-avatar ${cls}" src="${escapeHtml(url)}" alt="" loading="lazy" />`;
+    // Strip the leading slash so the src resolves against the page base (subpath-safe), the
+    // same as uploads/emoji.
+    return `<img class="mara-avatar ${cls}" src="${escapeHtml(toRenderUrl(url))}" alt="" loading="lazy" />`;
   }
   const initial = escapeHtml(monogramInitial(line.authorName));
   return `<span class="mara-avatar mara-avatar-mono ${cls}" style="background:${color}" aria-hidden="true">${initial}</span>`;

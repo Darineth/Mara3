@@ -46,7 +46,9 @@ beforeEach(async () => {
     identityFile: join(base, 'identity.json'), // persisted → stable tokens across restart
     emojiDir: join(base, 'emoji'),
     userEmojiDir: join(base, 'user-emoji'),
-    userEmojiFile: join(base, 'user-emoji.json'),
+    // Index lives inside the image dir (matches the default), so the file-watch shares a
+    // directory with image uploads — the operator-moderation test exercises that.
+    userEmojiFile: join(base, 'user-emoji', 'index.json'),
     disconnectGraceMs: 0,
   };
   await boot();

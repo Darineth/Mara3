@@ -2,7 +2,7 @@
      selection so the host can DM or insert a mention. -->
 <script lang="ts">
   import type { UserInfo } from '@mara/client-core';
-  import { monogramInitial } from '@mara/chat-render';
+  import { monogramInitial, toRenderUrl } from '@mara/chat-render';
 
   let {
     users = [],
@@ -39,7 +39,7 @@
                validates the path, so a truthy value is a safe /avatars/ or /uploads/ URL. -->
           {#if showAvatars}
             {#if user.avatar}
-              <img class="mara-ul-avatar" src={user.avatar} alt="" loading="lazy" />
+              <img class="mara-ul-avatar" src={toRenderUrl(user.avatar)} alt="" loading="lazy" />
             {:else}
               <span class="mara-ul-avatar mono" style="background:{user.color}" aria-hidden="true"
                 >{monogramInitial(user.name)}</span

@@ -7,6 +7,13 @@ const host = process.env.TAURI_DEV_HOST;
 // Where the Mara server runs during dev, so we can proxy the WebSocket to it.
 const serverPort = process.env.MARA_PORT ?? '5050';
 
+// Serve the dev app under a *subpath* rather than the domain root, so any URL that isn't
+// correctly page-relative — an upload, avatar, emoji image, or the WebSocket — breaks here in
+// dev instead of only in a real subpath deployment (https://host/mara/). Override with
+// MARA_DEV_BASE (must start and end with '/'); set '/' to serve at the root. The production
+// build is unaffected — it stays base:'./' (relative) for Tauri and hosted use.
+const devBase = process.env.MARA_DEV_BASE ?? '/mara/';
+
 // Build identity, stamped once per build (or dev start). `version` is the package
 // semver; `buildId` is a timestamp that changes every build, so two builds of the
 // same version are distinguishable. Injected into the bundle via `define` AND
@@ -25,34 +32,54 @@ const emitVersion = (): Plugin => ({
   },
 });
 
-export default defineConfig({
+// Redirect the bare root to the dev subpath so hitting http://localhost:5173/ (bookmark, the
+// desktop shell, muscle memory) lands on the app instead of a 404. No-op when devBase is '/'.
+const redirectToBase = (base: string): Plugin => ({
+  name: 'mara-dev-base-redirect',
+  configureServer(server) {
+    if (base === '/') return;
+    server.middlewares.use((req, res, next) => {
+      if (req.url === '/' || req.url === '') {
+        res.writeHead(302, { Location: base });
+        res.end();
+        return;
+      }
+      next();
+    });
+  },
+});
+
+// The server-owned routes the client reaches; each is proxied to the Mara server, and the dev
+// subpath prefix is stripped before forwarding (so `/mara/uploads/x` → `/uploads/x`). `ws` is
+// the WebSocket; the rest are plain HTTP. Vite matches by prefix, so `/…/upload` also covers
+// `/…/uploads/…`, and `/…/emoji` covers `/…/emoji-upload` — every match strips the same prefix.
+const serverRoutes = ['ws', 'info', 'upload', 'uploads', 'avatar', 'avatars', 'emoji'];
+const strip = devBase.length - 1; // keep the leading slash: '/mara/ws'.slice(5) === '/ws'
+const proxy = Object.fromEntries(
+  serverRoutes.map((route) => [
+    `${devBase}${route}`,
+    {
+      target: `${route === 'ws' ? 'ws' : 'http'}://localhost:${serverPort}`,
+      ws: route === 'ws',
+      rewrite: (path: string) => path.slice(strip),
+    },
+  ]),
+);
+
+export default defineConfig(({ command }) => ({
+  // Dev serves under the subpath; the build stays relative for Tauri / hosted subpaths.
+  base: command === 'serve' ? devBase : './',
   define: { __MARA_BUILD__: JSON.stringify(build) },
-  plugins: [svelte(), emitVersion()],
+  plugins: [svelte(), emitVersion(), redirectToBase(devBase)],
   clearScreen: false,
   server: {
     port: 5173,
     strictPort: true,
     host: host || false,
-    // In dev (HMR), forward the server-owned routes to the Mara server so the
-    // client can use same-origin URLs in every environment: the WebSocket, the
-    // image upload endpoint and served upload files, the durable avatar upload
-    // endpoint and served avatar files, and the custom-emoji images. Each POST
-    // endpoint (`/upload`, `/avatar`) is listed alongside its GET prefix
-    // (`/uploads`, `/avatars`) — Vite matches by prefix, so both are explicit.
-    proxy: {
-      '/ws': { target: `ws://localhost:${serverPort}`, ws: true },
-      '/info': `http://localhost:${serverPort}`,
-      '/upload': `http://localhost:${serverPort}`,
-      '/uploads': `http://localhost:${serverPort}`,
-      '/avatar': `http://localhost:${serverPort}`,
-      '/avatars': `http://localhost:${serverPort}`,
-      '/emoji': `http://localhost:${serverPort}`,
-    },
+    proxy,
   },
-  // Produce a relative-path build so it works both as a hosted SPA and inside Tauri.
-  base: './',
   build: {
     target: 'es2022',
     sourcemap: true,
   },
-});
+}));

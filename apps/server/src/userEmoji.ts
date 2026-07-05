@@ -103,6 +103,9 @@ export class UserEmojiStore {
     const dir = dirname(this.file);
     const target = basename(this.file);
     try {
+      // The index lives inside the (possibly not-yet-created) image dir; ensure it exists so
+      // the watch can attach from the first boot, not only after the first upload creates it.
+      mkdirSync(dir, { recursive: true });
       // Watch the *directory* (not the file) so an editor's atomic save — write temp, rename
       // over the file — is still seen; filter events down to our file by name.
       this.watcher = watch(dir, (_event, filename) => {

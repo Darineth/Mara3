@@ -236,6 +236,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     Math.max(0, num(v, fallback)) * 1024 * 1024;
   // Persistent state lives under here (overridable per-store below). See baseDir().
   const base = baseDir(env);
+  // The user-emoji image dir; its index file lives inside it (below) so the whole set is one
+  // self-contained, movable folder.
+  const userEmojiDir = env.MARA_USER_EMOJI_DIR?.trim() || join(base, 'user-emoji');
   return {
     host: env.MARA_HOST?.trim() || DEFAULTS.host,
     port: num(env.MARA_PORT, DEFAULTS.port),
@@ -249,10 +252,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
     avatarDir: env.MARA_AVATAR_DIR?.trim() || join(base, 'avatars'),
     emojiDir: env.MARA_EMOJI_DIR?.trim() || join(base, 'emoji'),
-    userEmojiDir: env.MARA_USER_EMOJI_DIR?.trim() || join(base, 'user-emoji'),
-    // Kept out of `data/` (which history rewrites constantly) so the file-watch that picks up
-    // operator edits is quiet, and next to its image dir for discoverability.
-    userEmojiFile: (env.MARA_USER_EMOJI_FILE ?? join(base, 'user-emoji.json')).trim(),
+    userEmojiDir,
+    // Lives *inside* the image dir so all user-emoji data is one self-contained folder the
+    // operator can back up, move, or hand-edit — nothing loose in the install directory.
+    userEmojiFile: env.MARA_USER_EMOJI_FILE?.trim() || join(userEmojiDir, 'index.json'),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     maxAvatarBytes: mb(env.MARA_MAX_AVATAR_MB, DEFAULTS.maxAvatarMb),

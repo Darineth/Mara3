@@ -138,14 +138,14 @@ export function emojiOnlyCount(text: string, emoji?: Record<string, string>): nu
 function anchor(url: string): string {
   return `<a href="${url}" rel="noopener noreferrer">${url}</a>`;
 }
-// A server-relative upload path (`/uploads/<id>.ext`) is emitted WITHOUT its
-// leading slash so the browser resolves it against the page's base URL. That makes
-// uploaded images load whether the app is hosted at the domain root or under a
-// subpath (e.g. https://host/mara/). Absolute http(s) URLs are returned unchanged.
-// Detection elsewhere still keys on the leading-slash form; this only adjusts the
+// A server-hosted path (`/uploads/<id>.ext`, `/emoji/<id>`, `/avatars/<id>`) is emitted
+// WITHOUT its leading slash so the browser resolves it against the page's base URL. That makes
+// the image load whether the app is hosted at the domain root or under a subpath (e.g.
+// https://host/mara/). Absolute http(s) URLs (and anything not one of our roots) are returned
+// unchanged. Detection elsewhere still keys on the leading-slash form; this only adjusts the
 // rendered href/src (a subpath deployment must be served with a trailing slash).
-function toRenderUrl(url: string): string {
-  return url.startsWith('/uploads/') || url.startsWith('/emoji/') ? url.slice(1) : url;
+export function toRenderUrl(url: string): string {
+  return /^\/(?:uploads|emoji|avatars)\//.test(url) ? url.slice(1) : url;
 }
 // Inline custom-emoji image. `name` is the shortcode (charset-limited by EMOJI_RE) and
 // `safeUrl` is already validated + escaped. Sized to the line via `.mara-emoji`; the

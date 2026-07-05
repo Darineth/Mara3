@@ -135,17 +135,18 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_EMOJI_DIR=D:\\Mara3-Data\\emoji
 
 # --- Custom emoji (user-contributed) ---
-# Users can add their own emoji in-app (Menu -> Custom emoji): the image is stored
-# durably here and a shortcode is bound to it. Only the person who added an emoji can
-# remove or replace it in-app.
+# Users can add their own emoji in-app (Menu -> Custom emoji): the image is stored durably in
+# this folder and a shortcode is bound to it. Only the person who added an emoji can remove or
+# replace it in-app. Everything is self-contained in the folder — images plus an index.json,
+# so you can back it up or move it as a unit.
 #MARA_MAX_EMOJI_MB=1          # per-emoji cap (GIFs kept as-is; others downscaled to 128px)
 #MARA_MAX_EMOJI_COUNT=500     # cap on how many user-contributed emoji can exist at once
-#MARA_USER_EMOJI_DIR=D:\\Mara3-Data\\user-emoji     # stored images (durable, never evicted)
-# The shortcode -> image map, and the operator's moderation lever. It's a readable JSON
-# file ({"badword": {"file":"<id>.png","owner":<token>,"by":"<name>","at":<ms>}, ...}).
-# To take an emoji down, delete its entry from this file: the server picks up the edit
-# live (removes it for everyone and reclaims the image), no restart needed.
-#MARA_USER_EMOJI_FILE=D:\\Mara3-Data\\user-emoji.json
+#MARA_USER_EMOJI_DIR=D:\\Mara3-Data\\user-emoji     # images + index.json (durable, never evicted)
+# The index (shortcode -> image map) is the operator's moderation lever: index.json inside the
+# folder above, a readable file ({"badword": {"file":"<id>.png","owner":<token>,"by":"<name>",
+# "at":<ms>}, ...}). To take an emoji down, delete its entry — the server picks up the edit live
+# (removes it for everyone and reclaims the image), no restart needed. Override the path with:
+#MARA_USER_EMOJI_FILE=D:\\Mara3-Data\\user-emoji\\index.json
 
 # --- History ---
 #MARA_HISTORY_LIMIT=1000     # messages retained per channel (persisted; deepest scroll-back)

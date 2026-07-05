@@ -5,6 +5,7 @@ export {
   applyMarkdown,
   linkify,
   renderText,
+  toRenderUrl,
   DEFAULT_EMOTICONS,
   type RenderTextOptions,
 } from './text.js';

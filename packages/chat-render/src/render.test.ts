@@ -684,8 +684,9 @@ describe('renderLine', () => {
       text: 'hi',
       authorAvatar: '/avatars/deadbeef.png',
     });
+    // Leading slash stripped so the src resolves against the page base (subpath-safe).
     expect(html).toContain(
-      '<img class="mara-avatar mara-avatar-inline" src="/avatars/deadbeef.png"',
+      '<img class="mara-avatar mara-avatar-inline" src="avatars/deadbeef.png"',
     );
     expect(html).not.toContain('mara-avatar-mono');
   });
@@ -748,7 +749,7 @@ describe('renderLine', () => {
     );
     expect(html).toContain('mara-avatar-lg');
     expect(html).toContain('<div class="mara-discord-main">');
-    expect(html).toContain('/avatars/deadbeef.png');
+    expect(html).toContain('avatars/deadbeef.png');
   });
 
   it('omits avatars entirely when avatars:false', () => {
@@ -763,7 +764,7 @@ describe('renderLine', () => {
     for (const layout of ['mara', 'discord'] as const) {
       const html = renderLine(base, { layout, avatars: false });
       expect(html).not.toContain('mara-avatar');
-      expect(html).not.toContain('/avatars/deadbeef.png');
+      expect(html).not.toContain('avatars/deadbeef.png');
     }
   });
 
