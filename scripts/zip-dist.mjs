@@ -446,16 +446,18 @@ writeFileSync(
   archives.map((a) => `${a.sha256}  ${a.file}`).join('\n') + '\n',
 );
 
-// "Update available" nudge manifests: each portable client polls its OWN latest*.json
-// (separate downloads), comparing the manifest `version` to its build's and showing a
-// Download banner when this is newer. The default base is the repo's GitHub Releases
-// "latest" download endpoint, so both the manifest and the archive it points at resolve to
-// the newest release (publish each release's assets under stable names — see
-// scripts/release-github.mjs). Keep UPDATE_BASE_URL in sync with package.mjs /
-// package-legacy.mjs (which bake <base>/<manifest> into each client). Override per-build
-// with MARA_UPDATE_BASE_URL. Each is emitted only when its archive was built this run.
+// "Update available" nudge manifests: each portable client polls its OWN latest*.json,
+// comparing the manifest `version` to its build's and showing a Download banner when this is
+// newer. The manifest's `url` (the DOWNLOAD) points at the repo's GitHub Releases "latest"
+// endpoint under a stable name (UPDATE_BASE_URL, override with MARA_UPDATE_BASE_URL). The
+// manifests are written both to dist/zips (uploaded as release assets) AND to the repo's
+// `updates/` dir — the client fetches the manifest cross-origin, so it's served from there via
+// CORS-enabled raw content (see package.mjs); commit updates/ each release. Each is emitted
+// only when its archive was built this run.
 const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+const updatesRepoDir = join(root, 'updates');
+mkdirSync(updatesRepoDir, { recursive: true });
 for (const { component, manifest, label } of [
   { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
   { component: 'Mara3-windows7-x64', manifest: 'latest-windows7-x64.json', label: 'windows7-x64' },
@@ -480,7 +482,9 @@ for (const { component, manifest, label } of [
     pub_date: builtAt,
     sha256: built.sha256,
   };
-  writeFileSync(join(outDir, manifest), `${JSON.stringify(latest, null, 2)}\n`);
+  const body = `${JSON.stringify(latest, null, 2)}\n`;
+  writeFileSync(join(outDir, manifest), body); // release asset
+  writeFileSync(join(updatesRepoDir, manifest), body); // committed → served via raw content
   console.log(`   ${manifest.padEnd(25)} ${label} update manifest -> ${latest.url}`);
 }
 

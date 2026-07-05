@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cmpVersion,
+  corsSafeManifestUrl,
   desktopVersion,
   getUpdateStatus,
   resetUpdateStatus,
@@ -54,7 +55,58 @@ describe('desktopVersion', () => {
   });
 });
 
+describe('corsSafeManifestUrl', () => {
+  it('rewrites a GitHub release-asset URL (no CORS) to CORS-enabled raw content', () => {
+    expect(
+      corsSafeManifestUrl(
+        'https://github.com/Darineth/Mara3/releases/latest/download/latest-windows-x64.json',
+      ),
+    ).toBe('https://raw.githubusercontent.com/Darineth/Mara3/main/updates/latest-windows-x64.json');
+    // Other platforms follow the same mapping.
+    expect(
+      corsSafeManifestUrl(
+        'https://github.com/Darineth/Mara3/releases/latest/download/latest-linux-x64.json',
+      ),
+    ).toBe('https://raw.githubusercontent.com/Darineth/Mara3/main/updates/latest-linux-x64.json');
+    expect(
+      corsSafeManifestUrl(
+        'https://github.com/Darineth/Mara3/releases/latest/download/latest-windows7-x64.json',
+      ),
+    ).toBe(
+      'https://raw.githubusercontent.com/Darineth/Mara3/main/updates/latest-windows7-x64.json',
+    );
+  });
+
+  it('leaves a non-GitHub / already-CORS-safe URL unchanged', () => {
+    for (const url of [
+      'https://raw.githubusercontent.com/Darineth/Mara3/main/updates/latest-windows-x64.json',
+      'https://my-host.example/latest.json',
+      'https://github.com/Darineth/Mara3/releases/download/v3.0.0/latest-windows-x64.json', // versioned, not /latest/
+    ]) {
+      expect(corsSafeManifestUrl(url)).toBe(url);
+    }
+  });
+});
+
 describe('getUpdateStatus', () => {
+  it('fetches the rewritten (CORS-safe) URL for a baked GitHub release-asset manifest', async () => {
+    (globalThis as G).__MARA_UPDATE__ = {
+      current: '3.0.0',
+      manifestUrl:
+        'https://github.com/Darineth/Mara3/releases/latest/download/latest-windows-x64.json',
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ version: '3.0.1', url: 'https://h/x.zip' })),
+      );
+    await getUpdateStatus();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://raw.githubusercontent.com/Darineth/Mara3/main/updates/latest-windows-x64.json',
+      expect.anything(),
+    );
+  });
+
   it('is "disabled" outside the shell / with no manifest URL', async () => {
     await expect(getUpdateStatus()).resolves.toEqual({ state: 'disabled' });
     resetUpdateStatus();

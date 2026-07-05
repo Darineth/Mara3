@@ -10,8 +10,12 @@
  * a portable single exe; the Download link opens the host in the system browser.
  *
  * NOTE: the manifest is fetched cross-origin (this UI's server origin → the update
- * host), so the host must serve `latest.json` with `Access-Control-Allow-Origin: *`
- * (or this origin). Without it the fetch fails and the banner simply never shows.
+ * host), so the host MUST serve it with `Access-Control-Allow-Origin: *` (or this
+ * origin) — without it the fetch fails and the banner simply never shows. GitHub
+ * *release assets* do NOT send CORS, so the default manifest is served from the repo's
+ * `updates/` dir via `raw.githubusercontent.com` (which does); a self-hosted manifest
+ * must likewise send CORS. The download link inside the manifest points at the release
+ * asset (opened in the system browser — no fetch, so CORS doesn't apply there).
  */
 
 import { openExternal } from './native.js';
@@ -76,6 +80,24 @@ export function cmpVersion(a: string, b: string): number {
 }
 
 /**
+ * Map a baked manifest URL to a CORS-fetchable one. Clients shipped before the CORS fix baked
+ * a GitHub *release-asset* URL (`…/releases/latest/download/latest-*.json`), which sends no CORS
+ * headers, so the cross-origin fetch fails and the check silently errors. Rewrite that known
+ * pattern to the SAME manifest served from the repo's `updates/` dir via raw.githubusercontent
+ * .com (which sends `Access-Control-Allow-Origin: *`). Because this check runs in the web build
+ * the client loads from its server — not in the shell binary — an already-installed client
+ * starts detecting updates as soon as its server serves a web build with this code, no client
+ * rebuild needed. Any other URL (already raw content, or a self-hosted CORS-enabled manifest)
+ * passes through unchanged.
+ */
+export function corsSafeManifestUrl(url: string): string {
+  const m = url.match(
+    /^https:\/\/github\.com\/([^/]+\/[^/]+)\/releases\/latest\/download\/(latest-[A-Za-z0-9._-]+\.json)$/,
+  );
+  return m ? `https://raw.githubusercontent.com/${m[1]}/main/updates/${m[2]}` : url;
+}
+
+/**
  * Run the update check and report the full outcome (disabled / error / uptodate /
  * available). Never throws — any failure resolves to a status, so callers can show
  * "did we check, and what did we find" rather than only surfacing newer builds.
@@ -85,7 +107,7 @@ async function computeStatus(): Promise<UpdateStatus> {
   if (!cfg || !cfg.manifestUrl) return { state: 'disabled' };
   let manifest: UpdateManifest;
   try {
-    const res = await fetch(cfg.manifestUrl, { cache: 'no-store' });
+    const res = await fetch(corsSafeManifestUrl(cfg.manifestUrl), { cache: 'no-store' });
     if (!res.ok) return { state: 'error', current: cfg.current };
     manifest = (await res.json()) as UpdateManifest;
   } catch {
