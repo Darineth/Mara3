@@ -83,6 +83,28 @@ const clientSetProfile = z.object({
   avatar: avatarSchema.optional(),
 });
 
+/** A user-addable emoji shortcode: the emoji charset, min 2 chars — so it can't collide with a
+ *  text emoticon like `:D` and so `:name` autocomplete (which needs ≥2 chars) can reach it. */
+export const emojiNameSchema = z
+  .string()
+  .min(2)
+  .max(64)
+  .regex(/^[a-zA-Z0-9_+-]+$/);
+
+/** Add — or, for the emoji's owner, replace — a user-contributed custom emoji: bind `name`
+ *  to a previously uploaded image `url` (the `/emoji/<id>` path the emoji upload returned). */
+const clientAddEmoji = z.object({
+  type: z.literal('addEmoji'),
+  name: emojiNameSchema,
+  url: z.string().max(512),
+});
+
+/** Remove a user-contributed emoji. The server only honors it from the emoji's owner. */
+const clientRemoveEmoji = z.object({
+  type: z.literal('removeEmoji'),
+  name: emojiNameSchema,
+});
+
 const ping = z.object({
   type: z.literal('ping'),
   /** Client-chosen id echoed back in `pong`, for liveness + RTT. */
@@ -106,6 +128,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   clientPrivateMessage,
   clientAway,
   clientSetProfile,
+  clientAddEmoji,
+  clientRemoveEmoji,
   ping,
   requestHistory,
 ]);
@@ -146,6 +170,11 @@ export const emojiEntrySchema = z.object({
     .max(64)
     .regex(/^[a-zA-Z0-9_+-]+$/),
   url: z.string().max(512),
+  /** For a user-contributed emoji: the adder's stable user token (only they may replace or
+   *  remove it) and their display name at add time, for the management UI. Both absent for
+   *  operator-provided emoji, which users can never remove. */
+  owner: tokenSchema.optional(),
+  by: z.string().max(64).optional(),
 });
 export type EmojiEntry = z.infer<typeof emojiEntrySchema>;
 
@@ -274,6 +303,14 @@ const serverUserProfile = z.object({
   user: userInfoSchema,
 });
 
+/** Broadcast whenever the custom-emoji set changes (a user added, replaced, or removed one),
+ *  so every client's picker + `:name:` rendering update live without a reconnect. Carries the
+ *  full merged set (operator + user contributions), the same shape as `welcome.emoji`. */
+const serverEmojiUpdate = z.object({
+  type: z.literal('emojiUpdate'),
+  emoji: z.array(emojiEntrySchema).max(2000),
+});
+
 const serverPrivateMessage = z.object({
   type: z.literal('privateMessage'),
   from: tokenSchema,
@@ -316,6 +353,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   serverEmote,
   serverAway,
   serverUserProfile,
+  serverEmojiUpdate,
   serverPrivateMessage,
   historyChunk,
   pong,

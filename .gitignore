@@ -20,6 +20,8 @@ apps/server/avatars/
 
 # Persisted message history (server-local)
 apps/server/data/
+apps/server/user-emoji/
+apps/server/user-emoji.json
 
 # Tauri / Rust
 apps/shell/src-tauri/target/

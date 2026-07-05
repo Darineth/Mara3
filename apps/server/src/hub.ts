@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   MOTD_MAX_LEN,
   PROTOCOL_VERSION,
   safeParseClientMessage,
   type ClientMessage,
+  type EmojiEntry,
   type ServerInfo,
   type ServerMessage,
   type Token,
@@ -11,13 +13,14 @@ import {
 } from '@mara/protocol';
 import type { Connection } from './connection.js';
 import type { ServerConfig } from './config.js';
-import { EmojiStore } from './emoji.js';
+import { EMOJI_ROUTE, EmojiStore } from './emoji.js';
 import { HistoryStore } from './history.js';
 import { IdentityStore, type IdentityProfile } from './identity.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
-import { deleteAvatar } from './uploads.js';
+import { UserEmojiStore } from './userEmoji.js';
+import { deleteAvatar, deleteUserEmoji, userEmojiName } from './uploads.js';
 import { getServerInfo } from './version.js';
 
 /**
@@ -31,6 +34,8 @@ export class Hub {
   private readonly identity: IdentityStore;
   /** The operator's custom emoji set, sent to each client in `welcome`. */
   private readonly emoji: EmojiStore;
+  /** User-contributed custom emoji: a durable, owner-tracked set clients add to at runtime. */
+  private readonly userEmoji: UserEmojiStore;
   /** Monotonic message-id counter; seeded from persisted history so ids keep increasing
    *  across restarts. Each chat/emote gets `++this.nextMessageId`. */
   private nextMessageId: number;
@@ -65,6 +70,17 @@ export class Hub {
     this.nextMessageId = this.history.maxId();
     this.identity = new IdentityStore(cfg.identityFile, log);
     this.emoji = new EmojiStore(cfg.emojiDir, log);
+    this.userEmoji = new UserEmojiStore(cfg.userEmojiFile, log);
+    // Operator moderation: when the user-emoji file is edited on disk by hand (an entry
+    // removed), reclaim the now-orphaned image and push the revised set to everyone live — so
+    // taking down a bad emoji doesn't need a restart and leaves nothing served at its old URL.
+    this.userEmoji.watchExternal((removed) => {
+      for (const rec of removed) {
+        void deleteUserEmoji(this.cfg, `${EMOJI_ROUTE}${rec.file}`, this.log);
+      }
+      this.log.info({ removed: removed.length }, 'user emoji reloaded after an external edit');
+      this.broadcastEmoji();
+    });
     this.state = new ServerState(this.identity);
     this.serverInfo = getServerInfo(cfg.webRoot, cfg.serverName);
   }
@@ -79,6 +95,19 @@ export class Hub {
     this.quiet.clear();
     this.history.flush();
     this.identity.flush();
+    this.userEmoji.flush();
+  }
+
+  /**
+   * The full custom-emoji set sent to clients: the operator's emoji plus every user
+   * contribution, with operator emoji winning any shortcode clash (so they're stable and
+   * can never be shadowed — or removed — by a user). Recomputed on demand; the sets are small.
+   */
+  private emojiManifest(): EmojiEntry[] {
+    const operator = this.emoji.manifest();
+    const reserved = new Set(operator.map((e) => e.name));
+    const user = this.userEmoji.manifest().filter((e) => !reserved.has(e.name));
+    return [...operator, ...user];
   }
 
   /**
@@ -292,6 +321,10 @@ export class Hub {
         return this.handleAway(session, msg);
       case 'setProfile':
         return this.handleSetProfile(session, msg);
+      case 'addEmoji':
+        return this.handleAddEmoji(session, conn, msg);
+      case 'removeEmoji':
+        return this.handleRemoveEmoji(session, conn, msg);
       case 'privateMessage':
         return this.handlePrivateMessage(session, conn, msg);
       case 'ping':
@@ -342,7 +375,7 @@ export class Hub {
         sessionToken,
         motd: this.currentMotd(),
         server: this.serverInfo,
-        emoji: this.emoji.manifest(),
+        emoji: this.emojiManifest(),
         at: this.now(),
       });
       for (const channelToken of live.channels) {
@@ -379,7 +412,7 @@ export class Hub {
       sessionToken,
       motd: this.currentMotd(),
       server: this.serverInfo,
-      emoji: this.emoji.manifest(),
+      emoji: this.emojiManifest(),
       at: this.now(),
     });
     // A client already flagged unreliable (flap-y, never interacts) reconnects silently —
@@ -584,6 +617,81 @@ export class Hub {
         avatar: session.info.avatar,
       });
     }
+  }
+
+  /**
+   * Add — or, for its owner, replace — a user-contributed emoji. `msg.url` must be an image
+   * this server just stored (an `/emoji/<hex>` upload that still exists on disk), so a client
+   * can't bind a shortcode to an arbitrary or operator path. A name already taken by an
+   * operator emoji is reserved; one taken by *another* user belongs to them. On success the
+   * (possibly replaced) old image is freed and the new set is broadcast to everyone.
+   */
+  private handleAddEmoji(
+    session: Session,
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: 'addEmoji' }>,
+  ): void {
+    const file = userEmojiName(msg.url);
+    if (!file || !existsSync(join(this.cfg.userEmojiDir, file))) {
+      conn.send({ type: 'error', message: 'That emoji image could not be found — re-upload it.' });
+      return;
+    }
+    // Operator emoji are protected: their shortcodes can't be taken over.
+    if (this.emoji.manifest().some((e) => e.name === msg.name)) {
+      conn.send({
+        type: 'error',
+        message: `:${msg.name}: is a built-in emoji and can't be changed.`,
+      });
+      return;
+    }
+    const existing = this.userEmoji.get(msg.name);
+    if (existing && existing.owner !== session.info.token) {
+      conn.send({ type: 'error', message: `:${msg.name}: was added by someone else.` });
+      return;
+    }
+    if (!existing && this.userEmoji.count() >= this.cfg.maxEmojiCount) {
+      conn.send({
+        type: 'error',
+        message: `The emoji library is full (${this.cfg.maxEmojiCount}). Remove one first.`,
+      });
+      return;
+    }
+    // Owner replacing their own emoji: free the previous image so the store keeps one file
+    // per shortcode.
+    if (existing && existing.file !== file) {
+      void deleteUserEmoji(this.cfg, `${EMOJI_ROUTE}${existing.file}`, this.log);
+    }
+    this.userEmoji.set(msg.name, {
+      file,
+      owner: session.info.token,
+      by: session.info.name,
+      at: this.now(),
+    });
+    this.log.info({ name: msg.name, by: session.info.name, replaced: !!existing }, 'emoji added');
+    this.broadcastEmoji();
+  }
+
+  /** Remove a user-contributed emoji. Honored only from its owner (idempotent otherwise). */
+  private handleRemoveEmoji(
+    session: Session,
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: 'removeEmoji' }>,
+  ): void {
+    const existing = this.userEmoji.get(msg.name);
+    if (!existing) return; // already gone — nothing to do
+    if (existing.owner !== session.info.token) {
+      conn.send({ type: 'error', message: `:${msg.name}: was added by someone else.` });
+      return;
+    }
+    this.userEmoji.delete(msg.name);
+    void deleteUserEmoji(this.cfg, `${EMOJI_ROUTE}${existing.file}`, this.log);
+    this.log.info({ name: msg.name, by: session.info.name }, 'emoji removed');
+    this.broadcastEmoji();
+  }
+
+  /** Push the current merged emoji set to everyone so pickers + `:name:` rendering update live. */
+  private broadcastEmoji(): void {
+    this.broadcastAll({ type: 'emojiUpdate', emoji: this.emojiManifest() });
   }
 
   private handlePrivateMessage(

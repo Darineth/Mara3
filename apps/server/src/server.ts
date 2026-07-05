@@ -9,7 +9,9 @@ import { EMOJI_ROUTE, serveEmoji } from './emoji.js';
 import {
   AVATAR_ENDPOINT,
   AVATAR_ROUTE,
+  EMOJI_UPLOAD_ENDPOINT,
   handleAvatarUpload,
+  handleEmojiUpload,
   handleUpload,
   serveAvatar,
   serveUpload,
@@ -146,6 +148,18 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       }
       if (req.url?.startsWith(AVATAR_ROUTE)) {
         void serveAvatar(req, res, cfg);
+        return;
+      }
+      if (req.url === EMOJI_UPLOAD_ENDPOINT) {
+        // Same session authorization as uploads; binding a `:shortcode:` to the stored image
+        // (and the ownership/dedupe rules) happens over the WS in `addEmoji`.
+        void handleEmojiUpload(
+          req,
+          res,
+          cfg,
+          log,
+          (token) => token !== undefined && hub.state.sessionBySessionToken(token) !== undefined,
+        );
         return;
       }
       if (req.url?.startsWith(EMOJI_ROUTE)) {

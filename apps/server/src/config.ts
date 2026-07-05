@@ -27,6 +27,15 @@ export interface ServerConfig {
   /** Directory of custom emoji images the operator provides; each file's name (sans
    *  extension) is its `:shortcode:`. Scanned on demand and served at `/emoji/`. */
   emojiDir: string;
+  /** Directory where user-contributed emoji images are stored durably (never evicted) and
+   *  served at `/emoji/`. Kept apart from `emojiDir` so users can't clobber operator emoji. */
+  userEmojiDir: string;
+  /** JSON file mapping a user-contributed `:shortcode:` to its stored image + owner. */
+  userEmojiFile: string;
+  /** Maximum size of a single user-contributed emoji image, in bytes. */
+  maxEmojiBytes: number;
+  /** Cap on how many user-contributed emoji may exist at once. */
+  maxEmojiCount: number;
   /** Maximum size of a single uploaded file, in bytes. */
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
@@ -142,6 +151,8 @@ const DEFAULTS = {
   maxUploadMb: 10,
   maxCacheMb: 512,
   maxAvatarMb: 2,
+  maxEmojiMb: 1,
+  maxEmojiCount: 500,
   historyLimit: 1000,
   historyChunk: 50,
   msgRate: 15,
@@ -238,9 +249,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
     avatarDir: env.MARA_AVATAR_DIR?.trim() || join(base, 'avatars'),
     emojiDir: env.MARA_EMOJI_DIR?.trim() || join(base, 'emoji'),
+    userEmojiDir: env.MARA_USER_EMOJI_DIR?.trim() || join(base, 'user-emoji'),
+    // Kept out of `data/` (which history rewrites constantly) so the file-watch that picks up
+    // operator edits is quiet, and next to its image dir for discoverability.
+    userEmojiFile: (env.MARA_USER_EMOJI_FILE ?? join(base, 'user-emoji.json')).trim(),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
     maxAvatarBytes: mb(env.MARA_MAX_AVATAR_MB, DEFAULTS.maxAvatarMb),
+    maxEmojiBytes: mb(env.MARA_MAX_EMOJI_MB, DEFAULTS.maxEmojiMb),
+    maxEmojiCount: Math.max(0, num(env.MARA_MAX_EMOJI_COUNT, DEFAULTS.maxEmojiCount)),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
     historyChunk: Math.max(1, num(env.MARA_HISTORY_CHUNK, DEFAULTS.historyChunk)),
     msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),

@@ -83,3 +83,41 @@ export async function uploadAvatar(file: File, token: string | null): Promise<st
   const blob = await downscaleToSquare(file, 256);
   return postImage('avatar', blob, blob.type, token);
 }
+
+/**
+ * Downscale an image to fit within `max`×`max` (aspect preserved, never upscaled) and
+ * re-encode as PNG — for custom emoji, which show inline in messages so they must stay small
+ * and light. Returns the original bytes unchanged for a GIF (a canvas would flatten its
+ * animation to the first frame).
+ */
+export async function downscaleToFit(file: File, max = 128): Promise<Blob> {
+  if (file.type === 'image/gif') return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not process the image');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  return new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Could not process the image'))),
+      'image/png',
+    ),
+  );
+}
+
+/**
+ * Downscale (or, for a GIF, keep as-is) + POST a custom-emoji image to the durable
+ * `/emoji-upload` endpoint; returns its hosted `/emoji/<id>` path. The caller then binds a
+ * `:shortcode:` to it via `client.addEmoji`.
+ */
+export async function uploadEmoji(file: File, token: string | null): Promise<string> {
+  const body = await downscaleToFit(file, 128);
+  return postImage('emoji-upload', body, body.type, token);
+}

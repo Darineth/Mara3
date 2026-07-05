@@ -9,7 +9,7 @@
  * Wire-protocol version. The client sends it in `login`; the server denies a
  * mismatch. Bump on any breaking change to the message set.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export * from './primitives.js';
 export * from './messages.js';

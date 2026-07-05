@@ -32,10 +32,11 @@
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
-  import { uploadAvatar, uploadImage } from './lib/upload.js';
+  import { uploadAvatar, uploadEmoji, uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
   import FormattingHelp from './FormattingHelp.svelte';
   import OptionsDialog from './OptionsDialog.svelte';
+  import EmojiDialog from './EmojiDialog.svelte';
 
   let {
     client,
@@ -56,6 +57,9 @@
   let showMacros = $state(false);
   let showFormatting = $state(false);
   let showOptions = $state(false);
+  let showEmoji = $state(false);
+  /** Latest server rejection while the emoji dialog is open (name clash, library full, …). */
+  let emojiError = $state('');
   let menuOpen = $state(false);
   let showUsers = $state(true);
   let menuEl = $state<HTMLElement | null>(null);
@@ -84,6 +88,7 @@
     serverInfo,
     motd,
     emoji,
+    emojiCatalog,
   } = client;
 
   // The page is stale when the server reports serving a different web build than
@@ -538,6 +543,11 @@
         const notice = connectionNotice(status, noticeState);
         if (notice) pushSystem(notice);
       }),
+      // While the emoji manager is open, surface server rejections (name clash, library full)
+      // in the dialog. Errors otherwise flow through the normal channels.
+      client.events.on('error', ({ message }) => {
+        if (showEmoji) emojiError = message;
+      }),
     ];
     return () => offs.forEach((off) => off());
   });
@@ -718,7 +728,8 @@
     tabsEl?.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
 
-  function membersOf(token: Token): UserInfo[] {
+  function membersOf(token: Token | null): UserInfo[] {
+    if (token === null) return [];
     const channel = $channels.get(token);
     if (!channel) return [];
     return [...channel.members]
@@ -1128,6 +1139,11 @@
             <button class="item" onclick={() => ((showOptions = true), (menuOpen = false))}
               >Options…</button
             >
+            <button
+              class="item"
+              onclick={() => ((showEmoji = true), (emojiError = ''), (menuOpen = false))}
+              >Custom emoji…</button
+            >
             {#if isDesktop()}
               <button class="item" onclick={onSwitchServer}>Switch server…</button>
             {/if}
@@ -1245,6 +1261,24 @@
     onApply={applyOptions}
     onClose={() => (showOptions = false)}
     uploadAvatar={(file) => uploadAvatar(file, client.sessionToken)}
+  />
+{/if}
+
+{#if showEmoji}
+  <EmojiDialog
+    emoji={$emojiCatalog}
+    selfToken={$self?.token ?? null}
+    uploadEmoji={(file) => uploadEmoji(file, client.sessionToken)}
+    onAdd={(name, url) => {
+      emojiError = '';
+      client.addEmoji(name, url);
+    }}
+    onRemove={(name) => {
+      emojiError = '';
+      client.removeEmoji(name);
+    }}
+    serverError={emojiError}
+    onClose={() => (showEmoji = false)}
   />
 {/if}
 

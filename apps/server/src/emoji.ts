@@ -86,30 +86,38 @@ export class EmojiStore {
   }
 }
 
-/** Handle `GET /emoji/<file>`: stream a stored emoji image back, safely. */
+/** Handle `GET /emoji/<file>`: stream a stored emoji image back, safely. Looks in the
+ *  operator's emoji dir first, then the user-contributed emoji dir — both are served under the
+ *  same `/emoji/` prefix, and their filenames never collide (operator = `:shortcode:`,
+ *  user-contributed = random hex), so the order only decides which is tried first. */
 export async function serveEmoji(
   req: IncomingMessage,
   res: ServerResponse,
   cfg: ServerConfig,
 ): Promise<void> {
   const name = decodeURIComponent((req.url ?? '').slice(EMOJI_ROUTE.length).split(/[?#]/)[0] ?? '');
-  if (!SAFE_FILE_RE.test(name)) {
+  const notFound = () => {
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('Not found');
+  };
+  if (!SAFE_FILE_RE.test(name)) {
+    notFound();
     return;
   }
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
-  const file = join(cfg.emojiDir, name);
-  try {
-    const s = await stat(file);
-    if (!s.isFile()) {
-      res.writeHead(404, { 'content-type': 'text/plain' });
-      res.end('Not found');
-      return;
+  for (const dir of [cfg.emojiDir, cfg.userEmojiDir]) {
+    const file = join(dir, name);
+    let size: number;
+    try {
+      const s = await stat(file);
+      if (!s.isFile()) continue;
+      size = s.size;
+    } catch {
+      continue; // missing here — try the next dir
     }
     res.writeHead(200, {
       'content-type': EXT_TYPE[ext] ?? 'application/octet-stream',
-      'content-length': s.size,
+      'content-length': size,
       // Not content-hashed (the filename is the shortcode, so a replacement reuses it), so
       // cache modestly rather than immutably — a swapped image propagates within minutes.
       'cache-control': 'public, max-age=300',
@@ -121,8 +129,7 @@ export async function serveEmoji(
     const stream = createReadStream(file);
     stream.on('error', () => res.destroy());
     stream.pipe(res);
-  } catch {
-    res.writeHead(404, { 'content-type': 'text/plain' });
-    res.end('Not found');
+    return;
   }
+  notFound();
 }

@@ -5,6 +5,7 @@ import {
   type ChannelHistoryEntry,
   type ClientMessage,
   type Color,
+  type EmojiEntry,
   type ServerInfo,
   type ServerMessage,
   type Token,
@@ -61,8 +62,12 @@ export class MaraClient {
   /** The server's message of the day from `welcome` ('' when none is set). */
   readonly motd: Readable<string>;
   /** The server's custom emoji set (shortcode → image URL) from `welcome`; empty until
-   *  login, or when the server has none configured. Drives `:name:` rendering + the picker. */
+   *  login, or when the server has none configured. Drives `:name:` rendering + the picker.
+   *  Updated live via `emojiUpdate` when anyone adds/removes a user-contributed emoji. */
   readonly emoji: Readable<Record<string, string>>;
+  /** The same set as full entries (incl. `owner`/`by` for user-contributed ones), for the
+   *  emoji-management UI to show who added each and which the local user may remove. */
+  readonly emojiCatalog: Readable<EmojiEntry[]>;
 
   private readonly _connection = writable<ConnectionState>('idle');
   private readonly _self = writable<SelfState | null>(null);
@@ -75,6 +80,7 @@ export class MaraClient {
   private readonly _serverInfo = writable<ServerInfo | null>(null);
   private readonly _motd = writable('');
   private readonly _emoji = writable<Record<string, string>>({});
+  private readonly _emojiCatalog = writable<EmojiEntry[]>([]);
 
   private socket: WebSocketLike | null = null;
   /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
@@ -119,6 +125,7 @@ export class MaraClient {
     this.serverInfo = { subscribe: this._serverInfo.subscribe };
     this.motd = { subscribe: this._motd.subscribe };
     this.emoji = { subscribe: this._emoji.subscribe };
+    this.emojiCatalog = { subscribe: this._emojiCatalog.subscribe };
 
     this.pipeline = opts.plugins;
     this.now = opts.now ?? Date.now;
@@ -223,6 +230,21 @@ export class MaraClient {
    */
   setProfile(update: { name?: string; color?: Color; avatar?: string }): void {
     this.send({ type: 'setProfile', ...update });
+  }
+
+  /**
+   * Add — or, as its owner, replace — a user-contributed custom emoji: bind `:name:` to an
+   * image already uploaded via the emoji upload endpoint (whose returned URL is passed here).
+   * The server validates ownership/dedupe and, on success, broadcasts the new set to everyone
+   * (including us) as `emojiUpdate`; a rejection arrives as an `error` event. Fire-and-forget.
+   */
+  addEmoji(name: string, url: string): void {
+    this.send({ type: 'addEmoji', name, url });
+  }
+
+  /** Remove a user-contributed emoji we added. The server broadcasts the new set on success. */
+  removeEmoji(name: string): void {
+    this.send({ type: 'removeEmoji', name });
   }
 
   /** Note: PM text is NOT run through the plugin pipeline (channel chat/emote only). */
@@ -359,7 +381,7 @@ export class MaraClient {
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
         this._motd.set(msg.motd ?? '');
-        this._emoji.set(Object.fromEntries((msg.emoji ?? []).map((e) => [e.name, e.url])));
+        this.applyEmoji(msg.emoji);
         // Anchor the server-clock estimate to login time (0 = older server with no `at`,
         // so serverNow() == now()), keeping client-stamped notices on the server's clock.
         this.serverClockOffset = typeof msg.at === 'number' ? msg.at - this.now() : 0;
@@ -616,10 +638,25 @@ export class MaraClient {
         return;
       }
 
+      case 'emojiUpdate':
+        // A user added/replaced/removed a custom emoji: refresh the live set so `:name:`
+        // rendering and the picker update everywhere without a reconnect.
+        this.applyEmoji(msg.emoji);
+        return;
+
       case 'error':
         this.events.emit('error', { message: msg.message });
         return;
     }
+  }
+
+  /** Apply a custom-emoji set (from `welcome` or a live `emojiUpdate`) to both stores: the
+   *  shortcode→URL map that drives rendering + the picker, and the full catalog for the
+   *  management UI. */
+  private applyEmoji(entries: EmojiEntry[] | undefined): void {
+    const list = entries ?? [];
+    this._emoji.set(Object.fromEntries(list.map((e) => [e.name, e.url])));
+    this._emojiCatalog.set(list);
   }
 
   // -- store helpers --------------------------------------------------------

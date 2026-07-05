@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runSlashCommand, type CommandContext } from './commands.js';
 import type { UserInfo } from '@mara/client-core';
 
-const bob: UserInfo = { token: 7, name: 'Bob', color: '#3366cc', away: '' };
+const bob: UserInfo = { token: 7, name: 'Bob', color: '#3366cc', avatar: '', away: '' };
 
 function ctx(overrides: Partial<CommandContext> = {}): CommandContext {
   return {

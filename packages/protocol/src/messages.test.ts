@@ -32,6 +32,8 @@ const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
     color: '#3366cc',
     avatar: '/avatars/abc123.png',
   },
+  addEmoji: { type: 'addEmoji', name: 'blobwave', url: '/emoji/abc123.png' },
+  removeEmoji: { type: 'removeEmoji', name: 'blobwave' },
   ping: { type: 'ping', id: 1 },
 };
 
@@ -71,6 +73,13 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
   emote: { type: 'emote', id: 3, from: 678, channelToken: 12345, text: 'waves', at: 1700000002 },
   away: { type: 'away', token: 678, text: 'brb' },
   userProfile: { type: 'userProfile', user },
+  emojiUpdate: {
+    type: 'emojiUpdate',
+    emoji: [
+      { name: 'blob', url: '/emoji/blob.png' },
+      { name: 'party', url: '/emoji/deadbeef.gif', owner: 678, by: 'alice' },
+    ],
+  },
   privateMessage: { type: 'privateMessage', from: 678, to: 999, text: 'psst' },
   historyChunk: {
     type: 'historyChunk',

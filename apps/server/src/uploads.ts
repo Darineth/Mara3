@@ -4,6 +4,7 @@ import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { ServerConfig } from './config.js';
+import { EMOJI_ROUTE } from './emoji.js';
 import type { Logger } from './logger.js';
 
 /** Public route prefix uploaded files are served from. */
@@ -17,6 +18,11 @@ export const UPLOAD_ENDPOINT = '/upload';
 export const AVATAR_ROUTE = '/avatars/';
 /** Endpoint that accepts a raw avatar image and returns its durable hosted URL. */
 export const AVATAR_ENDPOINT = '/avatar';
+
+/** Endpoint that accepts a raw user-contributed emoji image and returns its durable hosted
+ *  URL under `/emoji/`. The image is stored like an avatar (never evicted); the caller then
+ *  binds a `:shortcode:` to the returned URL over the WebSocket (`addEmoji`). */
+export const EMOJI_UPLOAD_ENDPOINT = '/emoji-upload';
 
 /**
  * Accepted image content types → file extension. SVG is intentionally excluded:
@@ -280,6 +286,48 @@ export async function deleteAvatar(cfg: ServerConfig, url: string, log: Logger):
   try {
     await unlink(join(cfg.avatarDir, name));
     log.debug({ name }, 'deleted replaced avatar');
+  } catch {
+    /* already gone; ignore */
+  }
+}
+
+/** Handle `POST /emoji-upload`: a user-contributed emoji image, stored durably under the
+ *  user-emoji dir and served at `/emoji/`. Returns `{ url: '/emoji/<id>.<ext>' }`. */
+export function handleEmojiUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+  log: Logger,
+  authorize: (token: string | undefined) => boolean,
+): Promise<void> {
+  return storeImage(req, res, log, authorize, {
+    dir: cfg.userEmojiDir,
+    cap: cfg.maxEmojiBytes,
+    route: EMOJI_ROUTE,
+    kind: 'emoji',
+  });
+}
+
+/** The `<hex>.<ext>` filename of one of our stored user-emoji images, parsed from its
+ *  `/emoji/<name>` URL — or '' if the URL isn't one we issued. Our uploads have random hex
+ *  names, so an operator emoji (whose file is its `:shortcode:`) never matches; this is what
+ *  lets `addEmoji` accept only genuinely-uploaded images and delete only user-emoji files. */
+export function userEmojiName(url: string): string {
+  const name = url.startsWith(EMOJI_ROUTE)
+    ? (url.slice(EMOJI_ROUTE.length).split(/[?#]/)[0] ?? '')
+    : '';
+  return SAFE_NAME_RE.test(name) ? name : '';
+}
+
+/** Best-effort delete of a stored user-emoji image (given its `/emoji/<name>` URL), called
+ *  when its owner replaces or removes the emoji. Only ever removes our own hex-named files in
+ *  the user-emoji dir — never the operator's shortcode-named emoji. */
+export async function deleteUserEmoji(cfg: ServerConfig, url: string, log: Logger): Promise<void> {
+  const name = userEmojiName(url);
+  if (!name) return;
+  try {
+    await unlink(join(cfg.userEmojiDir, name));
+    log.debug({ name }, 'deleted user emoji');
   } catch {
     /* already gone; ignore */
   }
