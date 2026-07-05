@@ -150,18 +150,20 @@ fn settings_path() -> Result<PathBuf, String> {
 /// directory the client is launched from) — a plain relative `PathBuf`, so the OS
 /// resolves it per-platform (cross-platform, no hardcoded separators). The `logDir`
 /// setting overrides it: an absolute path is used as-is, a relative one (like the
-/// default) resolves against the working directory. **Only an explicit blank string
-/// (`""`) disables logging** — a missing or `null` `logDir` keeps the default.
+/// default) resolves against the working directory. **An explicit blank string (`""`)
+/// disables logging.** On desktop a missing/`null` `logDir` keeps the default; on mobile
+/// the default is off (no disk logging unless an explicit `logDir` is set).
 fn log_dir() -> Option<PathBuf> {
     match load_settings().log_dir {
         Some(d) if d.trim().is_empty() => None,
         Some(d) => Some(PathBuf::from(d.trim())),
-        // Default: `logs/` beside the working dir on desktop; on mobile a CWD-relative
-        // path isn't writable, so nest it under the app dir (set at startup).
+        // Default: `logs/` beside the working dir on desktop. On mobile, disk logging is
+        // off by default — the per-channel chat logs aren't useful on a phone and only eat
+        // app storage; an explicit `logDir` still turns it back on.
         None => {
             #[cfg(mobile)]
             {
-                APP_DIR.get().map(|d| d.join("logs"))
+                None
             }
             #[cfg(desktop)]
             {
