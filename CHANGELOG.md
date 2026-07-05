@@ -2,15 +2,34 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.17] - unreleased
+## [3.0.17] - 2026-07-04
 
 ### Added
 
-- **Android client** (initial build) — the Tauri 2 desktop shell now also targets
-  Android. The desktop-only native pieces (window geometry, taskbar attention, the
+- **Android client** — the Tauri 2 desktop shell now also targets Android, producing an
+  installable APK. The desktop-only native pieces (window geometry, taskbar attention,
   native pop-out windows) are compiled out on mobile, where the web app falls back
-  gracefully (pop-outs become tabs). Produces an installable APK via
-  `tauri android build`; the client track moves to 3.0.17 alongside this change.
+  gracefully (pop-outs become tabs). The chosen server and recents are persisted in the
+  app's config dir. The client track moves to 3.0.17 alongside this change.
+- `pnpm package:all` builds a **signed release APK** (arm64) when the Android toolchain
+  (JDK 17+, SDK, NDK) is present, and skips with a warning otherwise. `zip-dist` folds it
+  into the release as `Mara3-android-arm64-v<version>.apk` plus a stable `-latest.apk`.
+
+### Fixed
+
+- **Mobile layout fit.** The chat now fits the screen: the header clears the top system
+  bar / display cutout (safe-area insets), and the composer stays visible above the soft
+  keyboard — the native WebView is resized to the IME inset, since edge-to-edge otherwise
+  hides the keyboard from the web layer. Desktop is unaffected (insets are zero there).
+- The message composer no longer auto-focuses on touch devices, so opening or switching a
+  conversation doesn't force the on-screen keyboard up. Explicit taps still focus it.
+- The native library is aligned to 16 KB pages (Android 15+ compatibility).
+- The Android launcher icon has proper safe-zone padding on a brand-dark background, so
+  the circular mask no longer crops the logo.
+- Folding/unfolding (any display-density change) no longer recreates the WebView and drops
+  the connection and in-progress state — the activity now handles the density config change.
+- Disk logging is off by default on mobile (the per-channel chat logs aren't useful on a
+  phone and only consume storage); desktop is unchanged.
 
 ## [3.0.16] - 2026-07-03
 
