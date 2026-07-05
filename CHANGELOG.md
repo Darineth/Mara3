@@ -2,9 +2,25 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.18] - unreleased
+## [3.0.18] - 2026-07-05
 
-_In development._
+### Added
+
+- **Discord-style message layout.** A new "Message style" option (Mara or Discord) in
+  Options. _Mara_ is the existing compact `[time] Name: text` line; _Discord_ is a cozy
+  layout — a larger name plus a muted timestamp header, with the message text below — and it
+  groups a run of messages from the same author (within 5 minutes) under a single header,
+  with a little space between messages and a larger gap before each new group.
+- **Slide-out user list on narrow screens** (and whenever the inline sidebar is hidden). A
+  people button in the top bar opens the list as a drawer, so on a phone you can still see
+  who's here and tap someone to start a PM — previously the list just disappeared below
+  640px with no way back to it. The inline sidebar's Hide/Show toggle now only appears where
+  it does something (on desktop).
+
+### Fixed
+
+- The active conversation tab now scrolls into view when you switch to or join it, so a tab
+  sitting off-screen in the overflow strip is no longer left hidden.
 
 ## [3.0.17] - 2026-07-04
 
