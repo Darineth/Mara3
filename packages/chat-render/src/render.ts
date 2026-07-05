@@ -1,6 +1,16 @@
 // Line-level rendering: wraps the text→HTML pipeline (text.ts) in the per-kind
 // chat/emote/system markup the Svelte ChatView injects via {@html}.
-import { escapeHtml, renderText, type RenderTextOptions } from './text.js';
+import { emojiOnlyCount, escapeHtml, renderText, type RenderTextOptions } from './text.js';
+
+// A chat message that is nothing but emoji renders them large (Discord "jumbo"): `mara-jumbo`
+// on the text container, plus `mara-jumbo-lg` for just a few, so ChatView can size them up.
+// Past this many the message stays inline — a wall of emoji shouldn't fill the view.
+const JUMBO_MAX = 27;
+function jumboTextClass(line: LineModel, options: RenderLineOptions): string {
+  const n = emojiOnlyCount(line.text, options.emoji);
+  if (n < 1 || n > JUMBO_MAX) return 'mara-text';
+  return n <= 3 ? 'mara-text mara-jumbo mara-jumbo-lg' : 'mara-text mara-jumbo';
+}
 
 /**
  * How a line is presented: a normal message, a `/me` action, a dim server notice
@@ -90,6 +100,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   switch (line.kind) {
     case 'chat': {
       const showAv = options.avatars !== false;
+      const textClass = jumboTextClass(line, options);
       // discord (cozy): an avatar gutter, then a `Name  timestamp` header with the text
       // below in the default colour. A grouped continuation (same author, close in time)
       // drops the avatar + header and shows just the text, indented to line up under them
@@ -98,7 +109,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
         if (options.continuation) {
           return (
             `<div class="mara-line mara-chat mara-discord mara-cont${showAv ? '' : ' mara-no-av'}">` +
-            `<div class="mara-text">${renderText(line.text, options)}</div>` +
+            `<div class="${textClass}">${renderText(line.text, options)}</div>` +
             `</div>`
           );
         }
@@ -107,7 +118,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
           (showAv ? avatarHtml(line, color, 'mara-avatar-lg') : '') +
           `<div class="mara-discord-main">` +
           `<div class="mara-head"><span class="mara-author" style="color:${color}">${name}</span>${ts(line)}</div>` +
-          `<div class="mara-text">${renderText(line.text, options)}</div>` +
+          `<div class="${textClass}">${renderText(line.text, options)}</div>` +
           `</div></div>`
         );
       }
@@ -117,7 +128,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
         `<span class="mara-body" style="color:${color}">` +
         (showAv ? avatarHtml(line, color, 'mara-avatar-inline') : '') +
         `<span class="mara-author">${name}:</span> ` +
-        `<span class="mara-text">${renderText(line.text, options)}</span>` +
+        `<span class="${textClass}">${renderText(line.text, options)}</span>` +
         `</span></div>`
       );
     }

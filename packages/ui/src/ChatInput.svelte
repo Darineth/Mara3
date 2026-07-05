@@ -17,6 +17,7 @@
     focusKey = null,
     color = null,
     emoji = {},
+    emojiOwners = {},
     mentionNames = [],
   }: {
     onsend: (text: string) => void;
@@ -30,6 +31,9 @@
     /** The server's custom emoji (shortcode → image URL); drives the picker. Empty = no
      *  picker button. Clicking one inserts its `:name:` shortcode at the cursor. */
     emoji?: Record<string, string>;
+    /** Adder display name per user-contributed emoji (shortcode → name), shown in the picker
+     *  tooltip. Absent for operator-provided ("built-in") emoji. */
+    emojiOwners?: Record<string, string>;
     /** An opaque identity for the active conversation. Whenever it changes (and on first
      *  mount), the textarea grabs focus — so joining or switching a channel/PM lands the
      *  cursor in the field, ready to type. `null` (no conversation) doesn't focus. */
@@ -601,7 +605,9 @@
               <button
                 type="button"
                 class="emoji-choice"
-                title=":{name}:"
+                title={emojiOwners[name]
+                  ? `:${name}: · added by ${emojiOwners[name]}`
+                  : `:${name}:`}
                 onclick={() => chooseEmoji(name)}
               >
                 <img src={emojiSrc(url)} alt=":{name}:" loading="lazy" />

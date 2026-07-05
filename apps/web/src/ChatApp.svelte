@@ -91,6 +91,14 @@
     emojiCatalog,
   } = client;
 
+  // Adder display name per user-contributed emoji (shortcode → name), for the picker tooltip.
+  // Operator ("built-in") emoji have no adder and are omitted.
+  const emojiOwners = $derived(
+    Object.fromEntries(
+      $emojiCatalog.flatMap((e) => (e.by ? [[e.name, e.by] as const] : [])),
+    ) as Record<string, string>,
+  );
+
   // The page is stale when the server reports serving a different web build than
   // the one this bundle was compiled as — i.e. the browser is running cached old
   // code and should be reloaded. Silent when the server doesn't report a build
@@ -1216,6 +1224,7 @@
         focusKey={activeKey}
         color={settings.color}
         emoji={$emoji}
+        {emojiOwners}
         mentionNames={[...$users.values()].map((u) => u.name)}
       />
     {/if}

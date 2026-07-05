@@ -411,6 +411,16 @@
     /* Click to zoom to full resolution in the lightbox (see ChatView's click handler). */
     cursor: zoom-in;
   }
+  /* Emoji-only messages render their emoji large (Discord "jumbo"). Emoji are sized in `em`
+     — native ones are text glyphs, custom ones are 1.4em <img> — so bumping the container's
+     font-size scales both together; the `-lg` tier is for a message of just a few. */
+  .mara-chatview :global(.mara-text.mara-jumbo) {
+    font-size: 2em;
+    line-height: 1.2;
+  }
+  .mara-chatview :global(.mara-text.mara-jumbo-lg) {
+    font-size: 2.9em;
+  }
   .mara-chatview :global(.mara-img) {
     display: block;
     max-width: min(320px, 100%);

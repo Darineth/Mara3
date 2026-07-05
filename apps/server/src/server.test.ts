@@ -23,6 +23,7 @@ beforeEach(async () => {
     motdFile: '', // use the inline motd above, not any MOTD.md in the working dir
     defaultChannel: '',
     historyFile: '',
+    userEmojiFile: '',
     identityFile: '', // in-memory; persistence tested explicitly below
     disconnectGraceMs: 0, // announce disconnects immediately (grace tested explicitly below)
   };
@@ -70,6 +71,7 @@ describe('http', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         webRoot: root,
       },
@@ -114,6 +116,7 @@ describe('handshake', () => {
         motdFile: file,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
       },
       createLogger('silent'),
@@ -174,6 +177,7 @@ describe('default channel', () => {
         port: 0,
         defaultChannel: 'Main',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
       },
       createLogger('silent'),
@@ -259,6 +263,7 @@ describe('rate limiting (flood control)', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         msgRate: 1, // ~no refill on the timescale of a tight send loop
         msgBurst: 3,
@@ -292,6 +297,7 @@ describe('rate limiting (flood control)', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         msgRate: 0, // disabled
       },
@@ -516,6 +522,7 @@ describe('custom emoji', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         emojiDir: dir,
       },
@@ -554,6 +561,7 @@ describe('history pagination', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         historyChunk: 2, // small so five messages span multiple pages
       },
@@ -622,6 +630,7 @@ describe('history persistence', () => {
       port: 0,
       defaultChannel: '',
       historyFile,
+      userEmojiFile: '',
       identityFile: '',
     };
 
@@ -921,6 +930,7 @@ describe('disconnect grace period', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         disconnectGraceMs: GRACE_MS,
       },
@@ -1023,6 +1033,7 @@ describe('flap damping (long-term reconnect churn)', () => {
         port: 0,
         defaultChannel: '',
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         disconnectGraceMs: BASE_GRACE,
         flapSettleMs: FLAP_SETTLE,
@@ -1133,6 +1144,7 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
         port: 0,
         defaultChannel: 'lobby', // both parties auto-join, so join/disconnect is visible
         historyFile: '',
+        userEmojiFile: '',
         identityFile: '',
         disconnectGraceMs: 0, // finalize immediately
         flapSettleMs: 0, // isolate the interaction-based flag from the time-windowed one

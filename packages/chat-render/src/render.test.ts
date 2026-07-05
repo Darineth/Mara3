@@ -90,6 +90,39 @@ describe('renderText — custom emoji', () => {
   });
 });
 
+describe('renderLine — jumbo (emoji-only) messages', () => {
+  const emoji = { blob: '/emoji/blob.png', wave: '/emoji/wave.png' };
+  const line = (text: string) =>
+    renderLine({ kind: 'chat', authorName: 'a', authorColor: '#ff0000', text }, { emoji });
+
+  it('enlarges a message of only custom emoji, with the -lg tier for a few', () => {
+    expect(line(':blob:')).toContain('mara-text mara-jumbo mara-jumbo-lg');
+    // 4+ emoji: jumbo but not the largest tier.
+    const many = line(':blob: :wave: :blob: :wave:');
+    expect(many).toContain('mara-jumbo');
+    expect(many).not.toContain('mara-jumbo-lg');
+  });
+
+  it('enlarges a message of only native unicode emoji', () => {
+    expect(line('😀😀')).toContain('mara-jumbo');
+  });
+
+  it('does NOT enlarge when any real text is present', () => {
+    expect(line('hi :blob:')).not.toContain('mara-jumbo');
+    expect(line('😀 nice')).not.toContain('mara-jumbo');
+    // An unknown shortcode is literal text, so it's not emoji-only either.
+    expect(line(':nope:')).not.toContain('mara-jumbo');
+  });
+
+  it('applies in the discord layout too', () => {
+    const html = renderLine(
+      { kind: 'chat', authorName: 'a', authorColor: '#ff0000', text: ':blob:' },
+      { emoji, layout: 'discord' },
+    );
+    expect(html).toContain('mara-jumbo');
+  });
+});
+
 describe('renderText — safety + links', () => {
   it('escapes before linkifying and never emits user markup', () => {
     const html = renderText('<b>hi</b> http://example.com');

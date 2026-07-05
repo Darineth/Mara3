@@ -95,6 +95,41 @@ const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 const EMOJI_RE = /:([a-zA-Z0-9_+-]+):/g;
 const EMOJI_URL_RE = /^(?:https?:\/\/|\/emoji\/)[^\s<]+$/i;
 
+// A native (unicode) emoji cluster: a pictographic base plus any trailing variation selector,
+// skin-tone modifier, or ZWJ-joined pictographs — or a two-char regional-indicator flag. Used
+// only to recognise an "emoji-only" message for jumbo sizing (see emojiOnlyCount), never to
+// alter the text. (Unicode property escapes are already relied on elsewhere in this package.)
+const NATIVE_EMOJI_RE =
+  /\p{Extended_Pictographic}(?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}]|\u{200D}\p{Extended_Pictographic}(?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])?)*|[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+
+/**
+ * If `text` is composed solely of emoji — known custom `:shortcode:` emoji and/or native
+ * unicode emoji — plus whitespace, returns how many there are; otherwise 0. Lets a caller
+ * render an emoji-only message larger, à la Discord's "jumbo" emoji.
+ */
+export function emojiOnlyCount(text: string, emoji?: Record<string, string>): number {
+  let count = 0;
+  let rest = text;
+  if (emoji) {
+    rest = rest.replace(EMOJI_RE, (literal, name: string) => {
+      const url = emoji[name];
+      if (url !== undefined && EMOJI_URL_RE.test(url)) {
+        count++;
+        return '';
+      }
+      return literal;
+    });
+  }
+  rest = rest.replace(NATIVE_EMOJI_RE, () => {
+    count++;
+    return '';
+  });
+  if (count === 0) return 0;
+  // Ignore leftover whitespace and stray joiners/variation selectors; any real character left
+  // over means the message wasn't emoji-only.
+  return /\S/.test(rest.replace(/[\u{FE0E}\u{FE0F}\u{200D}]/gu, '')) ? 0 : count;
+}
+
 // Links carry NO target="_blank". The app intercepts a plain click and opens the URL
 // itself — via the native opener in the desktop shells, or window.open in a browser — so
 // a bare anchor suffices. _blank actively hurts the desktop clients: the Tauri 2 shell
