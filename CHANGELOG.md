@@ -2,9 +2,21 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.19] - unreleased
+## [3.0.19] - 2026-07-05
 
-_In development._
+### Added
+
+- **User avatars.** Set a profile picture in Options — it's downscaled on upload and shown
+  beside your name in the user list and on your messages, with a coloured-initial monogram as
+  the fallback when you haven't set one. Avatars belong to your identity, so they follow you
+  across devices and reconnects. A new "Show avatars" option hides them for a leaner view.
+- **Custom emoji anyone can add.** A "Custom emoji" manager (in the menu) lets anyone upload
+  an image — by file picker, drag & drop, or paste — and bind it to a `:shortcode:` that
+  everyone can then use. The set updates live for all connected users, with no reconnect. Only
+  the person who added an emoji can replace or remove it, and the picker shows who added each
+  one. (Operators can moderate the shared library by editing its data file; edits apply live.)
+- **Jumbo emoji.** A message that contains only emoji — custom or native — renders them large,
+  à la Discord.
 
 ## [3.0.18] - 2026-07-05
 
