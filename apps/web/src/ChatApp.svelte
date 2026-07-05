@@ -1150,7 +1150,14 @@
   .app {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    /* Dynamic viewport height so the app fits when the keyboard opens (paired with
+       interactive-widget=resizes-content in the viewport meta). */
+    height: 100dvh;
+    /* Keep content out from under the system bars / display cutout. The insets are 0 on
+       desktop, so this is a no-op there. Bottom is handled by the composer. */
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
     background: var(--mara-bg);
     color: var(--mara-fg);
   }

@@ -642,6 +642,9 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem;
+    /* Lift the composer above the device's bottom inset (gesture bar / home indicator);
+       0 on desktop, so unchanged there. */
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
     border-top: 1px solid var(--mara-border, #333);
     align-items: flex-end;
   }
