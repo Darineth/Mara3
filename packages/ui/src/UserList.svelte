@@ -108,7 +108,7 @@
     height: 1.4rem;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--mara-border, #333);
+    /* No background, so a transparent avatar shows through (the monogram sets its colour inline). */
   }
   .mara-ul-avatar.mono {
     display: inline-flex;

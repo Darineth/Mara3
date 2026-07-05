@@ -300,7 +300,7 @@
     border-radius: 50%;
     object-fit: cover;
     border: 1px solid var(--mara-border, #333);
-    background: var(--mara-input-bg, #2a2a2a);
+    /* No background, so a transparent avatar shows through (the monogram sets its colour inline). */
   }
   .avatar-preview.mono {
     display: inline-flex;

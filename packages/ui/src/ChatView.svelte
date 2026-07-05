@@ -313,12 +313,13 @@
     font-weight: 600;
   }
   /* Avatars: round; either an <img> or a coloured-initial monogram fallback. Sized in rem
-     so they don't scale with the message font (a fixed, tidy avatar column). */
+     so they don't scale with the message font (a fixed, tidy avatar column). No background,
+     so a transparent avatar image shows through instead of sitting on a grey plate (the
+     monogram fallback paints its own colour inline). */
   .mara-chatview :global(.mara-avatar) {
     flex: none;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--mara-border, #333);
     vertical-align: middle;
   }
   .mara-chatview :global(.mara-avatar-mono) {
