@@ -2,9 +2,15 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.23] - unreleased
+## [3.0.23] - 2026-07-05
 
-_In development._
+### Added
+
+- **Click an avatar to see it full-size.** Clicking a user's avatar in the message list opens
+  it in the image lightbox, the same way inline images and custom emoji already do.
+- **Paste anywhere in the chat to compose.** Ctrl/Cmd+V while focused on the chat area (not
+  just the message box) now drops the pasted text into the composer and focuses it — or
+  attaches a pasted image — so you don't have to click into the field first.
 
 ## [3.0.22] - 2026-07-05
 
