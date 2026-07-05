@@ -149,6 +149,43 @@ The self-contained _server_ bundle (`dist/server/`) is still Windows-shaped
 (`node.exe` + `.bat`); a Linux server bundle isn't produced yet. The server itself
 runs on Linux via `pnpm --filter @mara/server start`.
 
+### Android
+
+`pnpm package:all` also builds a **signed release APK** (arm64) when the Android toolchain is
+present. `package.mjs` resolves **JDK 17+**, the **Android SDK**, and the **NDK** from the
+environment or their standard install locations, and skips with a warning if any is missing (so
+the release just omits Android rather than failing — like the Linux step without WSL). Output:
+`dist/android/Mara3.apk`, which `zip-dist` folds into `dist/zips/` as
+`Mara3-android-arm64-v<version>-…apk` plus a stable `Mara3-android-arm64-latest.apk`.
+
+Prerequisites: **JDK 17+**, the **Android SDK** (`platform-tools`, a `platforms;android-*`, a
+`build-tools`), an **NDK**, and the Rust `aarch64-linux-android` target. Standalone build:
+
+```bash
+pnpm --filter @mara/shell tauri android build --apk --target aarch64
+# -> src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+```
+
+The Android project is committed under `src-tauri/gen/android/` (only build artifacts are
+gitignored, via Tauri's nested `.gitignore`s). `tauri android init` regenerates that committed
+project, so it's a one-time bootstrap, not part of a normal build.
+
+**Release signing.** The keystore and its passwords are **gitignored** and live outside the
+committed project:
+
+- `apps/shell/.tauri/mara-android.keystore` — the release keystore (RSA-2048).
+- `apps/shell/src-tauri/gen/android/keystore.properties` — `storeFile` (relative path up to
+  `.tauri/`), `storePassword`, `keyAlias`, `keyPassword`.
+
+`build.gradle.kts` loads `keystore.properties` and signs the release build when present; without
+it Gradle emits an **unsigned** `…-release-unsigned.apk` (which won't install), so a fresh clone
+or CI still builds. Copy the keystore to `apps/shell/.tauri/` on each build machine.
+
+> ⚠️ **Back up the keystore.** It is the app's signing identity. If it's lost or replaced, Android
+> treats a new APK as a different app: users must **uninstall and reinstall** to update, since
+> in-place updates require the _same_ signature. Keep `mara-android.keystore` and its passwords
+> somewhere safe and out of version control.
+
 ## Native logging
 
 `mara_log(channel, line)` (in `src-tauri/src/lib.rs`) appends to a log file split per
@@ -221,4 +258,5 @@ trust — the page you load can use those native commands.
 Compiles against Tauri 2. The remote-page → native-command path (runtime
 `add_capability` for the connected origin) is configured per Tauri 2 docs but has
 **not** been runtime-verified in this environment — confirm it on a real machine on
-first run. Mobile (iOS/Android) remains scaffolded; needs the mobile SDKs.
+first run. **Android** builds a signed release APK (see above) and is runtime-verified on
+device + emulator; **iOS** remains scaffolded (needs the mobile SDKs / a Mac).

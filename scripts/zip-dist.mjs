@@ -47,6 +47,9 @@ const PRODUCT_VERSION = pkg.version;
 // tauri.conf.json) rather than the app/product version — so its zip name + update
 // manifest reflect the client's own version, and an app-only release never bumps it or
 // false-fires the update nudge. Components without it use the product version.
+// `file` (instead of `dir`) is a ready-made single-file artifact (the Android .apk) that
+// ships AS-IS — copied into dist/zips under a version-stamped name, never zipped (an APK is
+// already a package; sideloading needs the raw file). `ext` names its suffix.
 const COMPONENTS = [
   {
     dir: 'server',
@@ -100,6 +103,15 @@ const COMPONENTS = [
       file: 'apps/client-legacy/src-tauri/tauri.conf.json',
       path: ['package', 'version'],
     },
+  },
+  {
+    file: 'android/Mara3.apk',
+    name: 'Mara3-android-arm64',
+    desc: 'Android client, arm64 (signed release APK — sideload)',
+    ext: '.apk',
+    latest: true,
+    // Same shell crate as the desktop client → same client version track.
+    versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
   },
   {
     dir: 'web',
@@ -306,6 +318,42 @@ const failures = [];
 const latestAliases = [];
 
 for (const comp of COMPONENTS) {
+  // Ready-made single-file artifact (the Android .apk): ship it AS-IS, not zipped — an APK
+  // is already a package and sideloading needs the raw file. Copy it into dist/zips under a
+  // version-stamped name (+ a stable -latest alias) and record it alongside the archives.
+  if (comp.file) {
+    const src = join(dist, comp.file);
+    if (!existsSync(src)) {
+      console.log(`  - ${comp.file} — absent, skipping (${comp.name})`);
+      continue;
+    }
+    const outName = `${comp.name}-v${verTagFor(componentVersion(comp))}${comp.ext}`;
+    const outPath = join(outDir, outName);
+    const hash = sha256(src);
+    copyVerified(src, outPath, hash);
+    const size = statSync(outPath).size;
+    archives.push({
+      file: outName,
+      component: comp.name,
+      description: comp.desc,
+      productVersion: PRODUCT_VERSION,
+      ...(protocolVersion != null ? { protocolVersion } : {}),
+      gitCommit,
+      gitDirty,
+      builtAt,
+      bytes: size,
+      sha256: hash,
+    });
+    console.log(`  + ${outName}  (${fmtSize(size)})`);
+    if (comp.latest) {
+      const latestName = `${comp.name}-latest${comp.ext}`;
+      copyVerified(outPath, join(outDir, latestName), hash);
+      latestAliases.push({ from: outName, to: latestName });
+      console.log(`    ↳ ${latestName}  (stable link to the current ${comp.name})`);
+    }
+    continue;
+  }
+
   const compDir = join(dist, comp.dir);
   const prebuiltPath = comp.prebuilt ? join(dist, comp.prebuilt) : null;
   const hasDir = existsSync(compDir);

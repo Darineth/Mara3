@@ -32,6 +32,10 @@ apps/client-legacy/src-tauri/webview2-runtime/
 # Updater signing — keep the public key, never commit the private key
 apps/shell/.tauri/*.key
 
+# Android release signing — the keystore and its passwords never get committed
+apps/shell/.tauri/*.keystore
+apps/shell/.tauri/.kspw*
+
 # Test / coverage
 coverage/
 TestApps/

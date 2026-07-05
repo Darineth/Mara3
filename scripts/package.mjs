@@ -2,9 +2,11 @@
 //   dist/server/   a self-contained Node server (bundled node.exe + server + web)
 //   dist/desktop/  portable Mara3.exe (Windows 10/11 x64; only if Rust is available)
 //                  (on Linux: dist/desktop-linux/Mara3 — needs system webkit2gtk-4.1)
+//   dist/android/  Mara3.apk (signed release, arm64; only if the Android toolchain is present)
 //   dist/web/      the raw web build, for hosting elsewhere
 //
-// Run via package.bat, or: node scripts/package.mjs [--skip-tests] [--skip-desktop]
+// Run via package.bat, or:
+//   node scripts/package.mjs [--skip-tests] [--skip-desktop] [--skip-android]
 
 import { execSync } from 'node:child_process';
 import {
@@ -24,6 +26,7 @@ const dist = join(root, 'dist');
 const args = new Set(process.argv.slice(2));
 const skipTests = args.has('--skip-tests');
 const skipDesktop = args.has('--skip-desktop');
+const skipAndroid = args.has('--skip-android');
 
 // Default base for the desktop "update available" nudge: the repo's GitHub Releases
 // "latest" download endpoint, so <base>/<asset> always resolves to the newest published
@@ -220,7 +223,76 @@ function has(cmd) {
   }
 }
 
-const total = skipDesktop ? 5 : 6;
+// A JDK dir is usable for the Android build only if it's 17+ (Android Gradle needs it). The
+// ambient JAVA_HOME often points at an older JDK, so we validate rather than trust it.
+function isJdk17Plus(dir) {
+  try {
+    const m = readFileSync(join(dir, 'release'), 'utf8').match(/JAVA_VERSION="?(\d+)/);
+    if (m) return Number(m[1]) >= 17;
+  } catch {
+    /* no release file — fall through to the name check */
+  }
+  return /jdk[-_]?(1[7-9]|[2-9]\d)/i.test(dir);
+}
+
+function findJdk17() {
+  const cands = [];
+  if (process.env.JAVA_HOME) cands.push(process.env.JAVA_HOME);
+  if (process.platform === 'win32') {
+    for (const root of [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
+      Boolean,
+    )) {
+      for (const vendor of ['Microsoft', 'Eclipse Adoptium', 'Java', 'Amazon Corretto', 'Zulu']) {
+        const dir = join(root, vendor);
+        try {
+          for (const name of readdirSync(dir)) cands.push(join(dir, name));
+        } catch {
+          /* vendor dir absent */
+        }
+      }
+    }
+  } else {
+    for (const base of ['/usr/lib/jvm', '/Library/Java/JavaVirtualMachines']) {
+      try {
+        for (const name of readdirSync(base)) {
+          cands.push(
+            process.platform === 'darwin' ? join(base, name, 'Contents/Home') : join(base, name),
+          );
+        }
+      } catch {
+        /* base absent */
+      }
+    }
+  }
+  return cands.find((c) => c && existsSync(c) && isJdk17Plus(c)) ?? null;
+}
+
+// Locate the Android toolchain (JDK 17+, SDK, NDK) from the environment or standard install
+// locations. Returns the env overrides to build with, or null if anything is missing (so the
+// APK step can skip gracefully, like the desktop step does when Rust is absent).
+function resolveAndroidEnv() {
+  const java = findJdk17();
+  const sdk =
+    process.env.ANDROID_HOME ||
+    process.env.ANDROID_SDK_ROOT ||
+    (process.platform === 'win32'
+      ? join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk')
+      : process.platform === 'darwin'
+        ? join(process.env.HOME || '', 'Library', 'Android', 'sdk')
+        : join(process.env.HOME || '', 'Android', 'Sdk'));
+  let ndk = process.env.NDK_HOME || process.env.ANDROID_NDK_HOME || process.env.ANDROID_NDK_ROOT;
+  if (!ndk && existsSync(join(sdk, 'ndk'))) {
+    const versions = readdirSync(join(sdk, 'ndk'))
+      .filter((d) => /^\d/.test(d))
+      .sort();
+    if (versions.length) ndk = join(sdk, 'ndk', versions[versions.length - 1]);
+  }
+  if (!java || !existsSync(sdk) || !ndk || !existsSync(ndk)) return null;
+  return { JAVA_HOME: java, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk, NDK_HOME: ndk };
+}
+
+const total = 5 + (skipDesktop ? 0 : 1) + (skipAndroid ? 0 : 1);
+let stepNum = 5; // steps 1-5 below are fixed; desktop/android increment from here
 
 step(1, total, 'Installing dependencies');
 run('pnpm install');
@@ -274,7 +346,7 @@ copyFileSync(join(root, 'apps', 'server', 'Mara3-Server.ico'), join(serverDir, '
 cpSync(join(root, 'apps', 'web', 'dist'), join(dist, 'web'), { recursive: true });
 
 if (!skipDesktop) {
-  step(6, total, 'Building desktop client');
+  step(++stepNum, total, 'Building desktop client');
   if (!has('cargo')) {
     console.log(
       '  - Rust/cargo not found; skipping desktop. Install https://rustup.rs to include it.',
@@ -303,6 +375,54 @@ if (!skipDesktop) {
   }
 }
 
+let androidApkBuilt = false;
+if (!skipAndroid) {
+  step(++stepNum, total, 'Building Android APK');
+  const androidEnv = resolveAndroidEnv();
+  if (!androidEnv) {
+    console.log(
+      '  - Android toolchain not found (need JDK 17+, Android SDK, and NDK); skipping APK.',
+    );
+    console.log('    Set JAVA_HOME / ANDROID_HOME / NDK_HOME (or install the SDK) to include it.');
+  } else {
+    // Signed release APK (arm64 — the only Android ABI we ship). Signing config + keystore
+    // live in gen/android (gitignored); without them Gradle emits an *-unsigned.apk instead.
+    run('pnpm --filter @mara/shell tauri android build --apk --target aarch64', {
+      ...process.env,
+      ...androidEnv,
+    });
+    const relDir = join(
+      root,
+      'apps',
+      'shell',
+      'src-tauri',
+      'gen',
+      'android',
+      'app',
+      'build',
+      'outputs',
+      'apk',
+      'universal',
+      'release',
+    );
+    const signed = join(relDir, 'app-universal-release.apk');
+    const unsigned = join(relDir, 'app-universal-release-unsigned.apk');
+    const androidDir = join(dist, 'android');
+    if (existsSync(signed)) {
+      mkdirSync(androidDir, { recursive: true });
+      copyFileSync(signed, join(androidDir, 'Mara3.apk'));
+      androidApkBuilt = true;
+    } else if (existsSync(unsigned)) {
+      mkdirSync(androidDir, { recursive: true });
+      copyFileSync(unsigned, join(androidDir, 'Mara3-unsigned.apk'));
+      console.log('  ! Release keystore not configured — produced an UNSIGNED APK (will not');
+      console.log('    install as-is). Add gen/android/keystore.properties to sign it.');
+    } else {
+      console.log(`  ! No release APK found under ${relDir}`);
+    }
+  }
+}
+
 console.log('\n============================================================');
 console.log(` Done. Distributables in: ${dist}`);
 console.log('   server\\   self-contained server — run Mara3-Server.bat');
@@ -313,4 +433,5 @@ if (!skipDesktop)
       ? '   desktop-linux/  portable Mara3 (if Rust was available; needs webkit2gtk-4.1)'
       : '   desktop\\  portable Mara3.exe (if Rust was available)',
   );
+if (androidApkBuilt) console.log('   android\\  Mara3.apk (signed release, arm64)');
 console.log('============================================================');
