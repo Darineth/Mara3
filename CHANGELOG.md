@@ -2,9 +2,23 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.20] - unreleased
+## [3.0.20] - 2026-07-05
 
-_In development._
+### Fixed
+
+- **Avatars now load on a subpath deployment.** Avatar images used a root-absolute path, so a
+  server hosted under a subpath (e.g. `https://host/mara/`) failed to show them; they now
+  resolve against the page base like every other image.
+- **Drag-and-drop and paste now work for custom emoji in the desktop app.** The desktop client
+  was intercepting dropped image files before the page could handle them, and the emoji dialog
+  didn't pick up a pasted image — both work now (this also restores drag-and-drop image
+  uploads to the message composer on desktop).
+
+### Changed
+
+- Operators: user-contributed emoji are now fully self-contained in the `user-emoji/` folder
+  (the images plus an `index.json`) instead of a loose `user-emoji.json` beside the app.
+  Upgrading from 3.0.19: move `user-emoji.json` into `user-emoji/` and rename it `index.json`.
 
 ## [3.0.19] - 2026-07-05
 
