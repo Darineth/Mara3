@@ -35,13 +35,17 @@ export default defineConfig({
     host: host || false,
     // In dev (HMR), forward the server-owned routes to the Mara server so the
     // client can use same-origin URLs in every environment: the WebSocket, the
-    // image upload endpoint, the served upload files, and the custom-emoji images.
-    // (`/upload` also covers `/uploads/...` by prefix, but both are listed for clarity.)
+    // image upload endpoint and served upload files, the durable avatar upload
+    // endpoint and served avatar files, and the custom-emoji images. Each POST
+    // endpoint (`/upload`, `/avatar`) is listed alongside its GET prefix
+    // (`/uploads`, `/avatars`) — Vite matches by prefix, so both are explicit.
     proxy: {
       '/ws': { target: `ws://localhost:${serverPort}`, ws: true },
       '/info': `http://localhost:${serverPort}`,
       '/upload': `http://localhost:${serverPort}`,
       '/uploads': `http://localhost:${serverPort}`,
+      '/avatar': `http://localhost:${serverPort}`,
+      '/avatars': `http://localhost:${serverPort}`,
       '/emoji': `http://localhost:${serverPort}`,
     },
   },

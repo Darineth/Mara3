@@ -643,6 +643,97 @@ describe('renderLine', () => {
     expect(html).toContain('<div class="mara-text">again</div>');
   });
 
+  it('renders a hosted avatar as an <img>', () => {
+    const html = renderLine({
+      kind: 'chat',
+      authorName: 'alice',
+      authorColor: '#ff0000',
+      text: 'hi',
+      authorAvatar: '/avatars/deadbeef.png',
+    });
+    expect(html).toContain(
+      '<img class="mara-avatar mara-avatar-inline" src="/avatars/deadbeef.png"',
+    );
+    expect(html).not.toContain('mara-avatar-mono');
+  });
+
+  it('falls back to a colored-initial monogram when there is no avatar', () => {
+    const html = renderLine({
+      kind: 'chat',
+      authorName: 'alice',
+      authorColor: '#ff0000',
+      text: 'hi',
+    });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('mara-avatar-mono');
+    expect(html).toContain('background:#ff0000');
+    expect(html).toContain('>A</span>'); // the initial
+  });
+
+  it('monogram initial skips leading punctuation to the first letter/digit', () => {
+    const initialOf = (authorName: string) =>
+      renderLine({ kind: 'chat', authorName, authorColor: '#ff0000', text: 'hi' }).match(
+        /mara-avatar-mono[^>]*>(.*?)<\/span>/,
+      )?.[1];
+    expect(initialOf('*VSCodeStar*')).toBe('V'); // not the leading '*'
+    expect(initialOf('@bob')).toBe('B');
+    expect(initialOf('  ~fren')).toBe('F');
+    expect(initialOf('42fish')).toBe('4'); // a digit counts as a real character
+    expect(initialOf('...')).toBe('?'); // no alphanumeric → placeholder
+  });
+
+  it('ignores an unsafe/remote avatar URL — monogram instead of a rogue <img>', () => {
+    for (const bad of [
+      'javascript:alert(1)',
+      'http://evil.example/x.png',
+      '/etc/passwd',
+      '" onerror="x',
+    ]) {
+      const html = renderLine({
+        kind: 'chat',
+        authorName: 'alice',
+        authorColor: '#ff0000',
+        text: 'hi',
+        authorAvatar: bad,
+      });
+      expect(html).not.toContain('<img');
+      expect(html).toContain('mara-avatar-mono');
+    }
+  });
+
+  it('discord layout puts the avatar in a gutter beside the header', () => {
+    const html = renderLine(
+      {
+        kind: 'chat',
+        authorName: 'alice',
+        authorColor: '#ff0000',
+        text: 'hi',
+        authorAvatar: '/avatars/deadbeef.png',
+        timestamp: '12:00',
+      },
+      { layout: 'discord' },
+    );
+    expect(html).toContain('mara-avatar-lg');
+    expect(html).toContain('<div class="mara-discord-main">');
+    expect(html).toContain('/avatars/deadbeef.png');
+  });
+
+  it('omits avatars entirely when avatars:false', () => {
+    const base = {
+      kind: 'chat' as const,
+      authorName: 'alice',
+      authorColor: '#ff0000',
+      text: 'hi',
+      authorAvatar: '/avatars/deadbeef.png',
+      timestamp: '12:00',
+    };
+    for (const layout of ['mara', 'discord'] as const) {
+      const html = renderLine(base, { layout, avatars: false });
+      expect(html).not.toContain('mara-avatar');
+      expect(html).not.toContain('/avatars/deadbeef.png');
+    }
+  });
+
   it('applies markdown to the message body', () => {
     const html = renderLine({
       kind: 'chat',

@@ -14,7 +14,7 @@ import {
 } from './codec.js';
 import type { UserInfo } from './primitives.js';
 
-const user: UserInfo = { token: 678, name: 'alice', color: '#3366cc', away: '' };
+const user: UserInfo = { token: 678, name: 'alice', color: '#3366cc', avatar: '', away: '' };
 
 // One fully-specified (defaults included) sample per client message type.
 const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
@@ -26,7 +26,12 @@ const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
   privateMessage: { type: 'privateMessage', to: 999, text: 'psst' },
   away: { type: 'away', text: 'brb' },
   requestHistory: { type: 'requestHistory', channelToken: 12345, before: 42 },
-  setProfile: { type: 'setProfile', name: 'alice', color: '#3366cc' },
+  setProfile: {
+    type: 'setProfile',
+    name: 'alice',
+    color: '#3366cc',
+    avatar: '/avatars/abc123.png',
+  },
   ping: { type: 'ping', id: 1 },
 };
 

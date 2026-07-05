@@ -11,6 +11,13 @@ export const UPLOAD_ROUTE = '/uploads/';
 /** Endpoint that accepts a raw image body and returns its hosted URL. */
 export const UPLOAD_ENDPOINT = '/upload';
 
+/** Avatars get their own durable store: a set avatar must not vanish from the rolling,
+ *  LRU-evicted upload cache, so it's stored in a separate directory that is never evicted
+ *  (bounded instead by deleting a user's previous avatar when they change it — see hub). */
+export const AVATAR_ROUTE = '/avatars/';
+/** Endpoint that accepts a raw avatar image and returns its durable hosted URL. */
+export const AVATAR_ENDPOINT = '/avatar';
+
 /**
  * Accepted image content types → file extension. SVG is intentionally excluded:
  * we host uploads on our own origin, and an SVG can carry script that would run
@@ -150,18 +157,29 @@ function bearerToken(req: IncomingMessage): string | undefined {
   return auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
 }
 
+/** Where + how a POSTed image is stored. Chat uploads use the rolling, evicted cache;
+ *  avatars use a durable, never-evicted store with a smaller cap. */
+interface StoreOptions {
+  dir: string;
+  cap: number;
+  route: string;
+  /** Evict the oldest files to stay under `cacheBytes` before writing (chat uploads only). */
+  cacheBytes?: number;
+  kind: string;
+}
+
 /**
- * Handle `POST /upload`: authenticate, validate, evict-to-fit, store, return
- * `{ url }`. `authorize` gates the write to a live WS session (the per-session
- * resume token presented as `Authorization: Bearer …`), so anonymous clients
- * can't store files or churn the cache.
+ * Authenticate, validate, (optionally evict-to-fit,) store, and return `{ url }`.
+ * `authorize` gates the write to a live WS session (the per-session resume token presented
+ * as `Authorization: Bearer …`), so anonymous clients can't store files or churn the cache.
+ * Shared by chat uploads (`/upload`) and avatars (`/avatar`).
  */
-export async function handleUpload(
+async function storeImage(
   req: IncomingMessage,
   res: ServerResponse,
-  cfg: ServerConfig,
   log: Logger,
   authorize: (token: string | undefined) => boolean,
+  opts: StoreOptions,
 ): Promise<void> {
   if (req.method !== 'POST') {
     send(res, 405, 'Method not allowed');
@@ -182,14 +200,14 @@ export async function handleUpload(
 
   let body: Buffer | null;
   try {
-    body = await readCappedBody(req, cfg.maxUploadBytes);
+    body = await readCappedBody(req, opts.cap);
   } catch (err) {
-    log.warn({ err }, 'upload read failed');
+    log.warn({ err, kind: opts.kind }, 'upload read failed');
     send(res, 400, 'Upload failed');
     return;
   }
   if (body === null) {
-    send(res, 413, `File exceeds ${Math.round(cfg.maxUploadBytes / 1024 / 1024)} MB limit`);
+    send(res, 413, `File exceeds ${Math.round(opts.cap / 1024 / 1024)} MB limit`);
     return;
   }
   if (body.length === 0) {
@@ -204,35 +222,83 @@ export async function handleUpload(
 
   const name = `${randomBytes(16).toString('hex')}.${ext}`;
   try {
-    await mkdir(cfg.uploadDir, { recursive: true });
-    await evictToFit(cfg.uploadDir, cfg.maxCacheBytes, body.length, log);
-    await writeFile(join(cfg.uploadDir, name), body);
+    await mkdir(opts.dir, { recursive: true });
+    if (opts.cacheBytes !== undefined) {
+      await evictToFit(opts.dir, opts.cacheBytes, body.length, log);
+    }
+    await writeFile(join(opts.dir, name), body);
   } catch (err) {
-    log.error({ err, dir: cfg.uploadDir }, 'upload store failed');
+    log.error({ err, dir: opts.dir, kind: opts.kind }, 'upload store failed');
     send(res, 500, 'Could not store upload');
     return;
   }
 
-  const url = `${UPLOAD_ROUTE}${name}`;
-  log.info({ name, bytes: body.length }, 'stored upload');
+  const url = `${opts.route}${name}`;
+  log.info({ name, bytes: body.length, kind: opts.kind }, 'stored upload');
   send(res, 200, JSON.stringify({ url }), 'application/json');
 }
 
-/** Handle `GET /uploads/<name>`: stream a stored file back, safely. */
-export async function serveUpload(
+/** Handle `POST /upload`: a chat image, stored in the rolling (LRU-evicted) cache. */
+export function handleUpload(
   req: IncomingMessage,
   res: ServerResponse,
   cfg: ServerConfig,
+  log: Logger,
+  authorize: (token: string | undefined) => boolean,
 ): Promise<void> {
-  const name = decodeURIComponent(
-    (req.url ?? '').slice(UPLOAD_ROUTE.length).split(/[?#]/)[0] ?? '',
-  );
+  return storeImage(req, res, log, authorize, {
+    dir: cfg.uploadDir,
+    cap: cfg.maxUploadBytes,
+    route: UPLOAD_ROUTE,
+    cacheBytes: cfg.maxCacheBytes,
+    kind: 'upload',
+  });
+}
+
+/** Handle `POST /avatar`: an avatar image, stored durably (never evicted, smaller cap). */
+export function handleAvatarUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+  log: Logger,
+  authorize: (token: string | undefined) => boolean,
+): Promise<void> {
+  return storeImage(req, res, log, authorize, {
+    dir: cfg.avatarDir,
+    cap: cfg.maxAvatarBytes,
+    route: AVATAR_ROUTE,
+    kind: 'avatar',
+  });
+}
+
+/** Best-effort delete of a stored avatar file, given its `/avatars/<name>` URL — called
+ *  when a user replaces or clears their avatar so the durable store keeps ~one file per
+ *  user. Ignores anything that isn't one of our own avatar paths. */
+export async function deleteAvatar(cfg: ServerConfig, url: string, log: Logger): Promise<void> {
+  const name = url.startsWith(AVATAR_ROUTE) ? url.slice(AVATAR_ROUTE.length).split(/[?#]/)[0] : '';
+  if (!name || !SAFE_NAME_RE.test(name)) return;
+  try {
+    await unlink(join(cfg.avatarDir, name));
+    log.debug({ name }, 'deleted replaced avatar');
+  } catch {
+    /* already gone; ignore */
+  }
+}
+
+/** Stream a stored image back, safely — shared by `/uploads/` and `/avatars/`. */
+async function serveStored(
+  req: IncomingMessage,
+  res: ServerResponse,
+  dir: string,
+  route: string,
+): Promise<void> {
+  const name = decodeURIComponent((req.url ?? '').slice(route.length).split(/[?#]/)[0] ?? '');
   if (!SAFE_NAME_RE.test(name)) {
     send(res, 404, 'Not found');
     return;
   }
   const ext = name.slice(name.lastIndexOf('.') + 1);
-  const file = join(cfg.uploadDir, name);
+  const file = join(dir, name);
   try {
     const s = await stat(file);
     if (!s.isFile()) {
@@ -255,4 +321,22 @@ export async function serveUpload(
   } catch {
     send(res, 404, 'Not found');
   }
+}
+
+/** Handle `GET /uploads/<name>`: stream a stored chat image. */
+export function serveUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+): Promise<void> {
+  return serveStored(req, res, cfg.uploadDir, UPLOAD_ROUTE);
+}
+
+/** Handle `GET /avatars/<name>`: stream a stored avatar. */
+export function serveAvatar(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+): Promise<void> {
+  return serveStored(req, res, cfg.avatarDir, AVATAR_ROUTE);
 }

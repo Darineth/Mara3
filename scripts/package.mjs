@@ -123,6 +123,10 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_MAX_UPLOAD_MB=10       # per-file cap
 #MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)
 
+# --- Avatars (durable, never evicted; downscaled client-side before upload) ---
+#MARA_MAX_AVATAR_MB=2        # per-avatar cap
+#MARA_AVATAR_DIR=D:\\Mara3-Data\\avatars
+
 # --- Custom emoji ---
 # Drop image files (png/jpg/gif/webp/avif/bmp) into this folder; each file's name
 # becomes its :shortcode: (e.g. blobwave.png -> :blobwave:). Served at /emoji/ and

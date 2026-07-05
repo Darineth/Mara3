@@ -13,6 +13,9 @@ export type MessageStyle = 'mara' | 'discord';
 export interface MaraSettings {
   name: string;
   color: string;
+  /** Hosted avatar path (`/avatars/…`), or `''` for none. Others-visible → the server owns
+   *  it; this is just the optimistic cache (kept in step via the `userProfile` broadcast). */
+  avatar: string;
   /** Dark/light theme (or follow the OS). */
   theme: Theme;
   /** Quick-text macros, indexed 0–11 for F1–F12. */
@@ -36,6 +39,9 @@ export interface MaraSettings {
   autoRefresh: boolean;
   /** How chat messages are laid out (see {@link MessageStyle}). */
   messageStyle: MessageStyle;
+  /** Show user avatars (in the user list and messages). Local display preference; off falls
+   *  back to names only (no avatar images or monograms). */
+  showAvatars: boolean;
 }
 
 const KEY = 'mara3.settings';
@@ -110,6 +116,7 @@ export function serverUrl(): string {
 export const defaultSettings: MaraSettings = {
   name: '',
   color: '#7aa2f7',
+  avatar: '',
   theme: 'system',
   macros: defaultMacros(),
   identityKey: '',
@@ -118,6 +125,7 @@ export const defaultSettings: MaraSettings = {
   pmsInWindows: false,
   autoRefresh: true,
   messageStyle: 'mara',
+  showAvatars: true,
 };
 
 /** Clamp a stored value to a known message style (defaulting to 'mara'), so an old or

@@ -8,4 +8,10 @@ export {
   DEFAULT_EMOTICONS,
   type RenderTextOptions,
 } from './text.js';
-export { renderLine, type LineModel, type LineKind, type RenderLineOptions } from './render.js';
+export {
+  renderLine,
+  monogramInitial,
+  type LineModel,
+  type LineKind,
+  type RenderLineOptions,
+} from './render.js';

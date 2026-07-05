@@ -15,6 +15,8 @@ export interface LineModel {
   authorName: string;
   /** `#rrggbb`; ignored for system lines. */
   authorColor: string;
+  /** Hosted avatar path (`/avatars/…`), or empty/absent for the monogram fallback. */
+  authorAvatar?: string;
   text: string;
   /** Pre-formatted timestamp string, or omit to render none. */
   timestamp?: string;
@@ -28,6 +30,9 @@ export type RenderLineOptions = RenderTextOptions & {
   /** discord layout only: this chat line continues the previous author's group (same
    *  author, close in time), so drop its `Name  timestamp` header and show just the text. */
   continuation?: boolean;
+  /** Show the author avatar (image or monogram) on chat lines. Defaults to true; false
+   *  renders names only (no avatar column). */
+  avatars?: boolean;
 };
 
 // Leading timestamp span, or empty when the line carries no timestamp. Timestamps
@@ -37,6 +42,33 @@ export type RenderLineOptions = RenderTextOptions & {
 function ts(line: LineModel): string {
   if (!line.timestamp) return '';
   return `<span class="mara-ts">${escapeHtml(line.timestamp)}</span>`;
+}
+
+// Only a hosted path we would have issued is trusted as an avatar `src`; anything else (a
+// hand-set or hostile profile) falls back to the monogram. Belt-and-suspenders with the wire
+// schema — this HTML is author-controlled and injected via {@html}, so the URL is both
+// pattern-validated here and HTML-escaped when interpolated.
+function safeAvatarUrl(avatar: string | undefined): string {
+  if (!avatar) return '';
+  return /^\/(?:avatars|uploads)\/[A-Za-z0-9._-]+(?:\?v=[A-Za-z0-9]+)?$/.test(avatar) ? avatar : '';
+}
+
+/** The character for a monogram avatar fallback: the name's first letter or digit, skipping
+ *  leading punctuation/symbols (so `*VSCodeStar*` → `V`, `@bob` → `B`), uppercased. Falls
+ *  back to `?` when the name has no alphanumeric character. */
+export function monogramInitial(name: string): string {
+  return (name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
+}
+
+// The author's avatar as an <img>, or a monogram fallback: their initial on their colour.
+// `cls` sizes it for the layout (inline for compact, larger for the discord gutter).
+function avatarHtml(line: LineModel, color: string, cls: string): string {
+  const url = safeAvatarUrl(line.authorAvatar);
+  if (url) {
+    return `<img class="mara-avatar ${cls}" src="${escapeHtml(url)}" alt="" loading="lazy" />`;
+  }
+  const initial = escapeHtml(monogramInitial(line.authorName));
+  return `<span class="mara-avatar mara-avatar-mono ${cls}" style="background:${color}" aria-hidden="true">${initial}</span>`;
 }
 
 /**
@@ -56,29 +88,39 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   // The body is a single wrapping column after the timestamp gutter, so wrapped
   // lines align to where the author/message starts (see ChatView's flex layout).
   switch (line.kind) {
-    case 'chat':
-      // discord (cozy): a `Name  timestamp` header, then the text below in the default
-      // colour. A grouped continuation (same author, close in time) drops the header so
-      // only the first message in a run is labelled — like Discord.
+    case 'chat': {
+      const showAv = options.avatars !== false;
+      // discord (cozy): an avatar gutter, then a `Name  timestamp` header with the text
+      // below in the default colour. A grouped continuation (same author, close in time)
+      // drops the avatar + header and shows just the text, indented to line up under them
+      // (or flush left when avatars are off — the `mara-no-av` class zeroes the indent).
       if (options.layout === 'discord') {
-        const head = options.continuation
-          ? ''
-          : `<div class="mara-head"><span class="mara-author" style="color:${color}">${name}</span>${ts(line)}</div>`;
+        if (options.continuation) {
+          return (
+            `<div class="mara-line mara-chat mara-discord mara-cont${showAv ? '' : ' mara-no-av'}">` +
+            `<div class="mara-text">${renderText(line.text, options)}</div>` +
+            `</div>`
+          );
+        }
         return (
-          `<div class="mara-line mara-chat mara-discord${options.continuation ? ' mara-cont' : ''}">` +
-          head +
+          `<div class="mara-line mara-chat mara-discord">` +
+          (showAv ? avatarHtml(line, color, 'mara-avatar-lg') : '') +
+          `<div class="mara-discord-main">` +
+          `<div class="mara-head"><span class="mara-author" style="color:${color}">${name}</span>${ts(line)}</div>` +
           `<div class="mara-text">${renderText(line.text, options)}</div>` +
-          `</div>`
+          `</div></div>`
         );
       }
-      // mara (compact): timestamp gutter, then the whole `name: body` in the author colour.
+      // mara (compact): timestamp gutter, a small inline avatar, then `name: body` in colour.
       return (
         `<div class="mara-line mara-chat">${ts(line)}` +
         `<span class="mara-body" style="color:${color}">` +
+        (showAv ? avatarHtml(line, color, 'mara-avatar-inline') : '') +
         `<span class="mara-author">${name}:</span> ` +
         `<span class="mara-text">${renderText(line.text, options)}</span>` +
         `</span></div>`
       );
+    }
     case 'emote':
       return (
         `<div class="mara-line mara-emote">${ts(line)}` +

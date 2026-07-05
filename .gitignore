@@ -15,6 +15,9 @@ references/
 # Runtime upload cache (server-local image hosting)
 apps/server/uploads/
 
+# Durable avatar store (server-local)
+apps/server/avatars/
+
 # Persisted message history (server-local)
 apps/server/data/
 

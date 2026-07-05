@@ -22,6 +22,8 @@ export interface ServerConfig {
   defaultChannel: string;
   /** Directory where uploaded images are cached and served from. */
   uploadDir: string;
+  /** Directory where user avatars are stored durably (never evicted) and served from. */
+  avatarDir: string;
   /** Directory of custom emoji images the operator provides; each file's name (sans
    *  extension) is its `:shortcode:`. Scanned on demand and served at `/emoji/`. */
   emojiDir: string;
@@ -29,6 +31,9 @@ export interface ServerConfig {
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
   maxCacheBytes: number;
+  /** Maximum size of a single avatar image, in bytes (avatars are downscaled client-side,
+   *  so this is a small safety cap, not a UI limit). */
+  maxAvatarBytes: number;
   /** Messages retained per channel (persisted, and the deepest a client can page back). */
   historyLimit: number;
   /** Messages sent on join, and per "load older" page as the user scrolls up. */
@@ -136,6 +141,7 @@ const DEFAULTS = {
   defaultChannel: 'Main',
   maxUploadMb: 10,
   maxCacheMb: 512,
+  maxAvatarMb: 2,
   historyLimit: 1000,
   historyChunk: 50,
   msgRate: 15,
@@ -230,9 +236,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,
     defaultChannel: (env.MARA_DEFAULT_CHANNEL ?? DEFAULTS.defaultChannel).trim(),
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
+    avatarDir: env.MARA_AVATAR_DIR?.trim() || join(base, 'avatars'),
     emojiDir: env.MARA_EMOJI_DIR?.trim() || join(base, 'emoji'),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
+    maxAvatarBytes: mb(env.MARA_MAX_AVATAR_MB, DEFAULTS.maxAvatarMb),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
     historyChunk: Math.max(1, num(env.MARA_HISTORY_CHUNK, DEFAULTS.historyChunk)),
     msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),

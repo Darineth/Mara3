@@ -2,15 +2,17 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { colorSchema, type Token } from '@mara/protocol';
+import { avatarSchema, colorSchema, type Token } from '@mara/protocol';
 import type { Logger } from './logger.js';
 
 /** The parts of a user's presence that are *visible to others* — so they belong to
  *  the identity, not the device, and follow it across clients. Local-only settings
- *  (theme, macros, …) stay on each client. Both fields travel together. */
+ *  (theme, macros, …) stay on each client. These fields travel together. */
 export interface IdentityProfile {
   name: string;
   color: string;
+  /** Hosted avatar path (`/avatars/…`), or `''` for none. */
+  avatar: string;
 }
 
 /** What we persist per identity: the stable token, plus the shared profile once set. */
@@ -19,11 +21,13 @@ interface IdentityRecord {
   profile?: IdentityProfile;
 }
 
-/** A stored name is bounded like the wire's; a bad hand-edit is ignored, not fatal. */
-function validProfile(name: unknown, color: unknown): IdentityProfile | undefined {
+/** A stored name is bounded like the wire's; a bad hand-edit is ignored, not fatal. Avatar
+ *  is optional and forward-compatible: a missing or invalid stored value becomes none. */
+function validProfile(name: unknown, color: unknown, avatar: unknown): IdentityProfile | undefined {
   if (typeof name !== 'string' || name.length < 1 || name.length > 64) return undefined;
   if (!colorSchema.safeParse(color).success) return undefined;
-  return { name, color: color as string };
+  const av = typeof avatar === 'string' && avatarSchema.safeParse(avatar).success ? avatar : '';
+  return { name, color: color as string, avatar: av };
 }
 
 /**
@@ -80,7 +84,7 @@ export class IdentityStore {
   setProfile(token: Token, profile: IdentityProfile): void {
     const record = this.byToken.get(token);
     if (!record) return;
-    record.profile = { name: profile.name, color: profile.color };
+    record.profile = { name: profile.name, color: profile.color, avatar: profile.avatar };
     this.schedule();
   }
 
@@ -103,9 +107,14 @@ export class IdentityStore {
         if (typeof value === 'number') {
           this.register(h, { token: value });
         } else if (value && typeof value === 'object') {
-          const v = value as { token?: unknown; name?: unknown; color?: unknown };
+          const v = value as {
+            token?: unknown;
+            name?: unknown;
+            color?: unknown;
+            avatar?: unknown;
+          };
           if (typeof v.token === 'number') {
-            this.register(h, { token: v.token, profile: validProfile(v.name, v.color) });
+            this.register(h, { token: v.token, profile: validProfile(v.name, v.color, v.avatar) });
           }
         }
       }
@@ -129,10 +138,17 @@ export class IdentityStore {
   }
 
   private snapshot(): string {
-    const obj: Record<string, { token: Token; name?: string; color?: string }> = {};
+    const obj: Record<string, { token: Token; name?: string; color?: string; avatar?: string }> =
+      {};
     for (const [h, rec] of this.byKey) {
       obj[h] = rec.profile
-        ? { token: rec.token, name: rec.profile.name, color: rec.profile.color }
+        ? {
+            token: rec.token,
+            name: rec.profile.name,
+            color: rec.profile.color,
+            // Only write a non-empty avatar, keeping the file tidy + forward-compatible.
+            ...(rec.profile.avatar ? { avatar: rec.profile.avatar } : {}),
+          }
         : { token: rec.token };
     }
     return JSON.stringify(obj);

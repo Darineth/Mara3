@@ -5,12 +5,15 @@
 -->
 <script lang="ts">
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
+  import { isUploadableImage } from './lib/upload.js';
+  import { monogramInitial } from '@mara/ui';
   import IdentityControls from './IdentityControls.svelte';
 
   let {
     settings,
     onApply,
     onClose,
+    uploadAvatar,
   }: {
     settings: MaraSettings;
     onApply: (next: {
@@ -21,8 +24,12 @@
       pmsInWindows: boolean;
       autoRefresh: boolean;
       messageStyle: MessageStyle;
+      avatar: string;
+      showAvatars: boolean;
     }) => void;
     onClose: () => void;
+    /** Downscale + upload an avatar image, returning its hosted path. */
+    uploadAvatar: (file: File) => Promise<string>;
   } = $props();
 
   // Local working copies, seeded from the current settings (edited then applied on Save).
@@ -40,7 +47,37 @@
   let autoRefresh = $state(settings.autoRefresh);
   // svelte-ignore state_referenced_locally
   let messageStyle = $state<MessageStyle>(settings.messageStyle);
+  // svelte-ignore state_referenced_locally
+  let showAvatars = $state(settings.showAvatars);
+  // svelte-ignore state_referenced_locally
+  let avatar = $state(settings.avatar);
+  let avatarBusy = $state(false);
+  let avatarError = $state('');
+  let fileInput = $state<HTMLInputElement | null>(null);
   let backdrop = $state<HTMLDivElement | null>(null);
+
+  // The initial shown in the monogram fallback when there's no avatar.
+  const initial = $derived(monogramInitial(name));
+
+  async function pickAvatar(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // let the same file be re-picked after a failure
+    if (!file) return;
+    if (!isUploadableImage(file)) {
+      avatarError = 'Please choose a PNG, JPEG, GIF, WebP, AVIF, or BMP image.';
+      return;
+    }
+    avatarError = '';
+    avatarBusy = true;
+    try {
+      avatar = await uploadAvatar(file);
+    } catch (err) {
+      avatarError = err instanceof Error ? err.message : 'Avatar upload failed.';
+    } finally {
+      avatarBusy = false;
+    }
+  }
 
   // Close on backdrop click and Escape (mirrors MacrosDialog).
   $effect(() => {
@@ -69,6 +106,8 @@
       pmsInWindows,
       autoRefresh,
       messageStyle,
+      avatar,
+      showAvatars,
     });
     onClose();
   }
@@ -88,6 +127,43 @@
       <label class="color">
         Color
         <input type="color" bind:value={color} aria-label="Display colour" />
+      </label>
+      <div class="avatar-field">
+        <span class="lbl">Avatar</span>
+        <div class="avatar-row">
+          {#if avatar}
+            <img class="avatar-preview" src={avatar} alt="Your avatar" />
+          {:else}
+            <span class="avatar-preview mono" style="background:{color}" aria-hidden="true"
+              >{initial}</span
+            >
+          {/if}
+          <div class="avatar-actions">
+            <button type="button" onclick={() => fileInput?.click()} disabled={avatarBusy}>
+              {avatarBusy ? 'Uploading…' : avatar ? 'Change' : 'Upload'}
+            </button>
+            {#if avatar}
+              <button type="button" class="link" onclick={() => (avatar = '')} disabled={avatarBusy}
+                >Remove</button
+              >
+            {/if}
+          </div>
+          <input
+            class="hidden-file"
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp"
+            bind:this={fileInput}
+            onchange={pickAvatar}
+          />
+        </div>
+        {#if avatarError}<small class="err">{avatarError}</small>{/if}
+      </div>
+      <label class="check">
+        <input type="checkbox" bind:checked={showAvatars} />
+        <span>
+          Show avatars
+          <small>Show user avatars in the user list and messages. Off shows names only.</small>
+        </span>
       </label>
       <label>
         Theme
@@ -204,6 +280,65 @@
     padding: 0;
     height: 2.4rem;
     width: 3rem;
+  }
+  .avatar-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    opacity: 0.9;
+  }
+  .avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .avatar-preview {
+    flex: none;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--mara-border, #333);
+    background: var(--mara-input-bg, #2a2a2a);
+  }
+  .avatar-preview.mono {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.2rem;
+  }
+  .avatar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .avatar-actions button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+  .avatar-actions .link {
+    border: none;
+    padding: 0.4rem 0.2rem;
+    opacity: 0.7;
+    text-decoration: underline;
+  }
+  .avatar-actions button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .hidden-file {
+    display: none;
+  }
+  .err {
+    color: #f77;
   }
   .check {
     flex-direction: row;

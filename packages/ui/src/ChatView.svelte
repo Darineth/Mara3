@@ -15,6 +15,7 @@
     conversationKey = null,
     emoji = {},
     messageStyle = 'mara',
+    showAvatars = true,
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
@@ -32,6 +33,8 @@
     emoji?: Record<string, string>;
     /** Message layout: 'mara' (compact) or 'discord' (cozy header + grouped runs). */
     messageStyle?: 'mara' | 'discord';
+    /** Show avatars in messages (image or monogram); off shows names only. */
+    showAvatars?: boolean;
   } = $props();
 
   // Known users for `@Name` mention styling (bold in the target's colour + glow) —
@@ -62,6 +65,9 @@
       kind: line.kind,
       authorName: user?.name ?? (line.from !== null ? `#${line.from}` : ''),
       authorColor: user?.color ?? '#888888',
+      // From the live roster, so avatar changes reflect on already-rendered lines; a
+      // departed author (not in the roster) falls back to the monogram.
+      authorAvatar: user?.avatar,
       text: line.text,
       // 2-digit fields keep every timestamp the same character count (the hour is
       // otherwise 1 or 2 digits, which shifts the message after it). The locale's
@@ -249,6 +255,7 @@
         mentions: mentionUsers,
         layout: messageStyle,
         continuation: isContinuation(i),
+        avatars: showAvatars,
       })}
     {/each}
     {#if lines.length === 0}
@@ -305,8 +312,43 @@
   .mara-chatview :global(.mara-author) {
     font-weight: 600;
   }
-  /* discord (cozy) layout: a `Name  timestamp` header with the text below; a grouped run
-     (mara-cont) drops the header and tucks up under the first message. */
+  /* Avatars: round; either an <img> or a coloured-initial monogram fallback. Sized in rem
+     so they don't scale with the message font (a fixed, tidy avatar column). */
+  .mara-chatview :global(.mara-avatar) {
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--mara-border, #333);
+    vertical-align: middle;
+  }
+  .mara-chatview :global(.mara-avatar-mono) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    overflow: hidden;
+  }
+  .mara-chatview :global(.mara-avatar-inline) {
+    width: 1.2rem;
+    height: 1.2rem;
+    margin-right: 0.35rem;
+    font-size: 0.72rem;
+    /* `vertical-align: middle` centers on the text's x-height, which leaves the (taller)
+       avatar sitting ~0.15rem low; nudge it up so its center matches the line box, i.e. it
+       reads as centered on the name + first line of text. Preserves inline flow, so it stays
+       on the first line when a long message wraps. */
+    position: relative;
+    top: -0.15rem;
+  }
+  .mara-chatview :global(.mara-avatar-lg) {
+    width: 2.4rem;
+    height: 2.4rem;
+    margin-top: 0.1rem;
+    font-size: 1rem;
+  }
+  /* discord (cozy) layout: an avatar gutter, then a `Name  timestamp` header with the text
+     below. A grouped run (mara-cont) drops the avatar+header and indents up under them. */
   .mara-chatview :global(.mara-line.mara-discord) {
     display: block;
     /* Breathing room between consecutive messages in a run — more than a plain wrapped
@@ -314,7 +356,16 @@
     margin: 0.22rem 0 0;
   }
   .mara-chatview :global(.mara-line.mara-discord:not(.mara-cont)) {
+    display: flex;
+    /* Top-align so the avatar sits beside the name + first line of text (not floating to the
+       middle of a long message); avatar-lg's small margin-top centers it on those two rows. */
+    align-items: flex-start;
+    gap: 0.6rem;
     margin-top: 0.6rem;
+  }
+  .mara-chatview :global(.mara-discord-main) {
+    flex: 1;
+    min-width: 0;
   }
   .mara-chatview :global(.mara-discord .mara-head) {
     display: flex;
@@ -330,6 +381,14 @@
     display: block;
     white-space: pre-wrap;
     overflow-wrap: break-word;
+  }
+  /* Continuation lines align under the header (avatar width 2.4rem + 0.6rem gap); with
+     avatars off there's no gutter, so they sit flush left. */
+  .mara-chatview :global(.mara-discord.mara-cont .mara-text) {
+    padding-left: 3rem;
+  }
+  .mara-chatview :global(.mara-discord.mara-cont.mara-no-av .mara-text) {
+    padding-left: 0;
   }
   .mara-chatview :global(.mara-system) {
     opacity: 0.6;

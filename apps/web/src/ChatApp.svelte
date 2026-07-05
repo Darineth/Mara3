@@ -32,7 +32,7 @@
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
-  import { uploadImage } from './lib/upload.js';
+  import { uploadAvatar, uploadImage } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
   import FormattingHelp from './FormattingHelp.svelte';
   import OptionsDialog from './OptionsDialog.svelte';
@@ -388,7 +388,7 @@
   // adopt whatever it hands back — a name dedupe, another client's edit to this shared
   // identity, or the profile a fresh device inherits on login — into local settings, so
   // this device stays in step (and the options/login fields show the real values).
-  function syncProfile(name?: string, color?: string) {
+  function syncProfile(name?: string, color?: string, avatar?: string) {
     let changed = false;
     if (name && name !== settings.name) {
       settings.name = name;
@@ -396,6 +396,11 @@
     }
     if (color && color !== settings.color) {
       settings.color = color;
+      changed = true;
+    }
+    // Avatar can be cleared, so compare against undefined (not falsy) — '' is a real value.
+    if (avatar !== undefined && avatar !== settings.avatar) {
+      settings.avatar = avatar;
       changed = true;
     }
     if (changed) persist();
@@ -409,11 +414,12 @@
       // Reconcile local settings with the server-owned identity profile: on login the
       // canonical name arrives via `connected` (colour rides in the roster), and any
       // later change to this identity — here or on another client — via `userProfile`.
-      client.events.on('connected', ({ token, name }) =>
-        syncProfile(name, get(users).get(token)?.color),
-      ),
+      client.events.on('connected', ({ token, name }) => {
+        const u = get(users).get(token);
+        syncProfile(name, u?.color, u?.avatar);
+      }),
       client.events.on('userProfile', (u) => {
-        if (u.token === get(self)?.token) syncProfile(u.name, u.color);
+        if (u.token === get(self)?.token) syncProfile(u.name, u.color, u.avatar);
       }),
       client.events.on('channelJoined', (ch) => {
         // Focus the channel when the user deliberately joined it (via +) or when it's
@@ -829,14 +835,19 @@
     pmsInWindows: boolean;
     autoRefresh: boolean;
     messageStyle: MessageStyle;
+    avatar: string;
+    showAvatars: boolean;
   }) {
     const newName = next.name.trim();
-    const update: { name?: string; color?: string } = {};
+    const update: { name?: string; color?: string; avatar?: string } = {};
     if (newName && newName !== settings.name) update.name = newName;
     if (next.color !== settings.color) update.color = next.color;
-    if (update.name || update.color) client.setProfile(update);
+    // Avatar can be cleared to '', so send it whenever it differs (server broadcasts back).
+    if (next.avatar !== settings.avatar) update.avatar = next.avatar;
+    if (update.name || update.color || update.avatar !== undefined) client.setProfile(update);
     if (newName) settings.name = newName;
     settings.color = next.color;
+    settings.avatar = next.avatar;
     settings.theme = next.theme;
     // Turning PM history off forgets what this device already stored, not just
     // future writes — that's what a user unchecking a privacy option expects.
@@ -845,6 +856,7 @@
     settings.pmsInWindows = next.pmsInWindows;
     settings.autoRefresh = next.autoRefresh;
     settings.messageStyle = next.messageStyle;
+    settings.showAvatars = next.showAvatars;
     persist();
   }
 
@@ -1164,6 +1176,7 @@
           conversationKey={activeKey}
           emoji={$emoji}
           messageStyle={settings.messageStyle}
+          showAvatars={settings.showAvatars}
           hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
           onLoadOlder={() => {
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);
@@ -1173,6 +1186,7 @@
           <UserList
             users={membersOf(activeChannel)}
             selfToken={$self?.token ?? null}
+            showAvatars={settings.showAvatars}
             onselect={openPm}
           />
         {/if}
@@ -1204,6 +1218,7 @@
       <UserList
         users={membersOf(activeChannel)}
         selfToken={$self?.token ?? null}
+        showAvatars={settings.showAvatars}
         onselect={(u) => ((usersDrawerOpen = false), openPm(u))}
       />
     </aside>
@@ -1225,7 +1240,12 @@
 {/if}
 
 {#if showOptions}
-  <OptionsDialog {settings} onApply={applyOptions} onClose={() => (showOptions = false)} />
+  <OptionsDialog
+    {settings}
+    onApply={applyOptions}
+    onClose={() => (showOptions = false)}
+    uploadAvatar={(file) => uploadAvatar(file, client.sessionToken)}
+  />
 {/if}
 
 <!-- Single shared lightbox for chat images and attachment tiles. -->

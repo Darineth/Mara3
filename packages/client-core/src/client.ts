@@ -145,7 +145,13 @@ export class MaraClient {
           convo.peer,
           convo.lines.slice(-this.historyLimit).map((l) => ({ ...l, id: ++this.lineSeq })),
         );
-        dir.set(convo.peer, { token: convo.peer, name: convo.name, color: convo.color, away: '' });
+        dir.set(convo.peer, {
+          token: convo.peer,
+          name: convo.name,
+          color: convo.color,
+          avatar: '',
+          away: '',
+        });
       }
       this._privateMessages.set(pms);
       this._directory.set(dir);
@@ -215,7 +221,7 @@ export class MaraClient {
    * on a clash and broadcasts the result to everyone (including us) as `userProfile`,
    * so our own `self`/roster reflect the actual applied name. Pass only what changed.
    */
-  setProfile(update: { name?: string; color?: Color }): void {
+  setProfile(update: { name?: string; color?: Color; avatar?: string }): void {
     this.send({ type: 'setProfile', ...update });
   }
 
@@ -727,7 +733,7 @@ export class MaraClient {
       for (const e of history) {
         if (map.has(e.from) || next?.has(e.from)) continue;
         next ??= new Map(map);
-        next.set(e.from, { token: e.from, name: e.name, color: e.color, away: '' });
+        next.set(e.from, { token: e.from, name: e.name, color: e.color, avatar: '', away: '' });
       }
       return next ?? map;
     });

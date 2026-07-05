@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { chatTextSchema, colorSchema, tokenSchema, userInfoSchema } from './primitives.js';
+import {
+  avatarSchema,
+  chatTextSchema,
+  colorSchema,
+  tokenSchema,
+  userInfoSchema,
+} from './primitives.js';
 
 /**
  * The Mara message set. Split by direction into two discriminated unions so each
@@ -73,6 +79,8 @@ const clientSetProfile = z.object({
   name: z.string().min(1).max(64).optional(),
   /** New display colour. Omit to leave unchanged. */
   color: colorSchema.optional(),
+  /** New avatar path (`''` clears it). Omit to leave unchanged. */
+  avatar: avatarSchema.optional(),
 });
 
 const ping = z.object({

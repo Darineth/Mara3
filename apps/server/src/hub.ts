@@ -17,6 +17,7 @@ import { IdentityStore, type IdentityProfile } from './identity.js';
 import type { Logger } from './logger.js';
 import { ServerState, type Session } from './state.js';
 import { makeSessionToken } from './tokens.js';
+import { deleteAvatar } from './uploads.js';
 import { getServerInfo } from './version.js';
 
 /**
@@ -357,7 +358,9 @@ export class Hub {
     // live clash with a *different* user (that dedupe isn't persisted below).
     const name = this.uniqueName(profile?.name ?? msg.name);
     const color = profile?.color ?? msg.color;
-    const info: UserInfo = { token, name, color, away: '' };
+    // Avatar is others-visible → identity-owned; login carries none, so it comes only from
+    // the stored profile (set in-session via setProfile).
+    const info: UserInfo = { token, name, color, avatar: profile?.avatar ?? '', away: '' };
     const session: Session = {
       info,
       connections: new Set([conn]),
@@ -366,8 +369,8 @@ export class Hub {
     };
     this.state.addSession(session);
     // Seed the identity's profile on first sight (no-op for an anonymous, unbound token),
-    // so this name/colour follows it to its next client.
-    if (!profile) this.identity.setProfile(token, { name, color });
+    // so this name/colour follows it to its next client. No avatar at login.
+    if (!profile) this.identity.setProfile(token, { name, color, avatar: '' });
     this.log.info({ user: name, token }, 'logged in');
 
     conn.send({
@@ -563,13 +566,22 @@ export class Hub {
         changed = true;
       }
     }
+    // Avatar (already schema-validated to a hosted path or ''). Replacing or clearing it
+    // frees the previous avatar file so the durable store keeps ~one per user.
+    if (msg.avatar !== undefined && msg.avatar !== session.info.avatar) {
+      const previous = session.info.avatar;
+      session.info.avatar = msg.avatar;
+      changed = true;
+      if (previous) void deleteAvatar(this.cfg, previous, this.log);
+    }
     if (changed) {
       this.broadcastAll({ type: 'userProfile', user: session.info });
-      // Persist the new name/colour to the identity so it sticks across restarts and
-      // follows the user to other clients (no-op for an anonymous token).
+      // Persist the new profile to the identity so it sticks across restarts and follows
+      // the user to other clients (no-op for an anonymous token).
       this.identity.setProfile(session.info.token, {
         name: session.info.name,
         color: session.info.color,
+        avatar: session.info.avatar,
       });
     }
   }

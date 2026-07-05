@@ -16,25 +16,28 @@ export function isUploadableImage(file: File): boolean {
 }
 
 /**
- * POST an image file to the server and return its hosted path. The path is
- * left *relative* (e.g. `/uploads/<id>.png`) on purpose: it travels in the chat
- * message and each client resolves it against the page base it loaded from, so
- * the image loads correctly regardless of how a given client reaches the server
- * (localhost vs machine name vs proxy vs a subpath). A baked-in absolute URL would
- * force the uploader's hostname onto everyone else and break cross-machine viewing.
- *
- * The endpoint itself is requested relative to the document base (`upload`, no
- * leading slash) so it survives a subpath deployment like `https://host/mara/`.
+ * POST an image body to `endpoint` and return its hosted path. The path is left
+ * *relative* (e.g. `/uploads/<id>.png`) on purpose: it travels in a chat message or a
+ * profile and each client resolves it against the page base it loaded from, so the image
+ * loads correctly regardless of how a given client reaches the server (localhost vs machine
+ * name vs proxy vs a subpath). A baked-in absolute URL would force the uploader's hostname
+ * onto everyone else. The endpoint is requested relative to the document base (no leading
+ * slash) so it survives a subpath deployment like `https://host/mara/`.
  */
-export async function uploadImage(file: File, token: string | null): Promise<string> {
-  const res = await fetch(new URL('upload', document.baseURI), {
+async function postImage(
+  endpoint: string,
+  body: BodyInit,
+  contentType: string,
+  token: string | null,
+): Promise<string> {
+  const res = await fetch(new URL(endpoint, document.baseURI), {
     method: 'POST',
     headers: {
-      'content-type': file.type,
+      'content-type': contentType,
       // Authenticate the write against our live WS session.
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: file,
+    body,
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -42,4 +45,41 @@ export async function uploadImage(file: File, token: string | null): Promise<str
   }
   const { url } = (await res.json()) as { url: string };
   return url;
+}
+
+/** POST a chat image to `/upload` (rolling cache) and return its hosted path. */
+export function uploadImage(file: File, token: string | null): Promise<string> {
+  return postImage('upload', file, file.type, token);
+}
+
+/**
+ * Downscale an image to a centered `size`×`size` PNG so avatars stay light — they load in
+ * every message header, so a multi-MB original would be wasteful. Crops to a square (matching
+ * the round display) and re-encodes; animation (GIF) collapses to its first frame.
+ */
+export async function downscaleToSquare(file: File, size = 256): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const sx = (bitmap.width - side) / 2;
+  const sy = (bitmap.height - side) / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not process the image');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+  bitmap.close?.();
+  return new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Could not process the image'))),
+      'image/png',
+    ),
+  );
+}
+
+/** Downscale + POST an avatar to the durable `/avatar` endpoint; returns its hosted path. */
+export async function uploadAvatar(file: File, token: string | null): Promise<string> {
+  const blob = await downscaleToSquare(file, 256);
+  return postImage('avatar', blob, blob.type, token);
 }
