@@ -259,8 +259,10 @@ export function applyMarkdown(input: string): string {
  * line markers are checked on the ESCAPED text, so `>` arrives as `&gt;`.
  *
  * Output joins plain lines with `\n` (the view renders them via `white-space: pre-wrap`),
- * but emits block elements with no surrounding `\n` so they don't gain an extra blank
- * line on top of their own block break.
+ * but emits block elements with no surrounding `\n` so they don't gain an extra blank line
+ * on top of their own block break. Blank source lines become a paragraph gap between plain
+ * text, but are absorbed next to a block element (whose own margin already separates it) —
+ * so a blank line after a heading is largely ignored rather than doubling the space.
  */
 export function applyBlocks(input: string): string {
   const lines = input.split('\n');
@@ -354,19 +356,36 @@ export function applyBlocks(input: string): string {
     i++;
   }
 
-  let out = '';
-  for (let k = 0; k < pieces.length; k++) {
-    const piece = pieces[k];
-    if (!piece) continue;
-    const prev = pieces[k - 1];
-    if (k > 0 && prev) {
-      const prevBlank = !prev.block && prev.html === '';
-      const pieceBlank = !piece.block && piece.html === '';
-      // A newline between two plain lines, or whenever a blank source line is involved
-      // (so explicit blank lines show as a gap even beside block elements). Two adjacent
-      // non-blank block elements rely on their CSS margins and get no extra newline.
-      if ((!piece.block && !prev.block) || prevBlank || pieceBlank) out += '\n';
+  // Absorb blank source lines that sit against a block element. A maximal run of blank
+  // lines is dropped when the piece just before OR just after it is a block (heading, list,
+  // quote, subtext): that block already carries its own top/bottom margin, so an extra blank
+  // line on top of it just doubles the gap. Blank runs BETWEEN plain text are kept — that's
+  // how a message shows a paragraph break.
+  const isBlank = (p: { block: boolean; html: string } | undefined): boolean =>
+    !!p && !p.block && p.html === '';
+  const drop = new Array<boolean>(pieces.length).fill(false);
+  for (let a = 0; a < pieces.length; ) {
+    if (!isBlank(pieces[a])) {
+      a++;
+      continue;
     }
+    let b = a;
+    while (b < pieces.length && isBlank(pieces[b])) b++;
+    if (pieces[a - 1]?.block || pieces[b]?.block) for (let x = a; x < b; x++) drop[x] = true;
+    a = b;
+  }
+  const kept = pieces.filter((_, idx) => !drop[idx]);
+
+  // Join with a newline only between two plain (non-block) pieces — consecutive text lines,
+  // or a text line and a kept blank line (which is what renders the paragraph gap under
+  // `white-space: pre-wrap`). Block elements need no separating newline on either side; their
+  // CSS margins do the spacing, and an added newline would stack an extra blank line on top.
+  let out = '';
+  for (let k = 0; k < kept.length; k++) {
+    const piece = kept[k];
+    if (!piece) continue;
+    const prev = kept[k - 1];
+    if (k > 0 && prev && !prev.block && !piece.block) out += '\n';
     out += piece.html;
   }
   return out;

@@ -466,9 +466,10 @@ describe('renderText — Discord block markdown', () => {
   });
 
   it('ends a list at a blank or non-indented line, not at a wrap', () => {
-    // Blank line ends the list; the following non-indented text is its own plain line.
+    // Blank line ends the list; the following non-indented text is its own plain line, and the
+    // blank next to the list block is absorbed (the list's own margin separates them).
     expect(renderText('- a\n  wrapped\n\nafter')).toBe(
-      '<ul class="mara-list"><li>a wrapped</li></ul>\n\nafter',
+      '<ul class="mara-list"><li>a wrapped</li></ul>after',
     );
   });
 
@@ -479,9 +480,22 @@ describe('renderText — Discord block markdown', () => {
     expect(renderText('a\nb')).toBe('a\nb');
   });
 
-  it('preserves a blank line between two blocks as a gap', () => {
+  it('keeps a blank line as a gap between plain paragraphs', () => {
+    expect(renderText('para one\n\npara two')).toBe('para one\n\npara two');
+    // Several blank lines widen the gap (each kept between plain text).
+    expect(renderText('a\n\n\nb')).toBe('a\n\n\nb');
+  });
+
+  it('absorbs blank lines adjacent to a block (heading margin already separates)', () => {
+    // Blank AFTER a heading is ignored — the heading's own bottom margin does the spacing.
+    expect(renderText('# H\n\ntext')).toBe('<div class="mara-h1">H</div>text');
+    // ...as is a blank BEFORE a heading (its top margin sets it off from what precedes).
+    expect(renderText('text\n\n# H')).toBe('text<div class="mara-h1">H</div>');
+    // A run of several blanks against a block is fully absorbed, not just one.
+    expect(renderText('# H\n\n\n\ntext')).toBe('<div class="mara-h1">H</div>text');
+    // Between two blocks: no gap either — each carries its own margin.
     expect(renderText('# H\n\n- a')).toBe(
-      '<div class="mara-h1">H</div>\n\n<ul class="mara-list"><li>a</li></ul>',
+      '<div class="mara-h1">H</div><ul class="mara-list"><li>a</li></ul>',
     );
   });
 
