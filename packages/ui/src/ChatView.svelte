@@ -5,6 +5,7 @@
   import { renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
   import { openLightbox } from './lightbox.js';
+  import { freezeAnimatedImages } from './freezeAnimated.js';
 
   let {
     lines = [],
@@ -227,6 +228,15 @@
     };
     el.addEventListener('click', onClick);
     return () => el.removeEventListener('click', onClick);
+  });
+
+  // Animated emoji / GIFs play for a few seconds then freeze (hover to replay), so a busy
+  // channel doesn't loop forever. Operates on the rendered images and tracks new messages via a
+  // MutationObserver; set up once on the content element.
+  $effect(() => {
+    const el = content;
+    if (!el) return;
+    return freezeAnimatedImages(el);
   });
 
   // Reconcile collapsed state onto the DOM after each render (the {@html} blocks
