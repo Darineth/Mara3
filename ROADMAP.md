@@ -57,9 +57,12 @@ notifications today.
       image URLs/uploads but not regular-link previews).
 - [ ] **Pinned messages** — pin/unpin per channel, with a pinned view.
 - [ ] **Typing indicators** — transient "X is typing…" per conversation.
-- [x] **Custom emoji** — server-hosted `:shortcode:` image emoji (the operator drops
-      files in an emoji folder), with a composer picker and `:`-autocomplete; animated
-      GIFs render. A GIF _picker_ (Giphy-style search) could still follow.
+- [x] **Custom emoji** — server-hosted `:shortcode:` image emoji (operators drop files in an
+      emoji folder; users can also add their own in-app), with a composer picker and
+      `:`-autocomplete; animated GIF/WebP/APNG render. Follow-ups: a GIF _picker_ (Giphy-style
+      search), and **downscaling animated uploads** — animated files are stored at full size
+      today because the client-side resize can't preserve animation; a proper animated
+      re-encoder (likely server-side) would keep them light.
 
 ## 4. Identity & social (lightweight)
 

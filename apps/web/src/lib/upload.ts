@@ -85,13 +85,35 @@ export async function uploadAvatar(file: File, token: string | null): Promise<st
 }
 
 /**
+ * Whether an image is (or may be) animated. If so it must NOT be re-encoded through a canvas,
+ * which flattens it to a single frame. GIF is treated as animated; an animated WebP sets the
+ * animation flag (0x02) in its VP8X header; an APNG carries an `acTL` chunk before its frames.
+ * JPEG/BMP/AVIF are treated as static (animated AVIF is rare and not cheaply sniffable).
+ */
+async function isAnimatedImage(file: File): Promise<boolean> {
+  if (file.type === 'image/gif') return true;
+  if (file.type !== 'image/webp' && file.type !== 'image/png') return false;
+  const bytes = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  const at = (off: number, ascii: string) =>
+    [...ascii].every((c, i) => bytes[off + i] === c.charCodeAt(0));
+  if (file.type === 'image/webp') {
+    // "RIFF"<u32 size>"WEBP" then chunks; an extended file has "VP8X" at offset 12 and a flags
+    // byte at offset 20 whose 0x02 bit marks animation. A plain VP8/VP8L WebP is single-frame.
+    return at(12, 'VP8X') && ((bytes[20] ?? 0) & 0x02) !== 0;
+  }
+  // APNG: an `acTL` control chunk (absent from a plain PNG) precedes the animation frames.
+  for (let i = 8; i + 4 <= bytes.length; i++) if (at(i, 'acTL')) return true;
+  return false;
+}
+
+/**
  * Downscale an image to fit within `max`×`max` (aspect preserved, never upscaled) and
  * re-encode as PNG — for custom emoji, which show inline in messages so they must stay small
- * and light. Returns the original bytes unchanged for a GIF (a canvas would flatten its
- * animation to the first frame).
+ * and light. Returns the original bytes unchanged for an ANIMATED image (GIF, animated WebP, or
+ * APNG), since a canvas re-encode would flatten it to its first frame.
  */
 export async function downscaleToFit(file: File, max = 128): Promise<Blob> {
-  if (file.type === 'image/gif') return file;
+  if (await isAnimatedImage(file)) return file;
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -113,7 +135,7 @@ export async function downscaleToFit(file: File, max = 128): Promise<Blob> {
 }
 
 /**
- * Downscale (or, for a GIF, keep as-is) + POST a custom-emoji image to the durable
+ * Downscale (or, for an animated image, keep as-is) + POST a custom-emoji image to the durable
  * `/emoji-upload` endpoint; returns its hosted `/emoji/<id>` path. The caller then binds a
  * `:shortcode:` to it via `client.addEmoji`.
  */
