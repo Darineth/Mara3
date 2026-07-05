@@ -234,12 +234,11 @@
     }
   }
 
-  function onPaste(event: ClipboardEvent) {
-    if (!upload || !event.clipboardData) return;
-    const cd = event.clipboardData;
-    // Chromium/WebView2 (Windows) exposes a pasted bitmap via clipboardData.files, but
-    // WebKitGTK (the Linux client's webview) only exposes it via items[].getAsFile() —
-    // so fall back to items when .files has no image, or paste silently does nothing there.
+  // Pull image files out of a clipboard payload. Chromium/WebView2 (Windows) exposes a pasted
+  // bitmap via clipboardData.files, but WebKitGTK (the Linux client's webview) only exposes it
+  // via items[].getAsFile() — so fall back to items when .files has no image, or paste silently
+  // does nothing there.
+  function imagesFromClipboard(cd: DataTransfer): File[] {
     let images = [...cd.files].filter((f) => f.type.startsWith('image/'));
     if (images.length === 0) {
       images = [...cd.items]
@@ -247,11 +246,43 @@
         .map((i) => i.getAsFile())
         .filter((f): f is File => f != null);
     }
+    return images;
+  }
+
+  function onPaste(event: ClipboardEvent) {
+    if (!upload || !event.clipboardData) return;
+    const images = imagesFromClipboard(event.clipboardData);
     if (images.length > 0) {
       event.preventDefault();
       void uploadFiles(images);
     }
   }
+
+  // A Ctrl/Cmd+V paste while focus is on the chat area (not a text field) routes into the
+  // composer, as if the field were focused: pasted text is inserted at the caret, a pasted
+  // image is attached. Pastes that target an editable element (our own textarea, a dialog's
+  // field) are left alone — the textarea handles its own onpaste, and dialogs handle theirs.
+  $effect(() => {
+    const onWindowPaste = (event: ClipboardEvent) => {
+      if (disabled || !event.clipboardData) return;
+      const t = event.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(?:input|textarea|select)$/i.test(t.tagName))) return;
+      const images = imagesFromClipboard(event.clipboardData);
+      if (images.length > 0) {
+        if (!upload) return;
+        event.preventDefault();
+        void uploadFiles(images);
+        return;
+      }
+      const pasted = event.clipboardData.getData('text');
+      if (pasted) {
+        event.preventDefault();
+        void insertAtCursor(pasted);
+      }
+    };
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+  });
 
   async function insertAtCursor(snippet: string) {
     const ta = textarea;
