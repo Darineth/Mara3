@@ -41,7 +41,20 @@
   let busy = $state(false);
   let localError = $state('');
   let fileInput = $state<HTMLInputElement | null>(null);
+  let nameInput = $state<HTMLInputElement | null>(null);
   let dragOver = $state(false);
+
+  // A pasted image only reaches our paste handler with data attached when an editable field is
+  // focused (a document-level paste onto nothing gets empty clipboardData). Focus the shortcode
+  // field on open so Ctrl/Cmd+V works immediately — but not on touch, where it would pop the
+  // soft keyboard (mirrors the composer's behaviour; touch users pick images via the file button).
+  const softKeyboard =
+    typeof window !== 'undefined' &&
+    (navigator.maxTouchPoints ?? 0) > 0 &&
+    !!window.matchMedia?.('(hover: none)').matches;
+  $effect(() => {
+    if (!softKeyboard) nameInput?.focus();
+  });
 
   const NAME_RE = /^[a-zA-Z0-9_+-]{2,64}$/;
   const nameValid = $derived(NAME_RE.test(name));
@@ -187,6 +200,7 @@
         <span class="colon">:</span>
         <input
           class="name"
+          bind:this={nameInput}
           bind:value={name}
           placeholder="shortcode"
           maxlength="64"

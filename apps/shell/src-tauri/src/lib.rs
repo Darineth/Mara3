@@ -574,6 +574,9 @@ async fn open_popout(app: AppHandle, view: String) -> Result<(), String> {
         .title("Mara 3")
         .inner_size(560.0, 680.0)
         .min_inner_size(360.0, 320.0)
+        // Let the web UI receive HTML5 drag/drop (image uploads, custom emoji) instead of
+        // Tauri swallowing the OS file drop before the page sees it.
+        .disable_drag_drop_handler()
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -736,6 +739,9 @@ pub fn run() {
                         .min_inner_size(480.0, 400.0)
                         .visible(false) // restore saved geometry first, then show (no flash)
                         .initialization_script(&init)
+                        // Let the web UI receive HTML5 drag/drop (image uploads, custom emoji)
+                        // rather than Tauri capturing the OS file drop before the page sees it.
+                        .disable_drag_drop_handler()
                         .build()?;
                 apply_window_state(&window, &settings.window);
                 let _ = window.show();
