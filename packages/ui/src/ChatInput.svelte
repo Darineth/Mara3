@@ -56,6 +56,12 @@
   let pickerWrap = $state<HTMLElement | null>(null);
   const emojiList = $derived(Object.entries(emoji));
 
+  // Hidden file input behind the "attach image" button (only shown when uploads are enabled).
+  let fileInput = $state<HTMLInputElement | null>(null);
+  // Trailing icon buttons in the field (send, plus attach/emoji when present) — drives how much
+  // right padding the textarea needs so text never slides under them.
+  const trailingCount = $derived(1 + (upload ? 1 : 0) + (emojiList.length > 0 ? 1 : 0));
+
   // Inline `:shortcode` autocomplete: as you type `:que`, matching emoji are offered in a
   // menu above the field; Up/Down move the selection, Enter/Tab accept, Esc dismisses.
   interface EmojiMenu {
@@ -200,6 +206,14 @@
       URL.revokeObjectURL(gone.preview);
     }
     attachments = attachments.filter((a) => a.id !== id);
+  }
+
+  // "Attach image" button → hidden file input → the same upload path as drop/paste.
+  function pickFiles(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = [...(input.files ?? [])];
+    if (files.length) void uploadFiles(files);
+    input.value = ''; // reset so picking the same file again still fires onchange
   }
 
   function onDrop(event: DragEvent) {
@@ -502,7 +516,7 @@
       {/each}
     </div>
   {/if}
-  <div class="mara-field">
+  <div class="mara-field" style="--mara-actions-pad:{trailingCount * 1.95 + 0.4}rem">
     <textarea
       bind:this={textarea}
       bind:value={text}
@@ -573,15 +587,14 @@
         {/each}
       </ul>
     {/if}
-    {#if emojiList.length > 0}
-      <div class="emoji-picker-wrap" bind:this={pickerWrap}>
+    <div class="mara-actions">
+      {#if upload}
         <button
           type="button"
-          class="emoji-btn"
-          onclick={() => (pickerOpen = !pickerOpen)}
-          aria-label="Insert emoji"
-          aria-expanded={pickerOpen}
-          title="Emoji"
+          class="emoji-btn attach-btn"
+          onclick={() => fileInput?.click()}
+          aria-label="Attach image"
+          title="Attach image"
           {disabled}
         >
           <svg
@@ -593,52 +606,87 @@
             stroke-linejoin="round"
             aria-hidden="true"
           >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-            <line x1="9" y1="9" x2="9.01" y2="9" />
-            <line x1="15" y1="9" x2="15.01" y2="9" />
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
           </svg>
         </button>
-        {#if pickerOpen}
-          <div class="emoji-popover" role="listbox" aria-label="Emoji">
-            {#each emojiList as [name, url] (name)}
-              <button
-                type="button"
-                class="emoji-choice"
-                title={emojiOwners[name]
-                  ? `:${name}: · added by ${emojiOwners[name]}`
-                  : `:${name}:`}
-                onclick={() => chooseEmoji(name)}
-              >
-                <img src={emojiSrc(url)} alt=":{name}:" loading="lazy" />
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-    <button
-      type="button"
-      class="send"
-      onclick={submit}
-      disabled={!canSend}
-      aria-label="Send"
-      title="Send message"
-    >
-      <svg
-        class="send-icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+        <input
+          class="hidden-file"
+          type="file"
+          accept="image/*"
+          multiple
+          bind:this={fileInput}
+          onchange={pickFiles}
+        />
+      {/if}
+      {#if emojiList.length > 0}
+        <div class="emoji-picker-wrap" bind:this={pickerWrap}>
+          <button
+            type="button"
+            class="emoji-btn"
+            onclick={() => (pickerOpen = !pickerOpen)}
+            aria-label="Insert emoji"
+            aria-expanded={pickerOpen}
+            title="Emoji"
+            {disabled}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
+          {#if pickerOpen}
+            <div class="emoji-popover" role="listbox" aria-label="Emoji">
+              {#each emojiList as [name, url] (name)}
+                <button
+                  type="button"
+                  class="emoji-choice"
+                  title={emojiOwners[name]
+                    ? `:${name}: · added by ${emojiOwners[name]}`
+                    : `:${name}:`}
+                  onclick={() => chooseEmoji(name)}
+                >
+                  <img src={emojiSrc(url)} alt=":{name}:" loading="lazy" />
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+      <button
+        type="button"
+        class="send"
+        onclick={submit}
+        disabled={!canSend}
+        aria-label="Send"
+        title="Send message"
       >
-        <line x1="22" y1="2" x2="11" y2="13" />
-        <polygon points="22 2 15 22 11 13 2 9 22 2" />
-      </svg>
-    </button>
+        <svg
+          class="send-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="22" y1="2" x2="11" y2="13" />
+          <polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -733,12 +781,22 @@
       transform: rotate(360deg);
     }
   }
-  /* Pinned inside the field just left of the send icon (which sits at right 0.3rem and is
-     ~1.85rem wide), so both icons share the bottom-right corner as the field grows. */
-  .emoji-picker-wrap {
+  /* The trailing icon buttons (attach, emoji, send), pinned to the field's bottom-right corner
+     as it grows; a flex row so they lay out left-to-right regardless of which are shown. */
+  .mara-actions {
     position: absolute;
-    right: 2.15rem;
+    right: 0.3rem;
     bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  .hidden-file {
+    display: none;
+  }
+  /* Relative so the emoji popover anchors to this button (not the whole field). */
+  .emoji-picker-wrap {
+    position: relative;
   }
   .emoji-btn {
     display: inline-flex;
@@ -870,8 +928,9 @@
     flex: 1;
     resize: none;
     font: inherit;
-    /* Extra right padding leaves room for the emoji + send icons that sit inside the field. */
-    padding: 0.45rem 4.3rem 0.45rem 0.6rem;
+    /* Right padding leaves room for the trailing icon buttons (attach/emoji/send) that sit
+       inside the field; sized to how many are shown via --mara-actions-pad. */
+    padding: 0.45rem var(--mara-actions-pad, 4.3rem) 0.45rem 0.6rem;
     border-radius: 6px;
     border: 1px solid var(--mara-border, #333);
     background: var(--mara-input-bg, #2a2a2a);
@@ -885,9 +944,6 @@
      can't drift out of height-sync with the textarea: the field grows, the icon
      stays pinned to the corner. */
   .send {
-    position: absolute;
-    right: 0.3rem;
-    bottom: 0.3rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
