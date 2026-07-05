@@ -1,0 +1,4 @@
+# Generated Tauri projects. The source (manifest, gradle, icons) is committed,
+# but Tauri regenerates JSON/JS build artifacts inside on every build — never lint them.
+apps/shell/src-tauri/gen/
+apps/client-legacy/src-tauri/gen/
