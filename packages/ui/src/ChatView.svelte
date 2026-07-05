@@ -243,6 +243,13 @@
       const emojiImg = target?.closest('img.mara-emoji') as HTMLImageElement | null;
       if (emojiImg && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
         openLightbox(emojiImg.currentSrc || emojiImg.src, emojiImg.alt);
+        return;
+      }
+      // Avatars expand in the lightbox on a plain left-click. Only an image avatar matches
+      // `img.mara-avatar`; the monogram fallback is a <span>, so it's left alone.
+      const avatar = target?.closest('img.mara-avatar') as HTMLImageElement | null;
+      if (avatar && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        openLightbox(avatar.currentSrc || avatar.src, avatar.alt);
       }
     };
     el.addEventListener('click', onClick);
@@ -350,6 +357,11 @@
     border-radius: 50%;
     object-fit: cover;
     vertical-align: middle;
+  }
+  /* An image avatar expands in the lightbox on click (see the click handler); the monogram
+     fallback is a <span> and isn't clickable, so only the <img> gets the zoom affordance. */
+  .mara-chatview :global(img.mara-avatar) {
+    cursor: zoom-in;
   }
   .mara-chatview :global(.mara-avatar-mono) {
     display: inline-flex;
