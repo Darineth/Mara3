@@ -228,11 +228,10 @@ describe('renderText — safety + links', () => {
     expect(html).not.toMatch(/;\s*$/); // no stranded semicolon
   });
 
-  it('wraps inline images in a hideable box with show/hide controls', () => {
+  it('wraps inline images in a hideable box with a corner show/hide toggle', () => {
     const html = renderText('https://example.com/cat.png');
     expect(html).toContain('class="mara-img-box"');
-    expect(html).toContain('class="mara-img-hide"');
-    expect(html).toContain('class="mara-img-show"');
+    expect(html).toContain('class="mara-img-toggle"');
   });
 
   it('does not give the image link target="_blank"', () => {

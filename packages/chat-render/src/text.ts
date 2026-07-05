@@ -155,9 +155,11 @@ function emojiTag(name: string, safeUrl: string): string {
   return `<img class="mara-emoji" src="${safeUrl}" alt="${code}" title="${code}" loading="lazy" />`;
 }
 function imageTag(url: string, alt = ''): string {
-  // Wrapped in a box with hide/show controls the client wires up; the image can
-  // be collapsed to the "Show image" chip and restored. `url` and `alt` are
-  // pre-escaped (alt carries the Markdown `![alt](…)` text when present).
+  // Wrapped in a box with a single corner show/hide toggle the client wires up — the same
+  // eye/× control and cover-in-place behaviour as a spoiler: hiding blanks the image where it
+  // sits (no reflow) rather than collapsing it, and a click anywhere on the covered image
+  // reveals it again. `url` and `alt` are pre-escaped (alt carries the Markdown `![alt](…)`
+  // text when present).
   //
   // The link deliberately has NO target="_blank": a plain click is handled in JS (it
   // opens the lightbox and prevents navigation), while modifier/middle clicks open a
@@ -168,8 +170,7 @@ function imageTag(url: string, alt = ''): string {
     `<span class="mara-img-box">` +
     `<a href="${url}" class="mara-img-link" rel="noopener noreferrer">` +
     `<img class="mara-img" src="${url}" alt="${alt}" loading="lazy" /></a>` +
-    `<button type="button" class="mara-img-hide" aria-label="Hide image">Hide</button>` +
-    `<button type="button" class="mara-img-show" aria-label="Show image">🖼 Show image</button>` +
+    `<span class="mara-img-toggle" aria-hidden="true"></span>` +
     `</span>`
   );
 }

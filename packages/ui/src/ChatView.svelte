@@ -50,12 +50,12 @@
   let content = $state<HTMLDivElement | null>(null);
   // Auto-scroll unless the user has scrolled up to read history ("freeze").
   let pinnedToBottom = $state(true);
-  // Inline images the user has collapsed, keyed by URL. Kept here (not in the
+  // Inline images the user has hidden (covered in place), keyed by URL. Kept here (not in the
   // DOM) so the choice survives the {@html} re-renders that fire when the roster
   // or timestamp setting changes. Reassigned on change for reactivity.
   let hiddenImages = $state(new Set<string>());
 
-  // The img src is the stable identity used to key collapsed state across re-renders.
+  // The img src is the stable identity used to key hidden state across re-renders.
   function imgSrcOf(box: Element): string {
     return box.querySelector('img.mara-img')?.getAttribute('src') ?? '';
   }
@@ -195,18 +195,28 @@
         return;
       }
 
-      // Hide / restore an inline image.
-      const toggle = target?.closest('.mara-img-hide, .mara-img-show');
-      if (toggle) {
-        const box = toggle.closest('.mara-img-box');
-        if (box) {
-          const src = imgSrcOf(box);
+      // Inline image cover/reveal — spoiler-style: a corner eye/× toggle that covers the
+      // image in place (no reflow). The choice is persisted in `hiddenImages` (keyed by src)
+      // so it survives the {@html} re-renders a roster/timestamp change triggers — unlike a
+      // text spoiler, whose reveal is DOM-only.
+      const imgBox = target?.closest('.mara-img-box');
+      if (imgBox) {
+        const src = imgSrcOf(imgBox);
+        if (imgBox.classList.contains('hidden')) {
+          // Covered → a click anywhere reveals it (matches a covered spoiler).
           const next = new Set(hiddenImages);
-          if (toggle.classList.contains('mara-img-show')) next.delete(src);
-          else next.add(src);
+          next.delete(src);
           hiddenImages = next;
+          return;
         }
-        return;
+        // Shown → the corner handle hides it; a click on the image itself falls through to
+        // the lightbox below.
+        if (target.closest('.mara-img-toggle')) {
+          const next = new Set(hiddenImages);
+          next.add(src);
+          hiddenImages = next;
+          return;
+        }
       }
 
       const spoiler = target?.closest('.mara-spoiler');
@@ -248,7 +258,7 @@
     return freezeAnimatedImages(el);
   });
 
-  // Reconcile collapsed state onto the DOM after each render (the {@html} blocks
+  // Reconcile hidden state onto the DOM after each render (the {@html} blocks
   // are rebuilt on roster/timestamp changes, so DOM classes alone wouldn't stick).
   $effect(() => {
     lines.length; // re-run when lines change
@@ -257,7 +267,7 @@
     const el = viewport;
     if (!el) return;
     for (const box of el.querySelectorAll('.mara-img-box')) {
-      box.classList.toggle('collapsed', set.has(imgSrcOf(box)));
+      box.classList.toggle('hidden', set.has(imgSrcOf(box)));
     }
   });
 </script>
@@ -487,47 +497,23 @@
     vertical-align: top;
     max-width: 100%;
   }
-  .mara-chatview :global(.mara-img-hide) {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    font: inherit;
-    font-size: 0.72rem;
-    line-height: 1;
-    padding: 0.25em 0.5em;
-    border: none;
+  /* Hidden → cover the image where it sits (no reflow): blank the image but keep its box
+     size, tint the box, and make the link/img click-through so a click reveals it rather
+     than navigating — the same "cover in place" a text spoiler does. */
+  .mara-chatview :global(.mara-img-box.hidden) {
+    background: rgba(127, 127, 127, 0.3);
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s;
-  }
-  .mara-chatview :global(.mara-img-box:hover .mara-img-hide),
-  .mara-chatview :global(.mara-img-hide:focus-visible) {
-    opacity: 1;
-  }
-  .mara-chatview :global(.mara-img-show) {
-    display: none;
-    font: inherit;
-    font-size: 0.8rem;
-    align-items: center;
-    gap: 0.3em;
-    margin: 0.25rem 0;
-    padding: 0.3em 0.7em;
-    border: 1px solid var(--mara-border, #333);
-    border-radius: 6px;
-    background: rgba(127, 127, 127, 0.12);
-    color: inherit;
     cursor: pointer;
   }
-  .mara-chatview :global(.mara-img-box.collapsed .mara-img-link),
-  .mara-chatview :global(.mara-img-box.collapsed .mara-img-hide) {
-    display: none;
+  .mara-chatview :global(.mara-img-box.hidden .mara-img) {
+    visibility: hidden;
   }
-  .mara-chatview :global(.mara-img-box.collapsed .mara-img-show) {
-    display: inline-flex;
+  .mara-chatview :global(.mara-img-box.hidden .mara-img-link) {
+    pointer-events: none;
   }
+  /* The image's corner show/hide toggle (.mara-img-toggle) shares the spoiler handle's base
+     styling and its own dark backdrop + eye/× states — defined alongside .mara-spoiler-hide
+     below so the shared base rule comes first. */
 
   /* Discord-style markdown */
   .mara-chatview :global(.mara-code),
@@ -627,10 +613,11 @@
      Bare icon — no pill — coloured to contrast with each state's own background (the
      covered bar is `--mara-fg`, the revealed bg is subtle), so it reads cleanly in
      both light and dark themes. */
-  .mara-chatview :global(.mara-spoiler-hide) {
+  .mara-chatview :global(.mara-spoiler-hide),
+  .mara-chatview :global(.mara-img-toggle) {
     /* Feather-style eye, masked so it takes `currentColor`. */
     --mara-eye: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23fff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M1%2012s4-7%2011-7%2011%207%2011%207-4%207-11%207S1%2012%201%2012z'/%3E%3Ccircle%20cx='12'%20cy='12'%20r='3'/%3E%3C/svg%3E");
-    /* Pinned to the spoiler's top-right corner (space reserved by the padding above). */
+    /* Pinned to the box's top-right corner. */
     position: absolute;
     top: 0.15em;
     right: 0.2em;
@@ -667,5 +654,28 @@
   .mara-chatview :global(.mara-spoiler.revealed .mara-spoiler-hide)::before {
     content: '\00d7';
     font-size: 1.25em; /* the × glyph reads small; bump it to match the box */
+  }
+  /* Image toggle: same handle, but a dark backdrop so the icon reads over any image pixels
+     (a spoiler sits on its own tint and needs none). These come after the shared base rule so
+     the white icon colour wins. Shown → × ("hide"); hidden → an eye ("reveal"). */
+  .mara-chatview :global(.mara-img-toggle) {
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+  }
+  .mara-chatview :global(.mara-img-toggle:hover) {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.72);
+  }
+  .mara-chatview :global(.mara-img-box:not(.hidden) .mara-img-toggle)::before {
+    content: '\00d7';
+    font-size: 1.25em;
+  }
+  .mara-chatview :global(.mara-img-box.hidden .mara-img-toggle)::before {
+    content: '';
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask: var(--mara-eye) center / contain no-repeat;
+    mask: var(--mara-eye) center / contain no-repeat;
   }
 </style>
