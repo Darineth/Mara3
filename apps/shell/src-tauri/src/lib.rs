@@ -1,6 +1,7 @@
 use std::fs::create_dir_all;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -123,9 +124,25 @@ fn exe_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "cannot resolve executable directory".to_string())
 }
 
-/// Path to `settings.json` beside the running executable (portable storage).
+/// Writable base dir for `settings.json`/logs, set once at startup. On mobile there is
+/// no "beside the exe" (the app runs from a read-only package), so setup() resolves the
+/// app's config dir into this; on desktop it stays unset and we fall back to the exe dir
+/// (the portable model — copy the exe folder, carry its config).
+static APP_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// The base directory for persisted state: the app config dir on mobile (set at startup),
+/// else the executable's own directory (portable desktop default).
+fn base_dir() -> Result<PathBuf, String> {
+    if let Some(dir) = APP_DIR.get() {
+        return Ok(dir.clone());
+    }
+    exe_dir()
+}
+
+/// Path to `settings.json` in the writable base dir (beside the exe on desktop, the app
+/// config dir on mobile).
 fn settings_path() -> Result<PathBuf, String> {
-    Ok(exe_dir()?.join("settings.json"))
+    Ok(base_dir()?.join("settings.json"))
 }
 
 /// Resolve the directory the local log file lives in, or `None` when disk logging is
@@ -139,7 +156,18 @@ fn log_dir() -> Option<PathBuf> {
     match load_settings().log_dir {
         Some(d) if d.trim().is_empty() => None,
         Some(d) => Some(PathBuf::from(d.trim())),
-        None => Some(PathBuf::from("logs")),
+        // Default: `logs/` beside the working dir on desktop; on mobile a CWD-relative
+        // path isn't writable, so nest it under the app dir (set at startup).
+        None => {
+            #[cfg(mobile)]
+            {
+                APP_DIR.get().map(|d| d.join("logs"))
+            }
+            #[cfg(desktop)]
+            {
+                Some(PathBuf::from("logs"))
+            }
+        }
     }
 }
 
@@ -653,6 +681,15 @@ pub fn run() {
             // `--resumed` flag, reconnects to the last server. No-op on other platforms.
             #[cfg(windows)]
             register_for_restart();
+
+            // Mobile has no writable "beside the exe" dir, so point persisted state (the
+            // chosen server, recents, logs) at the app's config dir. Set BEFORE the first
+            // load_settings() below. Desktop leaves APP_DIR unset — it stays portable.
+            #[cfg(mobile)]
+            if let Ok(dir) = app.path().app_config_dir() {
+                let _ = create_dir_all(&dir);
+                let _ = APP_DIR.set(dir);
+            }
 
             // Load the local bootstrap page first; it shows the server picker, polls
             // the chosen server, and asks us to navigate to the live UI once it is
