@@ -41,6 +41,7 @@
   let busy = $state(false);
   let localError = $state('');
   let fileInput = $state<HTMLInputElement | null>(null);
+  let dragOver = $state(false);
 
   const NAME_RE = /^[a-zA-Z0-9_+-]{2,64}$/;
   const nameValid = $derived(NAME_RE.test(name));
@@ -79,9 +80,33 @@
     };
   });
 
-  function pickFile(e: Event): void {
+  // Pasting an image anywhere while the dialog is open picks it up (Ctrl/Cmd+V). Only
+  // intercepts when the clipboard actually holds an image, so pasting text into the shortcode
+  // field still works. Mirrors the composer's paste handling (incl. the WebKitGTK fallback).
+  $effect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const cd = e.clipboardData;
+      let images = [...cd.files].filter((f) => f.type.startsWith('image/'));
+      if (images.length === 0) {
+        images = [...cd.items]
+          .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+          .map((i) => i.getAsFile())
+          .filter((f): f is File => f != null);
+      }
+      if (images.length > 0) {
+        e.preventDefault();
+        acceptFile(images[0]);
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  });
+
+  /** Validate + stage an image (from the file picker, a drop, or a paste) as the pending
+   *  upload, prefilling the shortcode from the filename when it's still blank. */
+  function acceptFile(chosen: File | null | undefined): void {
     localError = '';
-    const chosen = (e.target as HTMLInputElement).files?.[0] ?? null;
     if (!chosen) return;
     if (!isUploadableImage(chosen)) {
       localError = 'That file is not a supported image (PNG, JPEG, GIF, WebP, AVIF, BMP).';
@@ -90,10 +115,27 @@
     if (preview) URL.revokeObjectURL(preview);
     file = chosen;
     preview = URL.createObjectURL(chosen);
-    // Prefill the shortcode from the filename if the field is empty.
     if (!name) {
       const stem = chosen.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_+-]/g, '');
       if (stem) name = stem.slice(0, 64);
+    }
+  }
+
+  function pickFile(e: Event): void {
+    acceptFile((e.target as HTMLInputElement).files?.[0]);
+  }
+
+  function onDrop(e: DragEvent): void {
+    e.preventDefault();
+    dragOver = false;
+    const img = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'));
+    if (img) acceptFile(img);
+  }
+
+  function onDragOver(e: DragEvent): void {
+    if (e.dataTransfer && [...e.dataTransfer.items].some((i) => i.kind === 'file')) {
+      e.preventDefault();
+      dragOver = true;
     }
   }
 
@@ -132,7 +174,15 @@
       ones you added.
     </p>
 
-    <div class="add">
+    <div
+      class="add"
+      class:drag={dragOver}
+      role="group"
+      aria-label="Add an emoji"
+      ondragover={onDragOver}
+      ondragleave={() => (dragOver = false)}
+      ondrop={onDrop}
+    >
       <div class="add-row">
         <span class="colon">:</span>
         <input
@@ -162,6 +212,11 @@
         bind:this={fileInput}
         onchange={pickFile}
       />
+      <p class="drop-hint">
+        {dragOver
+          ? 'Drop the image to use it'
+          : 'Choose an image above, or drag & drop or paste one.'}
+      </p>
       {#if name && !nameValid}
         <p class="note warn">Shortcodes use letters, numbers, <code>_ + -</code> (2–64 chars).</p>
       {:else if nameTaken}
@@ -257,6 +312,24 @@
     border-radius: 8px;
     padding: 0.6rem 0.7rem;
     margin-bottom: 0.8rem;
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+  /* Highlight the whole add box as a drop target while an image is dragged over it. */
+  .add.drag {
+    border-color: var(--mara-accent, #3b82f6);
+    border-style: dashed;
+    background: color-mix(in srgb, var(--mara-accent, #3b82f6) 8%, transparent);
+  }
+  .drop-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    opacity: 0.5;
+  }
+  .add.drag .drop-hint {
+    color: var(--mara-accent, #3b82f6);
+    opacity: 1;
   }
   .add-row {
     display: flex;
