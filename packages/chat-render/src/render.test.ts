@@ -123,6 +123,23 @@ describe('renderLine — jumbo (emoji-only) messages', () => {
   });
 });
 
+describe('renderLine — cleared marker', () => {
+  it('renders a clickable restore button, ignoring author/text/timestamp', () => {
+    const html = renderLine({
+      kind: 'cleared',
+      authorName: '',
+      authorColor: '#888888',
+      text: 'ignored',
+      timestamp: '12:00:00',
+    });
+    expect(html).toContain('class="mara-cleared"');
+    expect(html).toContain('History cleared');
+    // The line carries no author-controlled content and no timestamp gutter.
+    expect(html).not.toContain('ignored');
+    expect(html).not.toContain('mara-ts');
+  });
+});
+
 describe('renderText — safety + links', () => {
   it('escapes before linkifying and never emits user markup', () => {
     const html = renderText('<b>hi</b> http://example.com');

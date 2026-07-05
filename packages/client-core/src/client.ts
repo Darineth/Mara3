@@ -566,7 +566,9 @@ export class MaraClient {
       }
 
       case 'historyChunk': {
-        // Paged-older messages: prepend without trimming, then update the "more?" flag.
+        // Paged-older messages, or a post-clear restore: drop any "cleared" marker, merge
+        // without trimming (so paged pages aren't dropped), then update the "more?" flag.
+        this.dropClearedMarker(msg.channelToken);
         this.mergeHistory(msg.channelToken, msg.messages, false);
         this.setHasMore(msg.channelToken, msg.hasMore);
         return;
@@ -816,6 +818,45 @@ export class MaraClient {
     const oldest = lines.find((l) => l.serverId != null);
     if (!oldest || oldest.serverId == null) return;
     this.send({ type: 'requestHistory', channelToken, before: oldest.serverId });
+  }
+
+  /**
+   * Clear this client's local backlog for a channel, replacing it with a single "cleared"
+   * marker line the user can click to restore. Purely client-side — the server's stored
+   * history is untouched; {@link restoreChannel} re-fetches it. Live messages that arrive
+   * afterwards still append below the marker.
+   */
+  clearChannel(channelToken: Token): void {
+    this._channelMessages.update((map) =>
+      new Map(map).set(channelToken, [
+        // Stamp on the server clock (like chat lines and the connection/MOTD notices) so the
+        // marker sorts correctly against them — the UI hides notices older than it.
+        { id: ++this.lineSeq, kind: 'cleared', from: null, text: '', at: this.serverNow() },
+      ]),
+    );
+    // Nothing sits above the marker to page in until a restore, so silence the scroll loader.
+    this.setHasMore(channelToken, false);
+  }
+
+  /**
+   * Re-fetch a channel's latest backlog after {@link clearChannel}. Sends a cursor-less
+   * history request; the server replies with the most recent page as a `historyChunk`, whose
+   * handler drops the cleared marker and merges the messages back in.
+   */
+  restoreChannel(channelToken: Token): void {
+    this.send({ type: 'requestHistory', channelToken });
+  }
+
+  /** Drop the synthetic "cleared" marker from a channel's log (on restore / incoming history). */
+  private dropClearedMarker(channelToken: Token): void {
+    this._channelMessages.update((map) => {
+      const lines = map.get(channelToken);
+      if (!lines?.some((l) => l.kind === 'cleared')) return map;
+      return new Map(map).set(
+        channelToken,
+        lines.filter((l) => l.kind !== 'cleared'),
+      );
+    });
   }
 
   private pushLine(

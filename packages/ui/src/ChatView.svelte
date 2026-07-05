@@ -13,6 +13,7 @@
     sessionStart = 0,
     hasMore = false,
     onLoadOlder,
+    onRestore,
     conversationKey = null,
     emoji = {},
     messageStyle = 'mara',
@@ -27,6 +28,8 @@
     hasMore?: boolean;
     /** Called when the user scrolls near the top and `hasMore` — request older messages. */
     onLoadOlder?: () => void;
+    /** Called when the user clicks the "cleared" marker — re-fetch the channel's backlog. */
+    onRestore?: () => void;
     /** Identifies the conversation on show (e.g. `ch:1`/`pm:2`). When it changes, the view
      *  lands on the new conversation's latest instead of inheriting the old scroll/pin. */
     conversationKey?: string | null;
@@ -185,6 +188,12 @@
     if (!el) return;
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
+
+      // The "cleared" marker: clicking it re-fetches the channel's server backlog.
+      if (target?.closest('.mara-cleared')) {
+        onRestore?.();
+        return;
+      }
 
       // Hide / restore an inline image.
       const toggle = target?.closest('.mara-img-hide, .mara-img-show');
@@ -403,6 +412,30 @@
   }
   .mara-chatview :global(.mara-system) {
     opacity: 0.6;
+  }
+  /* The client-side "cleared" marker: a centered, pill-shaped button prompting a re-fetch. */
+  .mara-chatview :global(.mara-cleared-line) {
+    display: flex;
+    justify-content: center;
+    padding: 0.4rem 0;
+  }
+  .mara-chatview :global(.mara-cleared) {
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--mara-fg, #ddd);
+    opacity: 0.6;
+    background: transparent;
+    border: 1px dashed var(--mara-border, #444);
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    cursor: pointer;
+    transition:
+      opacity 0.15s ease,
+      background 0.15s ease;
+  }
+  .mara-chatview :global(.mara-cleared:hover) {
+    opacity: 1;
+    background: rgba(127, 127, 127, 0.14);
   }
   .mara-chatview :global(.mara-emote) {
     opacity: 0.92;

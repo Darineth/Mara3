@@ -37,8 +37,10 @@ export interface ChatLine {
    *  system/notice/away lines and private messages (the server doesn't id those). */
   serverId?: number;
   /** `notice` is a client-synthesized, prominently-styled server notice (the MOTD);
-   *  `away` is an away/back status line shown in the author's colour (carries `from`). */
-  kind: 'chat' | 'emote' | 'system' | 'notice' | 'away';
+   *  `away` is an away/back status line shown in the author's colour (carries `from`);
+   *  `cleared` is a client-only marker left where the user cleared their local backlog —
+   *  clicking it re-fetches server history (see `MaraClient.clearChannel`/`restoreChannel`). */
+  kind: 'chat' | 'emote' | 'system' | 'notice' | 'away' | 'cleared';
   /** Author token, or null for system/notice lines. */
   from: Token | null;
   text: string;

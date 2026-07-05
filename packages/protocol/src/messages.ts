@@ -111,12 +111,14 @@ const ping = z.object({
   id: z.number().int().nonnegative(),
 });
 
-/** Ask for older channel history: up to a server-decided page of messages with an id
- *  BELOW `before` (the oldest message id the client currently holds). */
+/** Ask for a page of channel history. With `before` set, returns up to a server-decided page
+ *  of messages with an id BELOW it (the oldest id the client holds) — scroll-up paging. With
+ *  `before` omitted, returns the most recent page (the same chunk sent as the join backlog) —
+ *  used to re-fetch after a client-side "clear". */
 const requestHistory = z.object({
   type: z.literal('requestHistory'),
   channelToken: tokenSchema,
-  before: z.number().int().nonnegative(),
+  before: z.number().int().nonnegative().optional(),
 });
 
 export const clientMessageSchema = z.discriminatedUnion('type', [

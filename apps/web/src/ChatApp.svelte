@@ -893,6 +893,14 @@
     menuOpen = false;
   }
 
+  // Wipe this client's local backlog for the active channel, leaving a "cleared" marker the
+  // user can click to pull history back from the server. Client-side only — nothing is deleted
+  // server-side, and other clients are unaffected.
+  function clearActive() {
+    if (activeChannel !== null) client.clearChannel(activeChannel);
+    menuOpen = false;
+  }
+
   // Desktop only: return to the native server picker. If the current server's
   // origin isn't IPC-allowed the invoke throws — note it inline rather than
   // failing silently.
@@ -982,8 +990,14 @@
   const activeLines = $derived.by(() => {
     // Session notices (Connected/drop/reconnect) belong in every conversation, but the MOTD
     // (a server 'notice') is a channel greeting — don't surface it in a PM thread.
-    const notices =
+    let notices =
       activePm !== null ? connectionLines.filter((l) => l.kind !== 'notice') : connectionLines;
+    // A cleared channel is a clean slate: hide everything from before the clear — including the
+    // global connection/MOTD notices — so the "cleared" pill stays the top boundary as new
+    // messages arrive below it (rather than the notices floating back above it). The marker is
+    // stamped on the server clock, like the notices, so the comparison is apples-to-apples.
+    const marker = baseLines.find((l) => l.kind === 'cleared');
+    if (marker) notices = notices.filter((n) => n.at > marker.at);
     if (notices.length === 0) return baseLines;
     const out: ChatLine[] = [];
     let i = 0;
@@ -1130,6 +1144,7 @@
             {/if}
             {#if activeChannel !== null}
               <button class="item" onclick={leaveActive}>Leave channel</button>
+              <button class="item" onclick={clearActive}>Clear messages</button>
               {#if !isNarrow}
                 <!-- Toggles the inline sidebar. When it's off (or the screen is narrow) the
                      top-bar button slides the list out instead, so this would be a no-op there. -->
@@ -1204,6 +1219,9 @@
           hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
           onLoadOlder={() => {
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);
+          }}
+          onRestore={() => {
+            if (activeChannel !== null) client.restoreChannel(activeChannel);
           }}
         />
         {#if sidebarInline}

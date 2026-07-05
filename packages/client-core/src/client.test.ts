@@ -255,6 +255,56 @@ describe('channels + chat', () => {
     }
   });
 
+  it('clears a channel to a marker and restores its backlog on request', async () => {
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        historyChunk: 10, // one page holds all the messages, so restore brings them all back
+      },
+      createLogger('silent'),
+    );
+    const u = `ws://127.0.0.1:${s.port}/ws`;
+    try {
+      const a = makeClient('alice', { url: u });
+      await connected(a);
+      const aJoined = waitEvent(a, 'channelJoined');
+      a.joinChannel('lobby');
+      const tok = (await aJoined).token;
+      for (const t of ['m1', 'm2', 'm3']) {
+        const got = waitEvent(a, 'chat');
+        a.sendChat(tok, t);
+        await got;
+      }
+
+      const linesOf = () => get(a.channelMessages).get(tok) ?? [];
+      const chatTexts = () =>
+        linesOf()
+          .filter((l) => l.kind === 'chat')
+          .map((l) => l.text);
+      expect(chatTexts()).toEqual(['m1', 'm2', 'm3']);
+
+      // Clear: local log collapses to a single "cleared" marker and the loader falls silent.
+      a.clearChannel(tok);
+      expect(linesOf().map((l) => l.kind)).toEqual(['cleared']);
+      expect(chatTexts()).toEqual([]);
+      expect(get(a.hasMoreHistory).get(tok)).toBe(false);
+
+      // Restore: a cursor-less history request repopulates the backlog and drops the marker.
+      a.restoreChannel(tok);
+      await vi.waitFor(() => expect(chatTexts()).toEqual(['m1', 'm2', 'm3']));
+      expect(linesOf().some((l) => l.kind === 'cleared')).toBe(false);
+
+      a.disconnect();
+    } finally {
+      await s.close();
+    }
+  });
+
   it('posts a "you joined" system line when joining a channel', async () => {
     const a = makeClient('alice');
     await connected(a);

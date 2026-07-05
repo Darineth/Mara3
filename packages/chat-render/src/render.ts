@@ -23,7 +23,7 @@ function jumboTextClass(line: LineModel, options: RenderLineOptions): string {
  * (joins/leaves/connection), or a prominent server `notice` (the MOTD) rendered at
  * the default text colour.
  */
-export type LineKind = 'chat' | 'emote' | 'system' | 'notice' | 'away';
+export type LineKind = 'chat' | 'emote' | 'system' | 'notice' | 'away' | 'cleared';
 
 /** A single conversation line, decoupled from transport/roster types. */
 export interface LineModel {
@@ -159,6 +159,16 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
       return (
         `<div class="mara-line mara-notice">${ts(line)}` +
         `<span class="mara-body mara-text">${renderText(line.text, options)}</span></div>`
+      );
+    case 'cleared':
+      // Client-only marker where the user cleared their local backlog. The whole line is a
+      // button (class `mara-cleared`) that ChatView's click handler turns into a re-fetch of
+      // server history. Static text, no author, no timestamp — nothing user-controlled here.
+      return (
+        `<div class="mara-line mara-cleared-line">` +
+        `<button type="button" class="mara-cleared" aria-label="Restore cleared messages">` +
+        `History cleared — click to restore` +
+        `</button></div>`
       );
     case 'away':
       // Away/back status, rendered like an emote: the escaped author name + the note,

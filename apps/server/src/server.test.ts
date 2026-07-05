@@ -610,6 +610,44 @@ describe('history pagination', () => {
     }
   });
 
+  it('returns the recent page for a cursor-less history request (client-side clear/restore)', async () => {
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        userEmojiFile: '',
+        identityFile: '',
+        historyChunk: 2, // newest page is 2 of the 3 messages
+      },
+      createLogger('silent'),
+    );
+    try {
+      const wsUrl = `ws://127.0.0.1:${s.port}/ws`;
+      const a = await TestClient.connect(wsUrl);
+      await login(a, 'alice');
+      a.send({ type: 'joinChannel', channel: 'lobby' });
+      const aj = await a.waitFor('channelJoined');
+      for (const t of ['m1', 'm2', 'm3']) {
+        a.send({ type: 'chat', channelToken: aj.channelToken, text: t });
+        await a.waitFor('chat');
+      }
+
+      // A request with no `before` re-fetches the newest page — the same chunk sent on join,
+      // used to repopulate after a client cleared its local backlog.
+      a.send({ type: 'requestHistory', channelToken: aj.channelToken });
+      const restored = await a.waitFor('historyChunk');
+      expect(restored.messages.map((m) => m.text)).toEqual(['m2', 'm3']);
+      expect(restored.hasMore).toBe(true);
+
+      a.close();
+    } finally {
+      await s.close();
+    }
+  });
+
   it('rejects a history request for a channel the session is not in', async () => {
     const c = await TestClient.connect(url);
     await login(c, 'alice');

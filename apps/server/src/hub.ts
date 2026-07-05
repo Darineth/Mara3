@@ -479,8 +479,10 @@ export class Hub {
     });
   }
 
-  /** Reply to a `requestHistory` with a page of older messages for a channel the session
-   *  is in. Cursor is `before` (a message id); the server decides the page size. */
+  /** Reply to a `requestHistory` for a channel the session is in. With `before` (a message id)
+   *  it returns the page just older than that cursor; without it, the most recent page — the
+   *  same backlog chunk sent on join, used to re-fetch after a client cleared its local view.
+   *  The server decides the page size either way. */
   private handleRequestHistory(
     session: Session,
     conn: Connection,
@@ -491,11 +493,10 @@ export class Hub {
       conn.send({ type: 'error', message: 'not in that channel' });
       return;
     }
-    const { entries, hasMore } = this.history.before(
-      channel.name,
-      msg.before,
-      this.cfg.historyChunk,
-    );
+    const { entries, hasMore } =
+      msg.before === undefined
+        ? this.history.recent(channel.name, this.cfg.historyChunk)
+        : this.history.before(channel.name, msg.before, this.cfg.historyChunk);
     conn.send({
       type: 'historyChunk',
       channelToken: channel.token,
