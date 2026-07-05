@@ -2,9 +2,16 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.21] - unreleased
+## [3.0.21] - 2026-07-05
 
-_In development._
+### Fixed
+
+- **The desktop client's update check works again.** It was silently failing — the version
+  manifest was fetched from a URL that sends no CORS headers, so the browser blocked it and the
+  "update available" banner never appeared. It now fetches from a CORS-enabled source. Because
+  the check runs in the web UI the client loads from its server (not in the installed binary),
+  updating your **server** delivers this fix to already-installed desktop clients — no reinstall
+  — and they'll surface future client releases from then on.
 
 ## [3.0.20] - 2026-07-05
 
