@@ -116,13 +116,27 @@
   let uploadError = $state('');
   let nextAttachId = 0;
 
+  // Touch devices pop a soft keyboard whenever the field takes focus, which covers the
+  // chat and is jarring when you only wanted to read. Detect a touch-primary device so we
+  // can skip the *automatic* focus below; explicit actions (send, history recall, accepting
+  // a mention) still focus on demand.
+  //
+  // `(pointer: coarse)` is unreliable here — the Android WebView reports `pointer: fine`
+  // (it follows the host mouse on the emulator), so we key off touch points plus the
+  // absence of hover instead. Desktop keeps auto-focus: a mouse reports `hover: hover`, and
+  // a mouseless desktop reports `maxTouchPoints: 0`.
+  const softKeyboard =
+    typeof window !== 'undefined' &&
+    (navigator.maxTouchPoints ?? 0) > 0 &&
+    !!window.matchMedia?.('(hover: none)').matches;
+
   // Land the cursor in the field whenever the active conversation changes (and on first
   // mount), so joining or switching a channel/PM is ready to type into without a click. A
   // disabled field can't take focus — harmless, and by the time a conversation is open the
-  // connection is active anyway.
+  // connection is active anyway. Skipped on touch devices so it doesn't force the keyboard up.
   $effect(() => {
     focusKey; // tracked: re-focus on every change
-    if (focusKey != null) textarea?.focus();
+    if (focusKey != null && !softKeyboard) textarea?.focus();
   });
 
   // "Type to focus": pressing a printable key while focus isn't already in an editable
