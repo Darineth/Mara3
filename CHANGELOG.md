@@ -2,9 +2,39 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.22] - unreleased
+## [3.0.22] - 2026-07-05
 
-_In development._
+### Added
+
+- **Attach images straight from the message bar.** A new image button sits next to the emoji
+  picker and opens a file picker to attach one or more images — the same pipeline as
+  drag-and-drop or paste, now one click away.
+- **Clear a channel's messages.** A "Clear messages" action in the ⋯ menu wipes the channel's
+  backlog in your client and leaves a "History cleared — click to restore" marker; click it to
+  pull the history back from the server. It's local only — nothing is deleted server-side and
+  other people are unaffected.
+
+### Changed
+
+- **Animated images and emoji settle down.** Animated GIF/WebP/APNG images and emoji now play
+  for about ten seconds and then freeze on their current frame; hover over one to replay it for
+  another interval, so a channel full of animation stops looping forever.
+- **Inline images hide the same way as spoilers.** An image's corner toggle now covers it in
+  place — same size, no reflow, with an eye to reveal it again — matching the spoiler show/hide,
+  instead of collapsing it to a separate "Show image" chip.
+
+### Fixed
+
+- **Animated WebP and APNG emoji stay animated after upload.** The client-side resize was
+  flattening them to a single frame; animated formats are now uploaded as-is so they keep
+  moving. (Downscaling animated uploads is on the roadmap.)
+- **Blank lines around headings render sensibly.** A blank line still separates paragraphs, but
+  an extra blank line right after a heading (or list/quote) is now absorbed instead of doubling
+  the gap — the block's own spacing already sets it off.
+- **The message composer is opaque.** Its background was partly transparent, so other elements
+  showed through when it grew to fit a long message; it's now solid.
+- **Transparent avatars display correctly.** Dropped the solid fill behind avatars, so an avatar
+  image with transparency shows through instead of sitting on a grey box.
 
 ## [3.0.21] - 2026-07-05
 
