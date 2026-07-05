@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
   import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
@@ -61,6 +62,12 @@
   let joinOpen = $state(false);
   let joinEl = $state<HTMLElement | null>(null);
   let joinInput = $state<HTMLInputElement | null>(null);
+  let tabsEl = $state<HTMLElement | null>(null);
+  // The user list slides out as an overlay when it isn't shown inline (see sidebarInline).
+  let usersDrawerOpen = $state(false);
+  // Below this width the inline sidebar is dropped for space; the top-bar button becomes the
+  // way in. Tracked reactively (a CSS media query alone can't drive the button/menu logic).
+  let isNarrow = $state(false);
 
   // The parent remounts ChatApp when `client` changes (keyed by {#if client}),
   // so capturing the (stable) stores once is correct.
@@ -667,6 +674,44 @@
     activePm !== null ? `pm:${activePm}` : activeChannel !== null ? `ch:${activeChannel}` : null,
   );
 
+  // The inline sidebar shows only for a channel, when kept on, and when there's room. When it
+  // isn't inline (narrow screen, or hidden by choice) offer the top-bar button that slides the
+  // list out as a drawer instead. A PM has no member list, so neither applies there.
+  const sidebarInline = $derived(activeChannel !== null && showUsers && !isNarrow);
+  const usersButtonVisible = $derived(activeChannel !== null && !sidebarInline);
+
+  // Track the narrow breakpoint (keep the 640px in sync with the CSS below).
+  $effect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const apply = () => (isNarrow = mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  });
+
+  // The drawer only makes sense over a channel; drop it when the view leaves one (opening a
+  // PM from it, or leaving the channel) so it can't linger or reopen on the next channel.
+  $effect(() => {
+    if (activeChannel === null) usersDrawerOpen = false;
+  });
+
+  // Close the drawer on Escape while it's open.
+  $effect(() => {
+    if (!usersDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') usersDrawerOpen = false;
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Keep the active tab scrolled into view within the horizontally-scrolling strip, so
+  // switching to (or joining) a channel whose tab sits off-screen brings it into view.
+  $effect(() => {
+    activeKey; // re-run on conversation switch
+    tabsEl?.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+
   function membersOf(token: Token): UserInfo[] {
     const channel = $channels.get(token);
     if (!channel) return [];
@@ -926,7 +971,7 @@
   <header class="topbar">
     <div class="convos">
       {#if showTabs}
-        <nav class="tabs">
+        <nav class="tabs" bind:this={tabsEl}>
           {#each channelList as channel (channel.token)}
             <button
               class:active={activePm === null && activeChannel === channel.token}
@@ -1022,6 +1067,21 @@
         data-state={$connection}
         title={`${$connection}${$self ? ` · ${$self.name}` : ''}`}
       ></span>
+      {#if usersButtonVisible}
+        <button
+          class="iconbtn users-toggle"
+          aria-label={usersDrawerOpen ? 'Hide user list' : 'Show user list'}
+          aria-expanded={usersDrawerOpen}
+          title="Who's here"
+          onclick={() => (usersDrawerOpen = !usersDrawerOpen)}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path
+              d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
+            />
+          </svg>
+        </button>
+      {/if}
       <div class="menu-wrap" bind:this={menuEl}>
         <button
           class="iconbtn"
@@ -1037,9 +1097,13 @@
             {/if}
             {#if activeChannel !== null}
               <button class="item" onclick={leaveActive}>Leave channel</button>
-              <button class="item" onclick={() => ((showUsers = !showUsers), (menuOpen = false))}>
-                {showUsers ? 'Hide' : 'Show'} user list
-              </button>
+              {#if !isNarrow}
+                <!-- Toggles the inline sidebar. When it's off (or the screen is narrow) the
+                     top-bar button slides the list out instead, so this would be a no-op there. -->
+                <button class="item" onclick={() => ((showUsers = !showUsers), (menuOpen = false))}>
+                  {showUsers ? 'Hide' : 'Show'} user list
+                </button>
+              {/if}
             {/if}
             <button class="item" onclick={() => ((showMacros = true), (menuOpen = false))}
               >Macros…</button
@@ -1090,7 +1154,7 @@
         {/if}
       </div>
     {:else}
-      <div class="convo" class:with-users={activeChannel !== null && showUsers}>
+      <div class="convo" class:with-users={sidebarInline}>
         <ChatView
           lines={activeLines}
           users={$directory}
@@ -1102,7 +1166,7 @@
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);
           }}
         />
-        {#if activeChannel !== null && showUsers}
+        {#if sidebarInline}
           <UserList
             users={membersOf(activeChannel)}
             selfToken={$self?.token ?? null}
@@ -1123,6 +1187,24 @@
       />
     {/if}
   </main>
+
+  {#if usersDrawerOpen && activeChannel !== null}
+    <!-- Slide-out user list for when it isn't shown inline. Scrim dismisses; picking a user
+         opens the PM and closes the drawer. -->
+    <button
+      class="users-scrim"
+      aria-label="Close user list"
+      transition:fade={{ duration: 150 }}
+      onclick={() => (usersDrawerOpen = false)}
+    ></button>
+    <aside class="users-drawer" transition:fly={{ x: 300, duration: 200 }}>
+      <UserList
+        users={membersOf(activeChannel)}
+        selfToken={$self?.token ?? null}
+        onselect={(u) => ((usersDrawerOpen = false), openPm(u))}
+      />
+    </aside>
+  {/if}
 </div>
 
 {#if showMacros}
@@ -1348,6 +1430,53 @@
   .iconbtn:hover {
     background: var(--mara-hover);
   }
+  /* The users-toggle holds an SVG glyph rather than a text glyph — center it. */
+  .users-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .users-toggle svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    display: block;
+  }
+  .users-toggle[aria-expanded='true'] {
+    background: var(--mara-hover);
+  }
+  /* Slide-out user list (when the inline sidebar isn't shown). */
+  .users-scrim {
+    position: fixed;
+    inset: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: default;
+    z-index: 40;
+  }
+  .users-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(260px, 78vw);
+    z-index: 41;
+    display: flex;
+    flex-direction: column;
+    background: var(--mara-bg);
+    border-left: 1px solid var(--mara-border);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    /* Clear the system bars / display cutout on mobile (0 on desktop). */
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .users-drawer :global(.mara-userlist) {
+    width: 100%;
+    height: 100%;
+  }
   .menu {
     position: absolute;
     right: 0;
@@ -1457,13 +1586,5 @@
     margin: 0.25rem 0 0;
     font-size: 0.75rem;
     opacity: 0.6;
-  }
-  @media (max-width: 640px) {
-    .convo.with-users {
-      grid-template-columns: 1fr;
-    }
-    .convo.with-users :global(.mara-userlist) {
-      display: none;
-    }
   }
 </style>
