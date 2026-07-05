@@ -29,7 +29,7 @@
     upsertPmConversation,
   } from './lib/pmHistory.js';
   import { openPopout, popoutBus, type PopoutBusMessage, type SoloView } from './lib/popout.js';
-  import type { MaraSettings, Theme } from './lib/settings.js';
+  import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
   import { uploadImage } from './lib/upload.js';
@@ -828,6 +828,7 @@
     keepPmHistory: boolean;
     pmsInWindows: boolean;
     autoRefresh: boolean;
+    messageStyle: MessageStyle;
   }) {
     const newName = next.name.trim();
     const update: { name?: string; color?: string } = {};
@@ -843,6 +844,7 @@
     settings.keepPmHistory = next.keepPmHistory;
     settings.pmsInWindows = next.pmsInWindows;
     settings.autoRefresh = next.autoRefresh;
+    settings.messageStyle = next.messageStyle;
     persist();
   }
 
@@ -1161,6 +1163,7 @@
           {sessionStart}
           conversationKey={activeKey}
           emoji={$emoji}
+          messageStyle={settings.messageStyle}
           hasMore={activeChannel !== null && ($hasMoreHistory.get(activeChannel) ?? false)}
           onLoadOlder={() => {
             if (activeChannel !== null) client.requestOlderHistory(activeChannel);

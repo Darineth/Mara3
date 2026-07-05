@@ -4,7 +4,7 @@
   the parent persists settings on apply. Mirrors MacrosDialog's modal pattern.
 -->
 <script lang="ts">
-  import type { MaraSettings, Theme } from './lib/settings.js';
+  import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import IdentityControls from './IdentityControls.svelte';
 
   let {
@@ -20,6 +20,7 @@
       keepPmHistory: boolean;
       pmsInWindows: boolean;
       autoRefresh: boolean;
+      messageStyle: MessageStyle;
     }) => void;
     onClose: () => void;
   } = $props();
@@ -37,6 +38,8 @@
   let pmsInWindows = $state(settings.pmsInWindows);
   // svelte-ignore state_referenced_locally
   let autoRefresh = $state(settings.autoRefresh);
+  // svelte-ignore state_referenced_locally
+  let messageStyle = $state<MessageStyle>(settings.messageStyle);
   let backdrop = $state<HTMLDivElement | null>(null);
 
   // Close on backdrop click and Escape (mirrors MacrosDialog).
@@ -65,6 +68,7 @@
       keepPmHistory,
       pmsInWindows,
       autoRefresh,
+      messageStyle,
     });
     onClose();
   }
@@ -92,6 +96,16 @@
           <option value="dark">Dark</option>
           <option value="light">Light</option>
         </select>
+      </label>
+      <label>
+        Message style
+        <select bind:value={messageStyle}>
+          <option value="mara">Mara</option>
+          <option value="discord">Discord</option>
+        </select>
+        <small class="hint">
+          Discord groups a run of messages from the same person under one name and time.
+        </small>
       </label>
       <label class="check">
         <input type="checkbox" bind:checked={keepPmHistory} />
@@ -202,6 +216,10 @@
   .check small {
     display: block;
     opacity: 0.65;
+  }
+  .hint {
+    opacity: 0.6;
+    font-size: 0.72rem;
   }
   footer {
     display: flex;

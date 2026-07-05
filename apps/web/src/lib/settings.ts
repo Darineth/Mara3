@@ -5,6 +5,10 @@ export const MACRO_COUNT = 12;
  *  on some platforms (e.g. Windows 7), where it resolves to dark. */
 export type Theme = 'system' | 'dark' | 'light';
 
+/** Message layout: 'mara' (compact — a timestamp gutter then `Name: text`) or 'discord'
+ *  (cozy — a `Name  timestamp` header with the text below, consecutive messages grouped). */
+export type MessageStyle = 'mara' | 'discord';
+
 /** User-facing client settings, persisted to localStorage (or Tauri store later). */
 export interface MaraSettings {
   name: string;
@@ -30,6 +34,8 @@ export interface MaraSettings {
   /** Auto-refresh the page when the server reports a newer web build than this one
    *  (production only; loop-guarded). On by default. */
   autoRefresh: boolean;
+  /** How chat messages are laid out (see {@link MessageStyle}). */
+  messageStyle: MessageStyle;
 }
 
 const KEY = 'mara3.settings';
@@ -111,7 +117,14 @@ export const defaultSettings: MaraSettings = {
   keepPmHistory: true,
   pmsInWindows: false,
   autoRefresh: true,
+  messageStyle: 'mara',
 };
+
+/** Clamp a stored value to a known message style (defaulting to 'mara'), so an old or
+ *  hand-edited settings blob can't inject an unknown layout. */
+function normalizeMessageStyle(value: unknown): MessageStyle {
+  return value === 'discord' ? 'discord' : 'mara';
+}
 
 /** Apply a theme to the document: explicit dark/light set `data-theme` on <html>;
  *  "system" removes it so the stylesheet's prefers-color-scheme query takes over. */
@@ -146,6 +159,7 @@ export function loadSettings(): MaraSettings {
       ...saved,
       macros: normalizeMacros(saved.macros),
       channels: normalizeChannels(saved.channels),
+      messageStyle: normalizeMessageStyle(saved.messageStyle),
       // Keep the stored key; mint one for installs from before this field existed.
       identityKey: saved.identityKey || newIdentityKey(),
     };

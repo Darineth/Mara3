@@ -613,6 +613,36 @@ describe('renderLine', () => {
     expect(html).toContain('<span class="mara-ts">12:00</span>');
   });
 
+  it('discord layout puts name+timestamp in a header with the text below', () => {
+    const html = renderLine(
+      { kind: 'chat', authorName: 'alice', authorColor: '#ff0000', text: 'hi', timestamp: '12:00' },
+      { layout: 'discord' },
+    );
+    expect(html).toContain('mara-discord');
+    expect(html).toContain('<div class="mara-head">');
+    expect(html).toContain('<span class="mara-author" style="color:#ff0000">alice</span>');
+    expect(html).toContain('<span class="mara-ts">12:00</span>');
+    expect(html).toContain('<div class="mara-text">hi</div>');
+    expect(html).not.toContain('alice:'); // no compact "name:" prefix in cozy mode
+  });
+
+  it('discord continuation drops the header (grouped run)', () => {
+    const html = renderLine(
+      {
+        kind: 'chat',
+        authorName: 'alice',
+        authorColor: '#ff0000',
+        text: 'again',
+        timestamp: '12:01',
+      },
+      { layout: 'discord', continuation: true },
+    );
+    expect(html).toContain('mara-cont');
+    expect(html).not.toContain('mara-head');
+    expect(html).not.toContain('12:01'); // the timestamp lives only in the (suppressed) header
+    expect(html).toContain('<div class="mara-text">again</div>');
+  });
+
   it('applies markdown to the message body', () => {
     const html = renderLine({
       kind: 'chat',

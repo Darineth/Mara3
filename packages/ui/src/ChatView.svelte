@@ -14,6 +14,7 @@
     onLoadOlder,
     conversationKey = null,
     emoji = {},
+    messageStyle = 'mara',
   }: {
     lines: ChatLine[];
     users: Map<Token, UserInfo>;
@@ -29,6 +30,8 @@
     conversationKey?: string | null;
     /** Custom emoji map (shortcode → image URL); `:name:` in a message renders inline. */
     emoji?: Record<string, string>;
+    /** Message layout: 'mara' (compact) or 'discord' (cozy header + grouped runs). */
+    messageStyle?: 'mara' | 'discord';
   } = $props();
 
   // Known users for `@Name` mention styling (bold in the target's colour + glow) —
@@ -70,6 +73,22 @@
         second: '2-digit',
       }),
     };
+  }
+
+  // discord layout groups consecutive messages from one author (like Discord): only the
+  // first shows the name+timestamp header. A different author, a non-chat line in between
+  // (join/leave/emote), too long a gap, or the session divider breaks the run.
+  const GROUP_WINDOW_MS = 5 * 60 * 1000;
+  function isContinuation(i: number): boolean {
+    if (messageStyle !== 'discord' || i === 0) return false;
+    const cur = lines[i];
+    const prev = lines[i - 1];
+    if (!cur || !prev || cur.kind !== 'chat' || prev.kind !== 'chat') return false;
+    if (cur.from === null || cur.from !== prev.from) return false;
+    if (cur.at - prev.at > GROUP_WINDOW_MS) return false;
+    // A session boundary rule sits between them → start a fresh, labelled group.
+    if (sessionStart > 0 && prev.at < sessionStart && cur.at >= sessionStart) return false;
+    return true;
   }
 
   // Last seen scrollTop, to tell a user scroll-up from content growing under us.
@@ -225,7 +244,12 @@
         <hr class="mara-sep" />
       {/if}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-      {@html renderLine(toModel(line), { emoji, mentions: mentionUsers })}
+      {@html renderLine(toModel(line), {
+        emoji,
+        mentions: mentionUsers,
+        layout: messageStyle,
+        continuation: isContinuation(i),
+      })}
     {/each}
     {#if lines.length === 0}
       <div class="mara-empty">No messages yet.</div>
@@ -280,6 +304,32 @@
   }
   .mara-chatview :global(.mara-author) {
     font-weight: 600;
+  }
+  /* discord (cozy) layout: a `Name  timestamp` header with the text below; a grouped run
+     (mara-cont) drops the header and tucks up under the first message. */
+  .mara-chatview :global(.mara-line.mara-discord) {
+    display: block;
+    /* Breathing room between consecutive messages in a run — more than a plain wrapped
+       line, less than the larger gap before a new author's group (below). */
+    margin: 0.22rem 0 0;
+  }
+  .mara-chatview :global(.mara-line.mara-discord:not(.mara-cont)) {
+    margin-top: 0.6rem;
+  }
+  .mara-chatview :global(.mara-discord .mara-head) {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    line-height: 1.3;
+  }
+  .mara-chatview :global(.mara-discord .mara-author) {
+    /* Discord shows the name a touch larger than the message text. */
+    font-size: 1.05rem;
+  }
+  .mara-chatview :global(.mara-discord .mara-text) {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
   }
   .mara-chatview :global(.mara-system) {
     opacity: 0.6;

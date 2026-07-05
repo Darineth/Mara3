@@ -20,8 +20,15 @@ export interface LineModel {
   timestamp?: string;
 }
 
-/** Per-line options; currently just the text pipeline's options. */
-export type RenderLineOptions = RenderTextOptions;
+/** Per-line options: the text pipeline's options plus the line layout. */
+export type RenderLineOptions = RenderTextOptions & {
+  /** 'mara' (compact — timestamp gutter then `Name: text`) or 'discord' (cozy — a
+   *  `Name  timestamp` header with the text below). Defaults to 'mara'. */
+  layout?: 'mara' | 'discord';
+  /** discord layout only: this chat line continues the previous author's group (same
+   *  author, close in time), so drop its `Name  timestamp` header and show just the text. */
+  continuation?: boolean;
+};
 
 // Leading timestamp span, or empty when the line carries no timestamp. Timestamps
 // always render when present (no user toggle). It sits in its own column (a flex
@@ -50,6 +57,21 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
   // lines align to where the author/message starts (see ChatView's flex layout).
   switch (line.kind) {
     case 'chat':
+      // discord (cozy): a `Name  timestamp` header, then the text below in the default
+      // colour. A grouped continuation (same author, close in time) drops the header so
+      // only the first message in a run is labelled — like Discord.
+      if (options.layout === 'discord') {
+        const head = options.continuation
+          ? ''
+          : `<div class="mara-head"><span class="mara-author" style="color:${color}">${name}</span>${ts(line)}</div>`;
+        return (
+          `<div class="mara-line mara-chat mara-discord${options.continuation ? ' mara-cont' : ''}">` +
+          head +
+          `<div class="mara-text">${renderText(line.text, options)}</div>` +
+          `</div>`
+        );
+      }
+      // mara (compact): timestamp gutter, then the whole `name: body` in the author colour.
       return (
         `<div class="mara-line mara-chat">${ts(line)}` +
         `<span class="mara-body" style="color:${color}">` +
