@@ -652,6 +652,10 @@
        0 on desktop, so unchanged there. */
     padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
     border-top: 1px solid var(--mara-border, #333);
+    /* Opaque so nothing shows through: the composer sits over the message list, and when it
+       grows (multi-line input, attachments) an unpainted background would let messages behind
+       it bleed through, especially near the top edge. */
+    background: var(--mara-bg, #000);
     align-items: flex-end;
   }
   .mara-input.dragover {
