@@ -1,6 +1,6 @@
 {
   "name": "@mara/server",
-  "version": "3.0.23",
+  "version": "3.0.24",
   "private": true,
   "type": "module",
   "// files": "Allowlist for `pnpm deploy` (the packaged server). Keeps the build output only — never the runtime data/ (chat history + identity tokens) or .turbo logs.",
