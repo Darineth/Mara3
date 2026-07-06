@@ -483,6 +483,18 @@
         return;
       }
     }
+    // Escape clears the draft. (An open autocomplete swallows Escape above, so reaching here
+    // means none is open.) Left as a no-op on an already-empty field so Escape isn't captured
+    // for nothing.
+    if (event.key === 'Escape') {
+      if (text.length === 0) return;
+      event.preventDefault();
+      text = '';
+      historyIndex = -1; // abandon any history navigation; back to a fresh line
+      draft = '';
+      void tick().then(autosize); // shrink the field back to one row
+      return;
+    }
     // F1–F12 insert the matching macro (only when one is set, so e.g. F5 still
     // refreshes the page when its slot is empty).
     const fkey = /^F([1-9]|1[0-2])$/.exec(event.key);
