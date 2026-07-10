@@ -2,6 +2,7 @@
      output, then layers interactivity (spoiler reveal, image hide/lightbox) on
      top imperatively since the markup isn't ours to bind handlers onto. -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
   import { openLightbox } from './lightbox.js';
@@ -54,6 +55,89 @@
   // DOM) so the choice survives the {@html} re-renders that fire when the roster
   // or timestamp setting changes. Reassigned on change for reactivity.
   let hiddenImages = $state(new Set<string>());
+
+  // A very tall message is clamped to a fraction of the viewport height and gets a "Show more"
+  // toggle, so one giant message can't swallow the whole view. `clippedMessages` holds the ids
+  // (line.id) whose content overflows the clamp; `expandedMessages` those the user opened.
+  // `measureTick` forces a re-measure when the content reflows or the window resizes.
+  const MAX_MESSAGE_VH = 0.6; // clamp to 60% of the viewport height (keep in sync with the CSS)
+  let clippedMessages = $state(new Set<number>());
+  let expandedMessages = $state(new Set<number>());
+  let measureTick = $state(0);
+
+  function toggleExpand(id: number) {
+    const next = new Set(expandedMessages);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    expandedMessages = next;
+  }
+
+  // Cheeky stand-ins for a plain "Show more" / "Show less" on a clamped (over-long) message.
+  const EXPAND_LABELS = [
+    'Well, that was long',
+    "Got a bit wordy, didn't it?",
+    'Somebody had thoughts',
+    "The director's cut",
+    'Brevity? Never heard of her',
+    'There’s more, of course',
+    'Keep going, brave soul',
+    'The rest of the saga',
+    'It goes on. And on.',
+    'Show the whole manifesto',
+    "You sure? It's a lot",
+    'The full thesis awaits',
+    'Someone skipped the edit',
+    'Peek behind the fold',
+    'Finish the novel',
+    "War and Peace, cont'd",
+    'Room for more paragraphs',
+    'Unroll the scroll',
+    'More words this way',
+    'Yeah, there’s extra',
+  ];
+  const COLLAPSE_LABELS = [
+    'TL;DR',
+    'Okay, enough',
+    'That’s plenty',
+    'Fold it back up',
+    "I've seen enough",
+    'Wrap it up',
+    'Collapse the essay',
+    'Back in the box',
+    'Roll it back up',
+    'That’ll do',
+    'Nevermind...',
+    'Less is more',
+    'Point taken',
+    'Retract the manifesto',
+    'Reel it in',
+    'Enough said',
+    'Spare me the rest',
+    'Shrink it down',
+    'Nope, close it',
+    'Mercy — collapse',
+  ];
+  // Pick one deterministically from the message id, so the quip is stable across the {@html}
+  // re-renders (roster/timestamp changes) instead of flickering to a new one each time. A
+  // multiplicative hash scatters sequential ids so neighbouring messages rarely share a line.
+  function pickLabel(labels: string[], id: number): string {
+    return labels[(Math.imul(id, 2654435761) >>> 0) % labels.length] ?? labels[0] ?? '';
+  }
+
+  // The expand/collapse pill is tinted with the message author's own colour (their name
+  // colour), so it reads as "their" control. Falls back to a neutral grey for authorless
+  // (system) lines or an invalid colour.
+  function authorColorOf(line: ChatLine): string {
+    const c = line.from !== null ? users.get(line.from)?.color : undefined;
+    return c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#888888';
+  }
+  // Black or white — whichever the YIQ brightness of `hex` (a #rrggbb) says reads better — so
+  // the pill's label + chevron stay legible on any author colour.
+  function contrastText(hex: string): string {
+    const n = parseInt(hex.slice(1), 16);
+    const yiq = (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000;
+    return yiq >= 128 ? '#000' : '#fff';
+  }
 
   // The img src is the stable identity used to key hidden state across re-renders.
   function imgSrcOf(box: Element): string {
@@ -174,9 +258,15 @@
     if (!el || !c) return;
     const ro = new ResizeObserver(() => {
       if (pinnedToBottom) el.scrollTop = el.scrollHeight;
+      measureTick++; // content reflowed (image loaded, message added) → re-check the clamps
     });
     ro.observe(c);
-    return () => ro.disconnect();
+    const onResize = () => measureTick++; // window height changed → the 70vh threshold moved
+    window.addEventListener('resize', onResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onResize);
+    };
   });
 
   // Handle clicks inside the log imperatively so the container doesn't need a
@@ -277,6 +367,28 @@
       box.classList.toggle('hidden', set.has(imgSrcOf(box)));
     }
   });
+
+  // Measure which messages overflow the height clamp, so only those show a "Show more" toggle.
+  // Re-runs after each render and whenever the content reflows / the window resizes. We measure
+  // the rendered line box — which the wrapper's clip doesn't shrink — so toggling the clamp
+  // can't change the measurement and loop. Reads clippedMessages untracked to avoid self-triggering.
+  $effect(() => {
+    lines.length; // re-measure when messages change,
+    void users; // ...when the roster re-renders them,
+    void expandedMessages; // ...after an expand/collapse,
+    void measureTick; // ...and on reflow / resize.
+    const c = content;
+    if (!c) return;
+    const threshold = window.innerHeight * MAX_MESSAGE_VH;
+    const next = new Set<number>();
+    for (const msg of c.querySelectorAll<HTMLElement>('.mara-msg')) {
+      const line = msg.querySelector<HTMLElement>('.mara-line');
+      const height = line ? line.getBoundingClientRect().height : msg.scrollHeight;
+      if (height > threshold) next.add(Number(msg.dataset.id));
+    }
+    const cur = untrack(() => clippedMessages);
+    if (next.size !== cur.size || [...next].some((id) => !cur.has(id))) clippedMessages = next;
+  });
 </script>
 
 <div class="mara-chatview" role="log" bind:this={viewport} onscroll={onScroll}>
@@ -285,14 +397,54 @@
       {#if sessionStart > 0 && i > 0 && (lines[i - 1]?.at ?? sessionStart) < sessionStart && line.at >= sessionStart}
         <hr class="mara-sep" />
       {/if}
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
-      {@html renderLine(toModel(line), {
-        emoji,
-        mentions: mentionUsers,
-        layout: messageStyle,
-        continuation: isContinuation(i),
-        avatars: showAvatars,
-      })}
+      <div
+        class="mara-msg"
+        class:clipped={clippedMessages.has(line.id) && !expandedMessages.has(line.id)}
+        class:expanded={expandedMessages.has(line.id)}
+        data-id={line.id}
+      >
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
+        {@html renderLine(toModel(line), {
+          emoji,
+          mentions: mentionUsers,
+          layout: messageStyle,
+          continuation: isContinuation(i),
+          avatars: showAvatars,
+        })}
+        {#if clippedMessages.has(line.id)}
+          {@const tint = authorColorOf(line)}
+          <button
+            type="button"
+            class="mara-expand"
+            style="background:{tint};border-color:{tint};color:{contrastText(tint)}"
+            onclick={() => toggleExpand(line.id)}
+            aria-expanded={expandedMessages.has(line.id)}
+            title={expandedMessages.has(line.id)
+              ? 'Collapse this message'
+              : 'Show the full message'}
+          >
+            <svg
+              class="mara-expand-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline
+                points={expandedMessages.has(line.id) ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}
+              />
+            </svg>
+            <span
+              >{expandedMessages.has(line.id)
+                ? pickLabel(COLLAPSE_LABELS, line.id)
+                : pickLabel(EXPAND_LABELS, line.id)}</span
+            >
+          </button>
+        {/if}
+      </div>
     {/each}
     {#if lines.length === 0}
       <div class="mara-empty">No messages yet.</div>
@@ -320,6 +472,68 @@
     opacity: 0.4;
     font-style: italic;
     padding: 1rem 0;
+  }
+  /* Per-message wrapper. A very tall message is clamped to 60% of the viewport and fades out at
+     the bottom, with a "Show more" toggle over the fade; expanding drops the clamp. Short
+     messages are unaffected (the clamp only bites past 60vh). */
+  .mara-msg {
+    position: relative;
+  }
+  .mara-msg.clipped {
+    max-height: 60vh;
+    overflow: hidden;
+  }
+  .mara-msg.clipped::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4rem;
+    background: linear-gradient(to bottom, transparent, var(--mara-bg, #0b0b0b));
+    pointer-events: none;
+  }
+  /* A filled pill with a chevron, so it clearly reads as a "there's more / collapse" control.
+     Its background/border/text colours are set inline per message — tinted with the author's
+     own colour, with black/white text picked for contrast (see the template). The values here
+     are just the fallback if that inline style is ever absent. */
+  .mara-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    font: inherit;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: var(--mara-bg, #0b0b0b);
+    background: var(--mara-accent, #5aa9ff);
+    border: 1px solid var(--mara-accent, #5aa9ff);
+    border-radius: 999px;
+    padding: 0.12rem 0.7rem;
+    cursor: pointer;
+    opacity: 0.92;
+    transition:
+      opacity 0.12s ease,
+      filter 0.12s ease;
+  }
+  .mara-expand:hover {
+    opacity: 1;
+    filter: brightness(1.08);
+  }
+  .mara-expand-icon {
+    width: 1em;
+    height: 1em;
+    flex: none;
+  }
+  /* Clipped: the toggle floats centered over the fade. Expanded: it sits under the message. */
+  .mara-msg.clipped .mara-expand {
+    position: absolute;
+    left: 50%;
+    bottom: 0.5rem;
+    transform: translateX(-50%);
+    z-index: 1;
+  }
+  .mara-msg.expanded .mara-expand {
+    margin: 0.2rem 0 0.35rem;
   }
   .mara-chatview :global(.mara-line) {
     /* Timestamp gutter + body column: wrapped lines align to the body's start
