@@ -390,7 +390,7 @@
       // under whatever restored lines the window opened with (0 disables it).
       if (!solo) {
         sessionStart = client.serverNow();
-        pushSystem(`Connected to ${$serverInfo.name}.`);
+        pushSystem(`Connected to ${$serverInfo.name} (v${$serverInfo.version}).`);
       }
       // The MOTD is pushed later, on the first channel join, so it reads
       // Connected → joined → MOTD.
