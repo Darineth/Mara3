@@ -9,7 +9,7 @@
 
   let {
     onsend,
-    maxLength = 1000,
+    maxLength = 10000,
     placeholder = 'Type a message…',
     disabled = false,
     macros = [],

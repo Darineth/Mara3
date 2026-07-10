@@ -28,8 +28,9 @@ export const avatarSchema = z
   );
 export type Avatar = z.infer<typeof avatarSchema>;
 
-/** Bounds shared by chat / emote / PM text. A server abuse guard, not a UI limit. */
-export const chatTextSchema = z.string().max(8192);
+/** Bounds shared by chat / emote / PM text. A server abuse guard with headroom over the
+ *  composer's 10k character limit, not the UI limit itself. */
+export const chatTextSchema = z.string().max(10240);
 export type ChatText = z.infer<typeof chatTextSchema>;
 
 /** A user as seen by others: identity, colour, and away status (`""` = present). */
