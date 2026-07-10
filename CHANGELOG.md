@@ -2,9 +2,20 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.24] - unreleased
+## [3.0.24] - 2026-07-09
 
-_In development._
+### Added
+
+- **Very long messages fold up.** A message taller than ~60% of the screen is now collapsed
+  with a little pill to expand it (and fold it back), so one giant wall of text can't swallow
+  the whole view. The pill is tinted with the sender's colour and carries a flipping chevron —
+  and yes, its label is a rotating quip rather than a plain "Show more".
+
+### Changed
+
+- **Longer messages.** The composer now accepts up to 10,000 characters (was 1,000).
+- **Escape clears the composer.** Pressing Escape in the message box wipes your draft (it still
+  dismisses an open emoji/mention autocomplete first, and does nothing on an empty box).
 
 ## [3.0.23] - 2026-07-05
 
