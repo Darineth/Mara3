@@ -433,8 +433,17 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
   // trim would strand the ';' as literal text after the link.
   // Fenced code block, with an optional Discord-style language hint on the opening line
   // (```js\n…```). We don't syntax-highlight, but we strip the hint so it isn't shown.
+  // The block is wrapped so a copy button can sit in its corner; ChatView turns a click on it
+  // into a clipboard write, reading the code straight back out of the element's textContent (so
+  // what you copy is the text the author typed, not this escaped HTML). Inline code gets no
+  // button — it's a word, not something you'd paste.
   s = s.replace(/```(?:([a-zA-Z0-9+#.-]*)\n)?([\s\S]*?)```/g, (_m, _lang: string, code: string) =>
-    stash(`<code class="mara-codeblock">${escapeHtml(code)}</code>`),
+    stash(
+      `<span class="mara-codeblock-wrap">` +
+        `<code class="mara-codeblock">${escapeHtml(code)}</code>` +
+        `<button type="button" class="mara-copy" title="Copy code" aria-label="Copy code"></button>` +
+        `</span>`,
+    ),
   );
   // Inline code: a double-backtick span first (so a single backtick can appear inside,
   // ``a`b``), then the single-backtick form.

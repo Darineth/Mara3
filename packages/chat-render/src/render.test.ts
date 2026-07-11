@@ -13,6 +13,12 @@ import {
 const spoiler = (inner: string) =>
   `<span class="mara-spoiler">${inner}<span class="mara-spoiler-hide" aria-hidden="true"></span></span>`;
 
+// A fenced code block is wrapped so a copy button can sit in its corner (the button is styled +
+// wired by the client). Wrap expected code-block content through this helper.
+const codeblock = (code: string) =>
+  `<span class="mara-codeblock-wrap"><code class="mara-codeblock">${code}</code>` +
+  `<button type="button" class="mara-copy" title="Copy code" aria-label="Copy code"></button></span>`;
+
 describe('escapeHtml', () => {
   it('neutralizes markup', () => {
     expect(escapeHtml('<script>alert("x")</script>')).toBe(
@@ -377,7 +383,15 @@ describe('renderText — Discord markdown', () => {
 
   it('renders inline code and code blocks without formatting inside', () => {
     expect(renderText('`a*b*c`')).toBe('<code class="mara-code">a*b*c</code>');
-    expect(renderText('```let x = *y*```')).toBe('<code class="mara-codeblock">let x = *y*</code>');
+    expect(renderText('```let x = *y*```')).toBe(codeblock('let x = *y*'));
+  });
+
+  it('gives a fenced block a copy button, but leaves inline code alone', () => {
+    const block = renderText('```npm install```');
+    expect(block).toContain('class="mara-copy"');
+    expect(block).toContain('aria-label="Copy code"');
+    // Inline code is a word, not something you'd paste — no button.
+    expect(renderText('`npm install`')).not.toContain('mara-copy');
   });
 
   it('supports a double-backtick code span so a single backtick can appear inside', () => {
@@ -418,11 +432,9 @@ describe('renderText — Discord markdown', () => {
   });
 
   it('strips a code-block language hint (no syntax highlighting)', () => {
-    expect(renderText('```js\nlet x = 1;\n```')).toBe(
-      '<code class="mara-codeblock">let x = 1;\n</code>',
-    );
+    expect(renderText('```js\nlet x = 1;\n```')).toBe(codeblock('let x = 1;\n'));
     // No newline after the fence → no language hint, the whole thing is code.
-    expect(renderText('```plain text```')).toBe('<code class="mara-codeblock">plain text</code>');
+    expect(renderText('```plain text```')).toBe(codeblock('plain text'));
   });
 });
 

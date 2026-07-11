@@ -4,7 +4,12 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.26] - unreleased
 
-_In development._
+### Added
+
+- **Copy a code block.** Fenced code blocks (` ``` `) now carry a copy button in the corner —
+  hover the block to see it, click to copy, and it ticks green to confirm. You get the code
+  exactly as it was typed. Inline `` `code` `` is left alone; it's a word, not something you'd
+  paste.
 
 ## [3.0.25] - 2026-07-11
 

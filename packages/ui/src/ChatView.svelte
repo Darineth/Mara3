@@ -6,6 +6,7 @@
   import { renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
   import { openLightbox } from './lightbox.js';
+  import { copyText } from './clipboard.js';
   import { freezeAnimatedImages } from './freezeAnimated.js';
 
   let {
@@ -658,6 +659,21 @@
       // The "cleared" marker: clicking it re-fetches the channel's server backlog.
       if (target?.closest('.mara-cleared')) {
         onRestore?.();
+        return;
+      }
+
+      // Copy button on a fenced code block. The code is read back out of the rendered element's
+      // textContent, which is the author's original text — the HTML we injected is escaped, and
+      // textContent un-escapes it — so no need to smuggle a raw copy through a data attribute.
+      const copyBtn = target?.closest('.mara-copy');
+      if (copyBtn) {
+        const code = copyBtn.parentElement?.querySelector('.mara-codeblock')?.textContent ?? '';
+        void copyText(code).then((ok) => {
+          // Feedback on the button itself. Purely DOM state: it's transient, and a re-render
+          // (roster change, new message) resetting it early is harmless.
+          copyBtn.classList.add(ok ? 'copied' : 'failed');
+          setTimeout(() => copyBtn.classList.remove('copied', 'failed'), 1200);
+        });
         return;
       }
 
@@ -1400,9 +1416,84 @@
   }
   .mara-chatview :global(.mara-codeblock) {
     display: block;
-    padding: 0.5em 0.7em;
+    /* Extra right padding reserves the corner for the copy button, so long lines never run
+       underneath it. */
+    padding: 0.5em 2.2em 0.5em 0.7em;
     margin: 0.4em 0;
     white-space: pre-wrap;
+  }
+  /* Positioning context for the copy button; block so the code block still owns its own line. */
+  .mara-chatview :global(.mara-codeblock-wrap) {
+    position: relative;
+    display: block;
+  }
+  /* Copy button: revealed on hover of the block (or when focused, so it's keyboard-reachable),
+     and it stays put once clicked so the "copied" tick is actually seen. */
+  .mara-chatview :global(.mara-copy) {
+    position: absolute;
+    top: 0.75em;
+    right: 0.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5em;
+    height: 1.5em;
+    padding: 0;
+    font-size: 0.85em;
+    color: var(--mara-fg, #e6e6e6);
+    background: rgba(127, 127, 127, 0.18);
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  .mara-chatview :global(.mara-codeblock-wrap:hover .mara-copy),
+  .mara-chatview :global(.mara-copy:focus-visible),
+  .mara-chatview :global(.mara-copy.copied),
+  .mara-chatview :global(.mara-copy.failed) {
+    opacity: 0.85;
+  }
+  .mara-chatview :global(.mara-copy:hover) {
+    opacity: 1;
+    background: rgba(127, 127, 127, 0.32);
+  }
+  /* Idle: a clipboard glyph, masked from an inline SVG so it takes `currentColor` and renders
+     identically on every platform (the same trick as the spoiler/image eye). */
+  .mara-chatview :global(.mara-copy)::before {
+    content: '';
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask: var(--mara-clip) center / contain no-repeat;
+    mask: var(--mara-clip) center / contain no-repeat;
+    --mara-clip: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23fff'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Crect%20x='9'%20y='9'%20width='13'%20height='13'%20rx='2'%20ry='2'/%3E%3Cpath%20d='M5%2015H4a2%202%200%200%201-2-2V4a2%202%200%200%201%202-2h9a2%202%200%200%201%202%202v1'/%3E%3C/svg%3E");
+  }
+  /* Copied → a tick, in the "ok" colour. Failed (no clipboard access at all) → a cross, so the
+     button never just sits there having silently done nothing. */
+  .mara-chatview :global(.mara-copy.copied) {
+    color: var(--mara-ok, #3fb950);
+    border-color: var(--mara-ok, #3fb950);
+  }
+  .mara-chatview :global(.mara-copy.copied)::before {
+    content: '\2713';
+    mask: none;
+    -webkit-mask: none;
+    background: none;
+    font-size: 1.1em;
+    line-height: 1;
+  }
+  .mara-chatview :global(.mara-copy.failed) {
+    color: var(--mara-danger, #e5534b);
+    border-color: var(--mara-danger, #e5534b);
+  }
+  .mara-chatview :global(.mara-copy.failed)::before {
+    content: '\00d7';
+    mask: none;
+    -webkit-mask: none;
+    background: none;
+    font-size: 1.25em;
+    line-height: 1;
   }
   /* Block-level markdown (Discord parity): headers, subtext, quotes, lists. Headers carry
      extra space above to set them off from the block before them; the first block in a
