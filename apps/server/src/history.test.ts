@@ -81,4 +81,14 @@ describe('HistoryStore persistence', () => {
     for (let i = 1; i <= 5; i++) store.append('Main', entry(i), 3);
     expect(store.get('Main').map((e) => e.id)).toEqual([3, 4, 5]);
   });
+
+  it('looks a message up by id only within its own channel', () => {
+    const store = new HistoryStore('', log);
+    store.append('Main', entry(1, 'in main'), 100);
+    store.append('Dev', entry(2, 'in dev'), 100);
+    expect(store.byId('Main', 1)?.text).toBe('in main');
+    // The scoping is what stops a reply from quoting a message in a channel you aren't in.
+    expect(store.byId('Main', 2)).toBeUndefined();
+    expect(store.byId('Main', 99)).toBeUndefined(); // aged out / never existed
+  });
 });

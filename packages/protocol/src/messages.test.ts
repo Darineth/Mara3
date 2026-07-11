@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   clientMessageSchema,
+  replyExcerpt,
+  REPLY_EXCERPT_MAX,
   serverMessageSchema,
   type ClientMessage,
   type ServerMessage,
@@ -206,5 +208,62 @@ describe('schema defaults', () => {
     );
     if (joined.type !== 'channelJoined') throw new Error('unexpected');
     expect(joined.history).toEqual([]);
+  });
+});
+
+describe('replies', () => {
+  it('takes only an id from the client, and a full snapshot from the server', () => {
+    // Client → server: just the id of the message being replied to.
+    const sent = parseClientMessage(
+      JSON.stringify({ type: 'chat', channelToken: 1, text: 'agreed', replyTo: 42 }),
+    );
+    if (sent.type !== 'chat') throw new Error('unexpected');
+    expect(sent.replyTo).toBe(42);
+
+    // A client that tries to supply the quote itself is rejected — the server is the only
+    // party that gets to say who was quoted and what they said.
+    expect(() =>
+      parseClientMessage(
+        JSON.stringify({
+          type: 'chat',
+          channelToken: 1,
+          text: 'agreed',
+          replyTo: { id: 42, name: 'not-me', excerpt: 'never said this' },
+        }),
+      ),
+    ).toThrow();
+
+    // Server → client: the resolved snapshot.
+    const got = parseServerMessage(
+      JSON.stringify({
+        type: 'chat',
+        id: 43,
+        from: 2,
+        channelToken: 1,
+        text: 'agreed',
+        at: 1000,
+        replyTo: { id: 42, from: 7, name: 'alice', color: '#aabbcc', kind: 'chat', excerpt: 'hi' },
+      }),
+    );
+    if (got.type !== 'chat') throw new Error('unexpected');
+    expect(got.replyTo?.name).toBe('alice');
+
+    // Absent on an ordinary message (and on messages from a server too old to send it).
+    const plain = parseServerMessage(
+      JSON.stringify({ type: 'chat', id: 1, from: 2, channelToken: 1, text: 'hi', at: 1 }),
+    );
+    if (plain.type !== 'chat') throw new Error('unexpected');
+    expect(plain.replyTo).toBeUndefined();
+  });
+
+  it('flattens and truncates an excerpt so a quote bar is always one line', () => {
+    expect(replyExcerpt('  hello   there\nfriend \n')).toBe('hello there friend');
+    const long = replyExcerpt('x'.repeat(500));
+    expect(long.length).toBe(REPLY_EXCERPT_MAX);
+    expect(long.endsWith('…')).toBe(true);
+    // A message exactly at the limit is quoted whole, with no ellipsis.
+    const exact = replyExcerpt('y'.repeat(REPLY_EXCERPT_MAX));
+    expect(exact.length).toBe(REPLY_EXCERPT_MAX);
+    expect(exact.endsWith('…')).toBe(false);
   });
 });

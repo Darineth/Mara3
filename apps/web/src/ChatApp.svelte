@@ -9,6 +9,7 @@
   import { fade, fly } from 'svelte/transition';
   import { get } from 'svelte/store';
   import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
+  import { replyExcerpt } from '@mara/protocol';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import {
@@ -926,7 +927,8 @@
         return null;
       },
       emote: (t) => {
-        if (activeChannel !== null) client.sendEmote(activeChannel, t);
+        // `/me` replies too, when one is pending — takeReply() consumes it either way.
+        if (activeChannel !== null) client.sendEmote(activeChannel, t, takeReply());
       },
       privateMessage: (token, t) => {
         // Send before focusing: selectPm may pop the conversation out into a new
@@ -963,12 +965,48 @@
     };
   }
 
+  // The message the next send replies to, or null for a normal message. Channel-only: PMs
+  // carry no server message ids (the server stores nothing for them), so ChatView offers no
+  // reply affordance there and this stays null.
+  let replyTarget = $state<ChatLine | null>(null);
+
+  /** Consume the pending reply: its server id (if any), clearing it so it applies to one
+   *  message only — a reply, like a draft, shouldn't linger into the next thing you type. */
+  function takeReply(): number | undefined {
+    const id = replyTarget?.serverId;
+    replyTarget = null;
+    return id;
+  }
+
+  // What the composer's "replying to…" chip shows. The excerpt comes from the same shared
+  // helper the server uses to build the stored one, so the preview matches the quote bar the
+  // sent reply ends up with. The author resolves against the live roster, like the message
+  // lines do, falling back to the raw token for someone no longer known.
+  const replyChip = $derived.by(() => {
+    const line = replyTarget;
+    if (!line || line.from === null) return null;
+    const user = $directory.get(line.from);
+    return {
+      name: user?.name ?? `#${line.from}`,
+      color: user?.color ?? '#888888',
+      excerpt: replyExcerpt(line.text),
+    };
+  });
+
+  // Switching conversation abandons a pending reply: the quoted message lives in the channel
+  // you left, so carrying the target across would quote something you can no longer see.
+  $effect(() => {
+    void activeKey;
+    replyTarget = null;
+  });
+
   function handleSend(text: string) {
     // Slash commands run in any conversation; any leading `/` is handled (an unrecognised
-    // one shows an error and isn't sent, so typos don't leak as messages).
+    // one shows an error and isn't sent, so typos don't leak as messages). A command that
+    // isn't `/me` doesn't consume the pending reply — it isn't the message being replied with.
     if (runSlashCommand(text, commandCtx())) return;
     if (activePm !== null) client.sendPrivateMessage(activePm, text);
-    else if (activeChannel !== null) client.sendChat(activeChannel, text);
+    else if (activeChannel !== null) client.sendChat(activeChannel, text, takeReply());
   }
 
   const baseLines = $derived(
@@ -1223,6 +1261,7 @@
           onRestore={() => {
             if (activeChannel !== null) client.restoreChannel(activeChannel);
           }}
+          onReply={activeChannel !== null ? (line) => (replyTarget = line) : undefined}
         />
         {#if sidebarInline}
           <UserList
@@ -1244,6 +1283,8 @@
         emoji={$emoji}
         {emojiOwners}
         mentionNames={[...$users.values()].map((u) => u.name)}
+        replyingTo={replyChip}
+        onCancelReply={() => (replyTarget = null)}
       />
     {/if}
   </main>

@@ -4,7 +4,27 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.25] - unreleased
 
-_In development._
+### Added
+
+- **Replies.** Hover a message and hit the reply arrow to answer it directly: your message
+  goes out with a quote bar above it showing **@who** you replied to and a glimpse of what they
+  said. Click that bar to jump to the original, which stays highlighted for a couple of seconds
+  so you can spot it — and if it's scrolled out of your loaded history, Mara pages older messages
+  in to find it (it gives up and says so rather than searching forever, if the message is older
+  than the server keeps). Followed a reply chain up? A **Back to reply** button appears to walk
+  you back down, one hop at a time — and quietly retires itself if you scroll back down there
+  yourself. Clicking Reply puts the cursor straight in the composer,
+  which shows a "Replying to @…" chip while one is pending — Escape (or its ×) backs out.
+  `/me` replies too. Quotes survive a reload: they're stored with the message, so scrollback
+  keeps them. Channel messages only — private messages aren't stored server-side, so there's
+  nothing to reply to.
+
+### Changed
+
+- **Messages highlight faintly on hover.** The row under your cursor picks up a very subtle
+  tint across the full width of the log, so it's clear which message the reply button belongs to.
+- **The Connected notice names the server's version**, so it's obvious at a glance which build
+  you're talking to.
 
 ## [3.0.24] - 2026-07-09
 

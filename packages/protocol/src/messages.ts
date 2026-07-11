@@ -49,16 +49,24 @@ const leaveChannel = z.object({
   channelToken: tokenSchema,
 });
 
+/** The message id this one replies to. The client sends only the id; the server resolves it
+ *  against the channel's own backlog and broadcasts the full {@link replyRefSchema} snapshot,
+ *  so a client can neither forge the quoted author/text nor quote another channel's message.
+ *  An id the server no longer retains is ignored — the message posts as an ordinary one. */
+const replyToId = z.number().int().nonnegative().optional();
+
 const clientChat = z.object({
   type: z.literal('chat'),
   channelToken: tokenSchema,
   text: chatTextSchema,
+  replyTo: replyToId,
 });
 
 const clientEmote = z.object({
   type: z.literal('emote'),
   channelToken: tokenSchema,
   text: chatTextSchema,
+  replyTo: replyToId,
 });
 
 const clientPrivateMessage = z.object({
@@ -222,6 +230,46 @@ const userDisconnect = z.object({
   at: serverEventAt,
 });
 
+/** Longest quoted excerpt carried on a reply. Enough to recognise the message being
+ *  replied to without dragging a whole 8192-char message along with every reply. */
+export const REPLY_EXCERPT_MAX = 200;
+
+/**
+ * The message a reply points at, as a **server-built snapshot** rather than a bare id.
+ * Denormalising it this way means a reply still renders its quote even when the parent has
+ * scrolled out of the client's loaded backlog — or aged out of the server's retention
+ * entirely — and it keeps the quoted author/text out of the sender's hands.
+ *
+ * `excerpt` is the parent's text, newlines collapsed and truncated to {@link REPLY_EXCERPT_MAX};
+ * clients render it as plain text (no markdown, no inline images), so a quote bar stays one line.
+ */
+export const replyRefSchema = z.object({
+  id: z.number().int().nonnegative(),
+  from: tokenSchema,
+  /** Author name + colour snapshot at reply time, so the quote renders for a departed author. */
+  name: z.string().min(1).max(64),
+  color: colorSchema,
+  kind: z.enum(['chat', 'emote']),
+  excerpt: z.string().max(REPLY_EXCERPT_MAX),
+});
+export type ReplyRef = z.infer<typeof replyRefSchema>;
+
+/**
+ * Condense a message into the one-line excerpt a reply quotes: whitespace (newlines included)
+ * collapses to single spaces so a quote bar is always one line however the original was
+ * formatted, then it is truncated to {@link REPLY_EXCERPT_MAX}.
+ *
+ * It lives here, in the shared protocol, because the server builds the excerpt it stores while
+ * the client builds the preview in its "replying to…" chip — and those two must agree, or the
+ * quote would visibly change the moment you hit send. Markdown is deliberately left in, not
+ * stripped: clients render the excerpt as plain text, and a partial parse of a truncated
+ * message would read worse than the source the author actually typed.
+ */
+export function replyExcerpt(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length <= REPLY_EXCERPT_MAX ? flat : `${flat.slice(0, REPLY_EXCERPT_MAX - 1)}…`;
+}
+
 /** A past channel message replayed as backlog when joining. */
 export const channelHistoryEntrySchema = z.object({
   /** Monotonic server-assigned message id (stable identity; used to dedupe and, later,
@@ -236,6 +284,8 @@ export const channelHistoryEntrySchema = z.object({
   text: chatTextSchema,
   /** Server send time (epoch ms), so replayed lines keep their original order/time. */
   at: z.number().int().nonnegative(),
+  /** Set when this message replies to another; retained so backlog replays the quote too. */
+  replyTo: replyRefSchema.optional(),
 });
 export type ChannelHistoryEntry = z.infer<typeof channelHistoryEntrySchema>;
 
@@ -280,6 +330,8 @@ const serverChat = z.object({
   text: chatTextSchema,
   /** Server send time (epoch ms); clients use it so timestamps are consistent. */
   at: z.number().int().nonnegative(),
+  /** The message this replies to, resolved server-side (see {@link replyRefSchema}). */
+  replyTo: replyRefSchema.optional(),
 });
 
 const serverEmote = z.object({
@@ -290,6 +342,7 @@ const serverEmote = z.object({
   channelToken: tokenSchema,
   text: chatTextSchema,
   at: z.number().int().nonnegative(),
+  replyTo: replyRefSchema.optional(),
 });
 
 const serverAway = z.object({

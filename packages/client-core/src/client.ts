@@ -209,14 +209,17 @@ export class MaraClient {
     this.send({ type: 'leaveChannel', channelToken });
   }
 
-  sendChat(channelToken: Token, text: string): void {
+  /** `replyTo` is the server message id being replied to; the server resolves it into the
+   *  quoted snapshot it broadcasts back (an id it no longer retains simply posts as a
+   *  normal message). */
+  sendChat(channelToken: Token, text: string, replyTo?: number): void {
     const out = this.pipeline ? this.pipeline.preprocessOutgoing(text, { channelToken }) : text;
-    this.send({ type: 'chat', channelToken, text: out });
+    this.send({ type: 'chat', channelToken, text: out, replyTo });
   }
 
-  sendEmote(channelToken: Token, text: string): void {
+  sendEmote(channelToken: Token, text: string, replyTo?: number): void {
     const out = this.pipeline ? this.pipeline.preprocessOutgoing(text, { channelToken }) : text;
-    this.send({ type: 'emote', channelToken, text: out });
+    this.send({ type: 'emote', channelToken, text: out, replyTo });
   }
 
   sendAway(text: string): void {
@@ -547,6 +550,7 @@ export class MaraClient {
           text,
           at: msg.at,
           serverId: msg.id,
+          replyTo: msg.replyTo,
         });
         this.events.emit('chat', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -560,6 +564,7 @@ export class MaraClient {
           text,
           at: msg.at,
           serverId: msg.id,
+          replyTo: msg.replyTo,
         });
         this.events.emit('emote', { from: msg.from, channelToken: msg.channelToken, text });
         return;
@@ -785,7 +790,14 @@ export class MaraClient {
       const added: ChatLine[] = [];
       for (const e of history) {
         const text = this.applyIncoming(e.text, channelToken, e.from);
-        const line = { serverId: e.id, kind: e.kind, from: e.from, text, at: e.at };
+        const line = {
+          serverId: e.id,
+          kind: e.kind,
+          from: e.from,
+          text,
+          at: e.at,
+          replyTo: e.replyTo,
+        };
         if (seen.has(keyOf(line))) continue;
         seen.add(keyOf(line));
         added.push({ id: ++this.lineSeq, ...line });

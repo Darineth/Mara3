@@ -3,7 +3,7 @@
  * UI-facing view models (channels / chat lines), constructor options, the
  * event payload map, and the minimal cross-platform WebSocket interface.
  */
-import type { Color, Token, UserInfo } from '@mara/protocol';
+import type { Color, ReplyRef, Token, UserInfo } from '@mara/protocol';
 import type { TextPipeline } from '@mara/plugin-api';
 
 /**
@@ -46,6 +46,10 @@ export interface ChatLine {
   text: string;
   /** Receipt timestamp (ms) from the client's clock, not the server's. */
   at: number;
+  /** The message this one replies to, snapshotted by the server (author + a short excerpt),
+   *  so the quote renders even when the parent isn't among the lines we hold. Channel
+   *  chat/emote only — the server ids and stores nothing for PMs, so they can't be replied to. */
+  replyTo?: ReplyRef;
 }
 
 /**

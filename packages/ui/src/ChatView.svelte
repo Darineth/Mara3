@@ -15,6 +15,7 @@
     hasMore = false,
     onLoadOlder,
     onRestore,
+    onReply,
     conversationKey = null,
     emoji = {},
     messageStyle = 'mara',
@@ -31,6 +32,9 @@
     onLoadOlder?: () => void;
     /** Called when the user clicks the "cleared" marker — re-fetch the channel's backlog. */
     onRestore?: () => void;
+    /** Called when the user picks Reply on a message. Omit (as PMs do — they have no server
+     *  message ids) and no reply affordance is offered. */
+    onReply?: (line: ChatLine) => void;
     /** Identifies the conversation on show (e.g. `ch:1`/`pm:2`). When it changes, the view
      *  lands on the new conversation's latest instead of inheriting the old scroll/pin. */
     conversationKey?: string | null;
@@ -71,6 +75,307 @@
     else next.add(id);
     expandedMessages = next;
   }
+
+  // The message a jump (from a reply's quote bar) just landed on, highlighted so the eye finds
+  // it — keyed by line.id, cleared by a timer. The highlight HOLDS at full strength for the
+  // first part of its run and only then fades (see the mara-flash keyframes): the smooth scroll
+  // takes a few hundred ms to arrive, and a plain fade-from-full would already be half gone by
+  // the time the message is actually on screen.
+  const FLASH_MS = 3400;
+  let flashedMessage = $state<number | null>(null);
+  let flashTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Where we jumped FROM, so you can get back. A stack, not a single value: following a reply
+   * chain upwards (a reply to a reply to a reply) pushes each hop, and the Back button walks
+   * them down in reverse. Holds `line.id`s (client-side, stable while the line is loaded).
+   */
+  let jumpStack = $state<number[]>([]);
+  /** True while a jump's smooth scroll is in flight: suppresses the auto-scroll behaviours that
+   *  would otherwise drag the viewport away from the message we just jumped to. */
+  let jumping = $state(false);
+  let jumpTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the user last drove a scroll themselves (wheel/touch/scrollbar/keys) — as opposed to
+   *  the scrolling we do. Lets `pruneJumpStack` react only to their movement. */
+  let userScrolledAt = 0;
+
+  /**
+   * Hunting for a quoted message that isn't in the lines we hold: page older history in, a
+   * chunk at a time, until it turns up. Bounded three independent ways, so a quote whose parent
+   * is unreachable can never spin:
+   *
+   *  - `hasMore` goes false — the server has nothing older; the message is gone for good.
+   *  - `HUNT_MAX_PAGES` — a hard ceiling on requests, however deep the history is.
+   *  - `HUNT_TIMEOUT_MS` — a watchdog, in case a request is simply never answered.
+   *
+   * Progress is measured by the oldest server id we hold going DOWN. That matters: a live
+   * message arriving mid-hunt also changes `lines`, and without this it would look like a page
+   * came back and drive another request off a cursor that hadn't moved.
+   */
+  const HUNT_MAX_PAGES = 10;
+  const HUNT_TIMEOUT_MS = 6000;
+  /** `origin` is the line we're jumping FROM — pushed onto `jumpStack` only if the hunt lands,
+   *  so a search that gives up doesn't leave a Back button pointing at a hop that never happened. */
+  let hunt = $state<{
+    serverId: number;
+    pages: number;
+    oldest: number;
+    origin: number | null;
+  } | null>(null);
+  let huntTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Transient "couldn't find it" notice, shown when a hunt gives up. */
+  let huntFailed = $state(false);
+  let failTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Oldest server id we currently hold (the paging cursor), or null if we hold none. */
+  function oldestServerId(): number | null {
+    for (const l of lines) if (l.serverId != null) return l.serverId;
+    return null;
+  }
+
+  function endHunt(failed: boolean) {
+    hunt = null;
+    if (huntTimer) clearTimeout(huntTimer);
+    huntTimer = null;
+    if (!failed) return;
+    huntFailed = true;
+    if (failTimer) clearTimeout(failTimer);
+    failTimer = setTimeout(() => {
+      huntFailed = false;
+      failTimer = null;
+    }, 3500);
+  }
+
+  /** Ask for the next older page and (re)arm the watchdog. */
+  function requestHuntPage() {
+    // Reuse the scroll-loader's anchor: it both preserves the reading position across the
+    // prepend and blocks the scroll handler from firing its own overlapping load.
+    if (viewport && !pendingAnchor) {
+      pendingAnchor = { prevHeight: viewport.scrollHeight, prevTop: viewport.scrollTop };
+    }
+    if (huntTimer) clearTimeout(huntTimer);
+    huntTimer = setTimeout(() => endHunt(true), HUNT_TIMEOUT_MS);
+    onLoadOlder?.();
+  }
+
+  /**
+   * Scroll to a message we hold, and flash it.
+   *
+   * The view has two mechanisms that will happily undo this, and both run right after us (the
+   * scroll-position effect below, and the ResizeObserver re-pin) — so a naive scrollIntoView
+   * here lands and is then immediately yanked back, and the jump looks like it did nothing:
+   *
+   *  - `pendingAnchor` (set per hunt page, to hold the reading position across a prepend) makes
+   *    the position effect restore the pre-page scrollTop.
+   *  - `pinnedToBottom` — if you were at the bottom when you clicked, every content growth
+   *    re-pins you to the bottom.
+   *
+   * So: drop the anchor, leave "follow the bottom" mode, and hold `jumping` for the duration of
+   * the smooth scroll, which suppresses both (and the scroll handler's own auto-load, which
+   * would otherwise prepend more history under us mid-flight and move the target).
+   */
+  const JUMP_SETTLE_MS = 1600;
+  /** The message a jump is travelling to, while the lock is held. */
+  let jumpTargetLine: number | null = null;
+  /**
+   * Set for the single update in which a jump begins, so the position effect skips its one
+   * re-aim there.
+   *
+   * This matters for a jump that follows a hunt: the very page that *delivers* the target also
+   * grows `lines`, so without this the effect would treat it as "content moved under an in-flight
+   * jump" and instant-scroll — landing us before scrollToLine's animation frame even runs, and
+   * silently turning every hunted jump into a teleport. Prepends that arrive *later* (while the
+   * scroll is genuinely in flight) still re-aim, which is what that path is for.
+   */
+  let jumpJustStarted = false;
+
+  /**
+   * Re-aim at the jump target, immediately. Called ONLY when older history is prepended under an
+   * in-flight jump: a prepend both shifts the target's offset (so the smooth scroll is now headed
+   * for the wrong place) and is what the scroll-anchor restore would use to drag us back where we
+   * started. Instant, not smooth — a correction, not a journey.
+   *
+   * Deliberately NOT called on every reflow. Doing that cancelled the smooth scroll on any
+   * incidental resize (the jump "zipped" straight there instead of animating).
+   */
+  function reaimJumpTarget() {
+    if (!jumping || jumpTargetLine === null) return;
+    pendingAnchor = null; // whatever it was restoring, the jump outranks it
+    content
+      ?.querySelector<HTMLElement>(`.mara-msg[data-id="${jumpTargetLine}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'auto' });
+  }
+
+  /**
+   * The user grabbed the scroll — abandon the jump at once, so nothing fights them. Their input
+   * always outranks an animation we started.
+   *
+   * Dropping our own bookkeeping isn't enough: the browser's smooth `scrollIntoView` is still
+   * animating, and it will keep overriding each wheel tick until it reaches its destination —
+   * which is precisely the "it fights you until it would have finished" symptom. Issuing a new,
+   * instant scroll to where we already are aborts that animation (any new scroll supersedes an
+   * in-progress smooth one), leaving the wheel free to do its thing.
+   */
+  function cancelJump() {
+    if (!jumping) return;
+    jumping = false;
+    jumpTargetLine = null;
+    jumpJustStarted = false;
+    if (jumpTimer) clearTimeout(jumpTimer);
+    jumpTimer = null;
+    viewport?.scrollTo({ top: viewport.scrollTop, behavior: 'instant' });
+  }
+
+  function scrollToLine(id: number) {
+    if (!content?.querySelector(`.mara-msg[data-id="${id}"]`)) return;
+    // Abort any smooth scroll still running from a previous jump before starting this one. Two
+    // overlapping scroll animations do NOT cleanly supersede each other — they fight, and you
+    // land somewhere that is neither target. This bites whenever a jump is started while another
+    // is in flight: following a chain quickly, or clicking Back twice in a row.
+    viewport?.scrollTo({ top: viewport.scrollTop, behavior: 'instant' });
+
+    pinnedToBottom = false;
+    pendingAnchor = null;
+    jumping = true;
+    jumpTargetLine = id;
+    jumpJustStarted = true; // let the animation own this first update (see the field's note)
+    if (jumpTimer) clearTimeout(jumpTimer);
+    jumpTimer = setTimeout(() => {
+      jumping = false;
+      jumpTargetLine = null;
+      jumpJustStarted = false;
+      jumpTimer = null;
+    }, JUMP_SETTLE_MS);
+
+    if (flashTimer) clearTimeout(flashTimer);
+    // Drop the class before re-adding it, so clicking the same quote again restarts the
+    // animation instead of doing nothing (re-setting an unchanged class is a no-op to CSS).
+    flashedMessage = null;
+    requestAnimationFrame(() => {
+      // Re-query: the list may have re-rendered between the click and this frame.
+      content
+        ?.querySelector<HTMLElement>(`.mara-msg[data-id="${id}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      flashedMessage = id;
+      flashTimer = setTimeout(() => {
+        flashedMessage = null;
+        flashTimer = null;
+      }, FLASH_MS);
+    });
+  }
+
+  /** Record the hop we just made, so Back can undo it. Guards against pushing the same line
+   *  twice in a row (a double-click on a quote bar shouldn't stack two identical hops). */
+  function pushHop(origin: number | null) {
+    if (origin === null || jumpStack[jumpStack.length - 1] === origin) return;
+    jumpStack = [...jumpStack, origin];
+  }
+
+  // Jump to the message with server id `serverId`, remembering `origin` (the line we jumped from)
+  // so the Back button can return there. If we don't hold the target, start paging older history
+  // in to look for it (see `hunt` above) rather than doing nothing.
+  function jumpTo(serverId: number, origin: number | null) {
+    const target = lines.find((l) => l.serverId === serverId);
+    if (target) {
+      endHunt(false);
+      pushHop(origin);
+      scrollToLine(target.id);
+      return;
+    }
+    const oldest = oldestServerId();
+    // Nothing older to fetch (or no cursor to fetch from): the quoted message is beyond what
+    // the server still retains, so say so instead of hunting for something that can't arrive.
+    if (!hasMore || !onLoadOlder || oldest === null) {
+      endHunt(true);
+      return;
+    }
+    hunt = { serverId, pages: 1, oldest, origin };
+    huntFailed = false;
+    requestHuntPage();
+  }
+
+  // Drive the hunt as pages arrive. Runs on every `lines` change; only a change that actually
+  // moved the cursor older counts as a page (see the note on `hunt`).
+  $effect(() => {
+    void lines;
+    const active = untrack(() => hunt);
+    if (!active) return;
+
+    const found = untrack(() => lines).find((l) => l.serverId === active.serverId);
+    if (found) {
+      endHunt(false);
+      pushHop(active.origin); // the hop is real now — the target actually turned up
+      scrollToLine(found.id);
+      return;
+    }
+    const oldest = untrack(() => oldestServerId());
+    if (oldest === null || oldest >= active.oldest) return; // not a page — keep waiting
+
+    // A page landed and the message wasn't in it. Go older, unless we've hit a limit.
+    if (active.pages >= HUNT_MAX_PAGES || !hasMore) {
+      endHunt(true);
+      return;
+    }
+    hunt = { ...active, pages: active.pages + 1, oldest };
+    requestHuntPage();
+  });
+
+  // Abandon a hunt (and any notice, and the way back) when the conversation changes out from
+  // under it — the hops on the stack belong to the conversation we just left.
+  $effect(() => {
+    void conversationKey;
+    untrack(() => {
+      if (hunt) endHunt(false);
+      huntFailed = false;
+      jumpStack = [];
+    });
+  });
+
+  /** Walk one hop back down the chain, to the message whose quote bar we last followed. */
+  function jumpBack() {
+    const next = [...jumpStack];
+    const id = next.pop();
+    jumpStack = next;
+    if (id !== undefined) scrollToLine(id);
+  }
+
+  /**
+   * Retire hops the user has already made for themselves. If you scroll back down under your own
+   * steam and the message you jumped from is on screen again, that hop is done — offering to take
+   * you somewhere you're already looking is noise, so the Back button drops it (and disappears
+   * once every hop is retired). Walks the stack, so scrolling all the way down after following a
+   * chain clears the lot.
+   *
+   * A hop whose message is no longer loaded is dropped too: Back couldn't reach it anyway.
+   *
+   * Only ever runs off a scroll the USER drove (see `userScrolledAt`). A `scroll` event alone
+   * isn't good enough: our own scrolling emits those too, and pruning on them retired hops the
+   * user never scrolled past — including, memorably, removing the Back button between the
+   * mousedown and the click of the very press that was trying to use it.
+   */
+  const USER_SCROLL_WINDOW_MS = 400;
+  function pruneJumpStack() {
+    if (jumping || jumpStack.length === 0 || !viewport || !content) return;
+    if (Date.now() - userScrolledAt > USER_SCROLL_WINDOW_MS) return;
+    const view = viewport.getBoundingClientRect();
+    let next = jumpStack;
+    while (next.length > 0) {
+      const el = content.querySelector(`.mara-msg[data-id="${next[next.length - 1]}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const onScreen = r.top < view.bottom && r.bottom > view.top;
+        if (!onScreen) break;
+      }
+      next = next.slice(0, -1);
+    }
+    if (next.length !== jumpStack.length) jumpStack = next;
+  }
+
+  $effect(() => () => {
+    if (huntTimer) clearTimeout(huntTimer);
+    if (failTimer) clearTimeout(failTimer);
+    if (flashTimer) clearTimeout(flashTimer);
+    if (jumpTimer) clearTimeout(jumpTimer);
+  });
 
   // Cheeky stand-ins for a plain "Show more" / "Show less" on a clamped (over-long) message.
   const EXPAND_LABELS = [
@@ -149,10 +454,22 @@
   // they left) so history stays attributable.
   function toModel(line: ChatLine): LineModel {
     const user = line.from !== null ? users.get(line.from) : undefined;
+    // The quoted author resolves against the LIVE roster first, so a quote reflects their
+    // current name/colour like every other line does; the server's snapshot (taken when the
+    // reply was sent) is the fallback for an author who has since left.
+    const reply = line.replyTo;
+    const quoted = reply ? users.get(reply.from) : undefined;
     return {
       kind: line.kind,
       authorName: user?.name ?? (line.from !== null ? `#${line.from}` : ''),
       authorColor: user?.color ?? '#888888',
+      replyTo: reply && {
+        id: reply.id,
+        authorName: quoted?.name ?? reply.name,
+        authorColor: quoted?.color ?? reply.color,
+        excerpt: reply.excerpt,
+        kind: reply.kind,
+      },
       // From the live roster, so avatar changes reflect on already-rendered lines; a
       // departed author (not in the roster) falls back to the monogram.
       authorAvatar: user?.avatar,
@@ -180,6 +497,9 @@
     if (!cur || !prev || cur.kind !== 'chat' || prev.kind !== 'chat') return false;
     if (cur.from === null || cur.from !== prev.from) return false;
     if (cur.at - prev.at > GROUP_WINDOW_MS) return false;
+    // A reply carries a quote bar, which needs its own header to sit under — never fold it
+    // into the previous author's run.
+    if (cur.replyTo) return false;
     // A session boundary rule sits between them → start a fresh, labelled group.
     if (sessionStart > 0 && prev.at < sessionStart && cur.at >= sessionStart) return false;
     return true;
@@ -210,10 +530,14 @@
       pinnedToBottom = true; // at (or snapped back to) the bottom
     else if (st < lastScrollTop - 2) pinnedToBottom = false; // user scrolled up to read
     lastScrollTop = st;
+    // Scrolled back to where you jumped from? Then you don't need the Back button for it.
+    pruneJumpStack();
     // Near the top with more to load and no load in flight: page in older history.
     // Capture the current metrics so the effect below can restore the position after
-    // the prepend grows the content upward.
-    if (st < 80 && hasMore && !pendingAnchor && onLoadOlder) {
+    // the prepend grows the content upward. Not while jumping — the smooth scroll passes
+    // through the top of the list on its way, and prepending there would shift the very
+    // message we're travelling to.
+    if (!jumping && st < 80 && hasMore && !pendingAnchor && onLoadOlder) {
       pendingAnchor = { prevHeight: viewport.scrollHeight, prevTop: st };
       onLoadOlder();
     }
@@ -235,6 +559,16 @@
       pinnedToBottom = true;
       el.scrollTop = el.scrollHeight;
       lastScrollTop = el.scrollTop;
+    } else if (jumping) {
+      // A jump owns the viewport. Never restore the old anchor (that is the "scrolls up, then
+      // snaps back down to the reply" bug). Re-aim only if the content actually GREW under us —
+      // a prepend moves the target, so the in-flight scroll is now headed somewhere stale. A
+      // plain re-render (roster change, flash class) leaves the smooth scroll alone... and so
+      // does the update that STARTED the jump, whose own growth is the page that delivered the
+      // target: re-aiming there would pre-empt the animation entirely.
+      pendingAnchor = null;
+      if (jumpJustStarted) jumpJustStarted = false;
+      else if (len > lastLen) reaimJumpTarget();
     } else if (pendingAnchor && len > lastLen) {
       // Older messages were prepended: shift down by the added height so the line the
       // user was reading stays put, instead of jumping to the new top.
@@ -257,7 +591,11 @@
     const c = content;
     if (!el || !c) return;
     const ro = new ResizeObserver(() => {
-      if (pinnedToBottom) el.scrollTop = el.scrollHeight;
+      // ...but not while a jump is in flight: re-pinning to the bottom on every content growth
+      // would drag the viewport off the message we're scrolling to. We don't re-aim from here
+      // either — a resize is not necessarily a prepend, and correcting on every reflow killed
+      // the smooth scroll (see reaimJumpTarget). The lines effect handles real prepends.
+      if (!jumping && pinnedToBottom) el.scrollTop = el.scrollHeight;
       measureTick++; // content reflowed (image loaded, message added) → re-check the clamps
     });
     ro.observe(c);
@@ -266,6 +604,44 @@
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', onResize);
+    };
+  });
+
+  // The user's own scrolling always beats an in-flight jump: a wheel tick, a touch drag, a
+  // scrollbar grab, or a scroll key abandons it on the spot. Without this, a jump we started
+  // would keep re-aiming (and suppressing the auto-loader) for the whole lock window, which
+  // reads exactly like the view fighting you.
+  //
+  // These are user-INTENT signals specifically — a plain `scroll` event is not, because our own
+  // scrollIntoView fires those too. `pruneJumpStack` needs the same distinction, so this is also
+  // where `userScrolledAt` is stamped: it's the only place we can tell "you scrolled" from "we
+  // scrolled".
+  $effect(() => {
+    const el = viewport;
+    if (!el) return;
+    const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+    const userScroll = () => {
+      userScrolledAt = Date.now();
+      cancelJump();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) userScroll();
+    };
+    // Only a press on the SCROLLBAR is a scroll gesture. A press on the message list — or on the
+    // Back button floating over it — is not: treating those as scrolling let a click on Back
+    // prune the very hop it was about to use, deleting the button between mousedown and click.
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.offsetX > el.clientWidth) userScroll();
+    };
+    el.addEventListener('wheel', userScroll, { passive: true });
+    el.addEventListener('touchstart', userScroll, { passive: true });
+    el.addEventListener('mousedown', onMouseDown);
+    el.addEventListener('keydown', onKey);
+    return () => {
+      el.removeEventListener('wheel', userScroll);
+      el.removeEventListener('touchstart', userScroll);
+      el.removeEventListener('mousedown', onMouseDown);
+      el.removeEventListener('keydown', onKey);
     };
   });
 
@@ -282,6 +658,15 @@
       // The "cleared" marker: clicking it re-fetches the channel's server backlog.
       if (target?.closest('.mara-cleared')) {
         onRestore?.();
+        return;
+      }
+
+      // A reply's quote bar jumps to the message it quotes — remembering the reply itself as
+      // the way back.
+      const quote = target?.closest('.mara-reply');
+      if (quote) {
+        const from = quote.closest<HTMLElement>('.mara-msg')?.dataset.id;
+        jumpTo(Number(quote.getAttribute('data-reply-id')), from ? Number(from) : null);
         return;
       }
 
@@ -392,6 +777,20 @@
 </script>
 
 <div class="mara-chatview" role="log" bind:this={viewport} onscroll={onScroll}>
+  <!-- Hunt status: pinned to the top of the log (sticky, zero-height, so it displaces nothing).
+       A jump into un-loaded history says it's looking, and says so when it gives up — the one
+       thing it must never do is sit there silently while nothing happens. -->
+  {#if hunt || huntFailed}
+    <div class="mara-hunt-dock">
+      <div class="mara-hunt" class:failed={huntFailed} role="status">
+        {#if hunt}
+          Looking for that message…
+        {:else}
+          Couldn't find that message — it's older than the history the server keeps.
+        {/if}
+      </div>
+    </div>
+  {/if}
   <div class="mara-content" bind:this={content}>
     {#each lines as line, i (line.id)}
       {#if sessionStart > 0 && i > 0 && (lines[i - 1]?.at ?? sessionStart) < sessionStart && line.at >= sessionStart}
@@ -401,6 +800,7 @@
         class="mara-msg"
         class:clipped={clippedMessages.has(line.id) && !expandedMessages.has(line.id)}
         class:expanded={expandedMessages.has(line.id)}
+        class:flashed={flashedMessage === line.id}
         data-id={line.id}
       >
         <!-- eslint-disable-next-line svelte/no-at-html-tags -- output is sanitized by chat-render -->
@@ -411,6 +811,30 @@
           continuation: isContinuation(i),
           avatars: showAvatars,
         })}
+        <!-- Reply affordance, revealed on hover/focus. Only a real server-side message can be
+             replied to: system/away/cleared lines and PMs (no ids) carry no button. -->
+        {#if onReply && line.serverId != null && (line.kind === 'chat' || line.kind === 'emote')}
+          <button
+            type="button"
+            class="mara-reply-btn"
+            title="Reply to this message"
+            aria-label="Reply to this message"
+            onclick={() => onReply?.(line)}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="9 17 4 12 9 7" />
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+            </svg>
+          </button>
+        {/if}
         {#if clippedMessages.has(line.id)}
           {@const tint = authorColorOf(line)}
           <button
@@ -450,6 +874,32 @@
       <div class="mara-empty">No messages yet.</div>
     {/if}
   </div>
+  <!-- Back button: appears once you've followed a quote bar up, and walks the chain back down
+       one hop per click (sticky to the bottom of the log, displacing nothing). -->
+  {#if jumpStack.length > 0}
+    <div class="mara-back-dock">
+      <button
+        type="button"
+        class="mara-back"
+        onclick={jumpBack}
+        title="Back to the reply you came from"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <polyline points="19 12 12 19 5 12" />
+        </svg>
+        <span>Back to reply{jumpStack.length > 1 ? ` (${jumpStack.length})` : ''}</span>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -473,15 +923,213 @@
     font-style: italic;
     padding: 1rem 0;
   }
+  /* Zero-height sticky dock, so the pill floats over the top of the log without pushing the
+     messages down (which would fight the scroll position we're in the middle of restoring). */
+  .mara-hunt-dock {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: 0;
+    display: flex;
+    justify-content: center;
+    /* The dock is zero-height so it displaces no messages — which means the default
+       `align-items: stretch` would squash the pill to zero height too. Let it keep its own
+       height and overflow the dock. */
+    align-items: flex-start;
+    overflow: visible;
+  }
+  .mara-hunt {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    color: var(--mara-fg, #e6e6e6);
+    background: var(--mara-bg-alt, #111);
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mara-hunt.failed {
+    border-color: rgba(229, 83, 75, 0.6);
+  }
+  /* Back button: same zero-height sticky trick as the hunt pill, but anchored to the BOTTOM of
+     the log, out of the way of the messages you jumped to. */
+  .mara-back-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    height: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    overflow: visible;
+  }
+  .mara-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    /* Sit clear of the bottom edge; the dock has no height of its own to push off. */
+    transform: translateY(-0.6rem);
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    color: var(--mara-fg, #e6e6e6);
+    background: var(--mara-bg-alt, #111);
+    border: 1px solid rgba(127, 127, 127, 0.45);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mara-back:hover {
+    background: var(--mara-hover, #2f2f2f);
+  }
+  .mara-back svg {
+    width: 0.85rem;
+    height: 0.85rem;
+    flex: none;
+  }
   /* Per-message wrapper. A very tall message is clamped to 60% of the viewport and fades out at
      the bottom, with a "Show more" toggle over the fade; expanding drops the clamp. Short
-     messages are unaffected (the clamp only bites past 60vh). */
+     messages are unaffected (the clamp only bites past 60vh).
+
+     The negative margin (cancelled by equal padding) lets the hover highlight bleed out to the
+     log's padding edges, so it reads as a full-width row rather than a floating bar with gaps
+     either side. Layout is unchanged — the two cancel out. */
   .mara-msg {
     position: relative;
+    margin: 0 -0.75rem;
+    padding: 0 0.75rem;
+    border-radius: 3px;
+    transition: background 0.08s ease;
+  }
+  /* Very subtle: enough to track which row you're on (and to anchor the reply affordance that
+     fades in with it), not enough to compete with the message. Neutral grey so it reads on
+     both themes without needing a per-theme value. */
+  .mara-msg:hover {
+    background: rgba(127, 127, 127, 0.07);
   }
   .mara-msg.clipped {
     max-height: 60vh;
     overflow: hidden;
+  }
+  /* Highlight the message a reply's quote bar jumped to, so the eye lands on it. The accent at a
+     low alpha reads on either theme without washing the text out; the inset ring picks it out
+     even where the row already sits on the hover tint.
+
+     It HOLDS at full strength for the first ~70% of its run (≈2.4s of the 3.4s) and only then
+     fades out over the last second. The smooth scroll to the message eats a few hundred ms
+     before you're even looking at it, so a plain fade-from-full is already half spent on
+     arrival — which is why the first cut read as no flash at all. Keep the duration in sync
+     with FLASH_MS in the script. */
+  .mara-msg.flashed {
+    border-radius: 4px;
+    animation: mara-flash 3.4s ease-out;
+  }
+  @keyframes mara-flash {
+    0%,
+    70% {
+      background: rgba(91, 140, 255, 0.34);
+      box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.75);
+    }
+    100% {
+      background: transparent;
+      box-shadow: inset 0 0 0 1px transparent;
+    }
+  }
+  /* Reply affordance: a bare icon pinned to the message's top-right, revealed on hover or
+     when focused (so it's reachable by keyboard without a mouse ever entering the log). */
+  .mara-reply-btn {
+    position: absolute;
+    top: 0;
+    /* 0.25rem in from the message's visual edge, plus the 0.75rem the wrapper bleeds out by. */
+    right: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    color: var(--mara-fg, #ddd);
+    background: var(--mara-bg, #0b0b0b);
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  .mara-msg:hover .mara-reply-btn,
+  .mara-reply-btn:focus-visible {
+    opacity: 0.75;
+  }
+  .mara-reply-btn:hover {
+    opacity: 1;
+    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
+  }
+  .mara-reply-btn svg {
+    width: 0.85rem;
+    height: 0.85rem;
+  }
+  /* The quote bar a reply renders above itself (chat-render emits it as a sibling of the
+     message row): a single clipped line — author, then the excerpt — that jumps to the
+     quoted message on click.
+
+     Two things keep it legible on BOTH themes. (1) Translucent neutral grey for the plate and
+     the rule — like .mara-spoiler and .mara-cleared below — rather than `--mara-border`, which
+     is #333 and all but invisible on the dark theme's black background. (2) Opacity is applied
+     at ONE level only, on the excerpt. Dimming the bar AND the excerpt compounds (0.72 × 0.85)
+     and fades the text toward the background until the quote is barely there — which is exactly
+     how this first read in dark mode. */
+  .mara-chatview :global(.mara-reply) {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    width: 100%;
+    font: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    padding: 0.1rem 0.3rem 0.1rem 0.5rem;
+    margin: 0.15rem 0 0;
+    /* A faint plate, so the quote reads as a block rather than as stray dim text. */
+    background: rgba(127, 127, 127, 0.12);
+    border: none;
+    /* The upstand that reads as "this quotes something above". */
+    border-left: 2px solid rgba(127, 127, 127, 0.65);
+    border-radius: 2px;
+    color: var(--mara-fg, #e6e6e6);
+    cursor: pointer;
+  }
+  .mara-chatview :global(.mara-reply:hover) {
+    background: rgba(127, 127, 127, 0.24);
+  }
+  .mara-chatview :global(.mara-reply:hover .mara-reply-excerpt) {
+    opacity: 1;
+  }
+  /* discord layout: indent under the avatar gutter so the quote lines up with the message's
+     text column (avatar 2.4rem + 0.6rem gap), and keep the group's leading space above it. */
+  .mara-chatview :global(.mara-reply-discord) {
+    padding-left: 3rem;
+    margin-top: 0.6rem;
+    border-left: none;
+  }
+  .mara-chatview :global(.mara-reply-author) {
+    flex: none;
+    font-weight: 600;
+  }
+  /* One line, always: a quoted message never wraps the view open — it ellipsises. Muted a
+     little against the author's name beside it — this is the bar's ONLY opacity (see above). */
+  .mara-chatview :global(.mara-reply-excerpt) {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+  }
+  .mara-chatview :global(.mara-reply-emote) {
+    font-style: italic;
   }
   .mara-msg.clipped::after {
     content: '';

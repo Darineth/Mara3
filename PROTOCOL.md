@@ -34,8 +34,8 @@ with direction-appropriate shapes.
 | `login`          | `protocol, name, color, identityKey?` | First frame on a new socket (see below). |
 | `joinChannel`    | `channel`                             | Join (or create) a channel by name.      |
 | `leaveChannel`   | `channelToken`                        | Leave a channel.                         |
-| `chat`           | `channelToken, text`                  | Send to a channel.                       |
-| `emote`          | `channelToken, text`                  | `/me`-style action to a channel.         |
+| `chat`           | `channelToken, text, replyTo?`        | Send to a channel (see Replies).         |
+| `emote`          | `channelToken, text, replyTo?`        | `/me`-style action to a channel.         |
 | `privateMessage` | `to, text`                            | Direct message to a user token.          |
 | `away`           | `text`                                | Set away note; `""` clears it.           |
 | `ping`           | `id`                                  | Heartbeat; echoed in `pong`.             |
@@ -52,8 +52,8 @@ with direction-appropriate shapes.
 | `channelLeft`       | `channelToken`                          | You left a channel.                           |
 | `userJoinedChannel` | `token, channelToken`                   | Someone joined a channel you're in.           |
 | `userLeftChannel`   | `token, channelToken`                   | Someone left a channel you're in.             |
-| `chat`              | `from, channelToken, text, at`          | A channel message (`at` = server send time).  |
-| `emote`             | `from, channelToken, text, at`          | A channel action.                             |
+| `chat`              | `id, from, channelToken, text, at, replyTo?` | A channel message (`at` = server send time). |
+| `emote`             | `id, from, channelToken, text, at, replyTo?` | A channel action.                        |
 | `away`              | `token, text`                           | A user's away status changed.                 |
 | `privateMessage`    | `from, to, text`                        | A direct message; `to` keys the sender's copy.|
 | `pong`              | `id`                                    | Reply to `ping`.                              |
@@ -115,14 +115,39 @@ identity. Presence is per-channel: clients learn who is present from each
 
 The server retains the most recent messages per channel (capped, default 100;
 `MARA_HISTORY_LIMIT`) and replays them in `channelJoined.history` — an array of
-`{ from, name, color, kind, text, at }`, oldest first — so a joiner (or a client
-that reloaded/reconnected) sees recent scrollback. Each entry snapshots the
+`{ id, from, name, color, kind, text, at, replyTo? }`, oldest first — so a joiner (or a
+client that reloaded/reconnected) sees recent scrollback. Each entry snapshots the
 author's name/colour so it renders even if that author is no longer present.
 Backlog is persisted to disk (`MARA_HISTORY_FILE`, on by default; set empty to
 disable), so it survives a restart. **Private messages are never retained** — the
 server keeps no PM history, on disk or in memory, as a deliberate privacy decision
 (see [SECURITY-TODO.md](SECURITY-TODO.md)); a PM reaches only the devices connected
 when it was sent.
+
+## Replies
+
+A `chat`/`emote` may carry `replyTo`, quoting an earlier message in the same channel. The
+two directions are deliberately asymmetric:
+
+- **Client → server**: `replyTo` is just the **message id** being replied to.
+- **Server → client**: `replyTo` is the resolved snapshot
+  `{ id, from, name, color, kind, excerpt }` — and it is retained on the history entry, so
+  the backlog replays replies with their quotes intact.
+
+The server builds that snapshot from its own copy of the parent, which is what makes the
+quote trustworthy: a client can't dictate who it is quoting or what they said. Resolution is
+scoped to the replier's channel, so an id belonging to a channel they aren't in resolves to
+nothing (message ids are global, and a reply must not become a way to read a message you
+can't see). `excerpt` is the parent's text with whitespace collapsed to single spaces and
+truncated to 200 chars, so a quote bar is always one line; clients render it as **plain
+text** — no markdown, links, or inline images.
+
+An id the server no longer retains (the parent aged out of the channel's backlog) resolves
+to nothing too. The reply is then delivered as an ordinary message rather than rejected —
+losing the quote is better than losing what someone typed.
+
+Private messages cannot be replied to: the server assigns them no ids and stores nothing
+for them.
 
 ## Keepalive
 
@@ -137,8 +162,10 @@ terminal `loginDenied { reason }`.
 
 ## Versioning
 
-`PROTOCOL_VERSION` (currently `3`) bumps on any breaking change to the message set.
+`PROTOCOL_VERSION` (currently `5`) bumps on any breaking change to the message set.
 The client sends it in `login`; the server denies a mismatch with `loginDenied`.
+Purely **additive optional** fields (such as `replyTo`) don't bump it: an older server
+ignores one it doesn't know, and an older client ignores one it isn't looking for.
 
 ## Limits
 

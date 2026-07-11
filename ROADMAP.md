@@ -28,8 +28,12 @@ on it.
       rest of this section.
 - [ ] **Reactions** — emoji reactions on a message; add/remove broadcast to the
       channel, tallied per emoji.
-- [ ] **Replies / threads** — reply to a specific message id; start with inline
-      "replying to…" quoting, optionally grow into threaded views later.
+- [x] **Replies / threads** — reply to a specific message id, rendered as an inline
+      "replying to…" quote bar above the message (click it to jump to the original).
+      The client sends only the parent's id; the server resolves it against that channel's
+      backlog and broadcasts the quoted snapshot (author + a one-line excerpt), which is
+      retained in history so backlog replays keep their quotes. Channels only — PMs carry
+      no message ids. Threaded views remain a possible follow-up.
 - [ ] **Edit & delete** — author edits/removes their own message; broadcast an
       update so every client (and the backlog) reflects it.
 - [ ] **@mentions** — `@name` parsing with highlight, plus the notification hooks

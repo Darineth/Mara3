@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import {
   MOTD_MAX_LEN,
   PROTOCOL_VERSION,
+  replyExcerpt,
   safeParseClientMessage,
   type ClientMessage,
   type EmojiEntry,
+  type ReplyRef,
   type ServerInfo,
   type ServerMessage,
   type Token,
@@ -314,9 +316,23 @@ export class Hub {
       case 'leaveChannel':
         return this.handleLeaveChannel(session, msg);
       case 'chat':
-        return this.handleChannelText(session, conn, msg.channelToken, msg.text, 'chat');
+        return this.handleChannelText(
+          session,
+          conn,
+          msg.channelToken,
+          msg.text,
+          'chat',
+          msg.replyTo,
+        );
       case 'emote':
-        return this.handleChannelText(session, conn, msg.channelToken, msg.text, 'emote');
+        return this.handleChannelText(
+          session,
+          conn,
+          msg.channelToken,
+          msg.text,
+          'emote',
+          msg.replyTo,
+        );
       case 'away':
         return this.handleAway(session, msg);
       case 'setProfile':
@@ -530,6 +546,7 @@ export class Hub {
     channelToken: Token,
     text: string,
     kind: 'chat' | 'emote',
+    replyToId?: number,
   ): void {
     const channel = this.state.channelsByToken.get(channelToken);
     if (!channel || !session.channels.has(channelToken)) {
@@ -544,6 +561,8 @@ export class Hub {
       this.revealIfUnreliable(session);
     }
     this.clearFlap(session.info.token);
+    const replyTo =
+      replyToId === undefined ? undefined : this.resolveReply(channel.name, replyToId);
     // Server-stamp the message, retain it as capped (persisted) backlog, then
     // broadcast it. The author's name/colour are snapshotted so backlog renders
     // even after a restart, when the author's token is gone.
@@ -559,6 +578,7 @@ export class Hub {
         kind,
         text,
         at,
+        replyTo,
       },
       this.cfg.historyLimit,
     );
@@ -569,7 +589,28 @@ export class Hub {
       channelToken,
       text,
       at,
+      replyTo,
     });
+  }
+
+  /**
+   * Build the quoted snapshot for a reply, from the server's own copy of the parent — the
+   * client sends only an id, so it can't fake who or what it is quoting. Resolution is scoped
+   * to the replier's channel, which also means an id from a channel they aren't in resolves to
+   * nothing. A parent that has aged out of retention likewise yields `undefined`: the reply
+   * then posts as an ordinary message rather than being rejected, so the text is never lost.
+   */
+  private resolveReply(channelName: string, id: number): ReplyRef | undefined {
+    const parent = this.history.byId(channelName, id);
+    if (!parent) return undefined;
+    return {
+      id: parent.id,
+      from: parent.from,
+      name: parent.name,
+      color: parent.color,
+      kind: parent.kind,
+      excerpt: replyExcerpt(parent.text),
+    };
   }
 
   private handleAway(session: Session, msg: Extract<ClientMessage, { type: 'away' }>): void {

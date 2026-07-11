@@ -140,6 +140,76 @@ describe('renderLine — cleared marker', () => {
   });
 });
 
+describe('renderLine — replies', () => {
+  const reply = {
+    id: 42,
+    authorName: 'alice',
+    authorColor: '#aabbcc',
+    excerpt: 'is the build green?',
+    kind: 'chat' as const,
+  };
+  const line = (over: Partial<Parameters<typeof renderLine>[0]> = {}) => ({
+    kind: 'chat' as const,
+    authorName: 'bob',
+    authorColor: '#112233',
+    text: 'yes',
+    replyTo: reply,
+    ...over,
+  });
+
+  it('renders a quote bar above the message, carrying the jump target', () => {
+    const html = renderLine(line());
+    expect(html).toContain('class="mara-reply"');
+    expect(html).toContain('data-reply-id="42"');
+    expect(html).toContain('is the build green?');
+    expect(html).toContain('color:#aabbcc'); // the quoted author, in their own colour
+    // The quoted author reads as `@name`. The `@` is markup, not part of the name.
+    expect(html).toContain('>@alice</span>');
+    // The quote comes first — it reads as something the message hangs under.
+    expect(html.indexOf('mara-reply')).toBeLessThan(html.indexOf('mara-line'));
+  });
+
+  it('renders the excerpt as plain escaped text — no markup, links, or images', () => {
+    // The excerpt is ANOTHER user's text lifted into this message, so a quote bar that
+    // rendered it would be a way to plant a link or an image inside someone else's reply.
+    const html = renderLine(
+      line({
+        replyTo: {
+          ...reply,
+          excerpt: '<img src=x onerror=alert(1)> **bold** http://evil.example ![](/uploads/a.png)',
+        },
+      }),
+    );
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<a ');
+    expect(html).not.toContain('<strong>');
+    expect(html).toContain('**bold**'); // shown as typed, not rendered
+  });
+
+  it('escapes the quoted author name and falls back on a bogus colour', () => {
+    const html = renderLine(
+      line({ replyTo: { ...reply, authorName: '<script>x</script>', authorColor: 'red;}' } }),
+    );
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('color:#888888');
+    expect(html).not.toContain('red;}');
+  });
+
+  it('marks up a quoted emote, and indents the bar in the discord layout', () => {
+    const emote = renderLine(line({ replyTo: { ...reply, kind: 'emote' } }));
+    expect(emote).toContain('mara-reply-emote');
+
+    const discord = renderLine(line(), { layout: 'discord' });
+    expect(discord).toContain('mara-reply-discord');
+  });
+
+  it('renders no quote bar on an ordinary message', () => {
+    expect(renderLine(line({ replyTo: undefined }))).not.toContain('mara-reply');
+  });
+});
+
 describe('renderText — safety + links', () => {
   it('escapes before linkifying and never emits user markup', () => {
     const html = renderText('<b>hi</b> http://example.com');

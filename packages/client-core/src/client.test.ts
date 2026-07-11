@@ -144,6 +144,51 @@ describe('channels + chat', () => {
     client.disconnect();
   });
 
+  it('carries a reply through to the line, quoting the parent it names', async () => {
+    const client = makeClient('alice');
+    const me = await connected(client);
+    const joined = waitEvent(client, 'channelJoined');
+    client.joinChannel('lobby');
+    const channel = await joined;
+
+    const parentEcho = waitEvent(client, 'chat');
+    client.sendChat(channel.token, 'is the build green?');
+    await parentEcho;
+    const parent = (get(client.channelMessages).get(channel.token) ?? []).find(
+      (l) => l.text === 'is the build green?',
+    );
+    expect(parent?.serverId).toBeDefined();
+
+    const replyEcho = waitEvent(client, 'chat');
+    client.sendChat(channel.token, 'yes', parent!.serverId);
+    await replyEcho;
+
+    const lines = get(client.channelMessages).get(channel.token) ?? [];
+    const reply = lines.find((l) => l.text === 'yes');
+    expect(reply?.replyTo).toEqual({
+      id: parent!.serverId,
+      from: me.token,
+      name: 'alice',
+      color,
+      kind: 'chat',
+      excerpt: 'is the build green?',
+    });
+
+    // ...and it survives a replay of the backlog, so the quote is still there after a rejoin.
+    const rejoined = makeClient('bob');
+    await connected(rejoined);
+    const backlog = waitEvent(rejoined, 'channelJoined');
+    rejoined.joinChannel('lobby');
+    const ch = await backlog;
+    const replayed = (get(rejoined.channelMessages).get(ch.token) ?? []).find(
+      (l) => l.text === 'yes',
+    );
+    expect(replayed?.replyTo?.excerpt).toBe('is the build green?');
+
+    client.disconnect();
+    rejoined.disconnect();
+  });
+
   it('two clients see each other join and chat', async () => {
     const a = makeClient('alice');
     const b = makeClient('bob');

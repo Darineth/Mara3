@@ -48,6 +48,13 @@ export class HistoryStore {
     return { entries, hasMore: older.length > entries.length };
   }
 
+  /** A single retained message by id, or undefined once it has aged out of the channel's
+   *  buffer. Scoped to one channel by design: it's what stops a reply from quoting a
+   *  message the replier can't see (an id from a channel they aren't in). */
+  byId(name: string, id: number): ChannelHistoryEntry | undefined {
+    return this.get(name).find((e) => e.id === id);
+  }
+
   /** Highest retained message id (0 if none). The hub seeds its id counter from this
    *  so newly-assigned ids keep increasing across restarts. */
   maxId(): number {

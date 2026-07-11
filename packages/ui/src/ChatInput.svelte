@@ -19,6 +19,8 @@
     emoji = {},
     emojiOwners = {},
     mentionNames = [],
+    replyingTo = null,
+    onCancelReply,
   }: {
     onsend: (text: string) => void;
     maxLength?: number;
@@ -44,6 +46,12 @@
     /** Display names offered by the `@name` mention autocomplete (typically the
      *  connected roster). Empty = mentions don't autocomplete. */
     mentionNames?: string[];
+    /** The message the next send will reply to, shown as a chip above the field. Null (the
+     *  default, and what PMs always pass) composes a normal message. The owner clears it —
+     *  after a send, or when the user cancels via {@link onCancelReply}. */
+    replyingTo?: { name: string; color: string; excerpt: string } | null;
+    /** Cancel the pending reply (the chip's ×, or Escape on an empty field). */
+    onCancelReply?: () => void;
   } = $props();
 
   // Validate before it's interpolated into an inline style (as renderLine does for the
@@ -147,6 +155,22 @@
   $effect(() => {
     focusKey; // tracked: re-focus on every change
     if (focusKey != null && !softKeyboard) textarea?.focus();
+  });
+
+  // Picking a message to reply to lands the cursor in the composer, ready to type — the click
+  // was on the message list, so focus would otherwise still be up there. Keyed on the target's
+  // content, not the object: the owner rebuilds `replyingTo` whenever the roster changes, and
+  // re-focusing on that would yank the cursor mid-typing. Unlike the conversation-switch focus
+  // above, this fires on touch devices too: it follows a deliberate tap on Reply, so raising
+  // the keyboard is what the user just asked for.
+  let lastReplyKey = '';
+  $effect(() => {
+    const key = replyingTo ? `${replyingTo.name} :: ${replyingTo.excerpt}` : '';
+    if (key === lastReplyKey) return;
+    lastReplyKey = key;
+    if (!key || disabled) return;
+    textarea?.focus();
+    caretToEnd(); // append to whatever draft is already there, don't overwrite the caret
   });
 
   // "Type to focus": pressing a printable key while focus isn't already in an editable
@@ -483,10 +507,16 @@
         return;
       }
     }
-    // Escape clears the draft. (An open autocomplete swallows Escape above, so reaching here
-    // means none is open.) Left as a no-op on an already-empty field so Escape isn't captured
-    // for nothing.
+    // Escape cancels a pending reply first, then clears the draft. (An open autocomplete
+    // swallows Escape above, so reaching here means none is open.) Backing out of a reply
+    // shouldn't also throw away what you had typed — that takes a second Escape. Left as a
+    // no-op on an empty field with no reply, so Escape isn't captured for nothing.
     if (event.key === 'Escape') {
+      if (replyingTo) {
+        event.preventDefault();
+        onCancelReply?.();
+        return;
+      }
       if (text.length === 0) return;
       event.preventDefault();
       text = '';
@@ -531,6 +561,30 @@
 >
   {#if uploadError}
     <div class="mara-upload-error" role="alert">{uploadError}</div>
+  {/if}
+  <!-- Pending reply: who is being replied to and a glimpse of their message, with an × to back
+       out (Escape does the same). The excerpt is plain text — the same one-line, server-made
+       excerpt the sent reply's quote bar will show. -->
+  {#if replyingTo}
+    <div class="mara-replying">
+      <span class="label">Replying to</span>
+      <!-- `@name`, matching the quote bar the sent reply will carry (see chat-render). -->
+      <span
+        class="who"
+        style:color={/^#[0-9a-fA-F]{6}$/.test(replyingTo.color) ? replyingTo.color : null}
+        >@{replyingTo.name}</span
+      >
+      <span class="excerpt">{replyingTo.excerpt}</span>
+      <button
+        type="button"
+        class="cancel"
+        title="Cancel reply"
+        aria-label="Cancel reply"
+        onclick={() => onCancelReply?.()}
+      >
+        ×
+      </button>
+    </div>
   {/if}
   <!-- Attachment tiles: local `preview` stays the thumbnail throughout (no
        re-fetch of the hosted URL); a spinner overlays until the upload resolves. -->
@@ -758,6 +812,54 @@
     flex-basis: 100%;
     font-size: 0.8rem;
     color: var(--mara-error, #f87171);
+  }
+  /* The pending-reply chip above the field. Sized down from the message font and clipped to a
+     single line, so a long quoted message can't push the composer around. Colours mirror the
+     quote bar in ChatView, for the same reason: translucent neutral grey (not `--mara-border`,
+     which is invisible on the dark theme's black) and opacity applied at one level only, so
+     the quoted text doesn't fade into the background. */
+  .mara-replying {
+    flex-basis: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.15rem 0.25rem 0.5rem;
+    background: rgba(127, 127, 127, 0.12);
+    border-left: 2px solid rgba(127, 127, 127, 0.65);
+    border-radius: 2px;
+    color: var(--mara-fg, #e6e6e6);
+  }
+  .mara-replying .label {
+    flex: none;
+    opacity: 0.65;
+  }
+  .mara-replying .who {
+    flex: none;
+    font-weight: 600;
+  }
+  .mara-replying .excerpt {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+  }
+  .mara-replying .cancel {
+    flex: none;
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    color: inherit;
+    background: transparent;
+    border: none;
+    padding: 0 0.15rem;
+    opacity: 0.65;
+    cursor: pointer;
+  }
+  .mara-replying .cancel:hover {
+    opacity: 1;
   }
   .mara-attachments {
     flex-basis: 100%;

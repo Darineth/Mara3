@@ -25,6 +25,21 @@ function jumboTextClass(line: LineModel, options: RenderLineOptions): string {
  */
 export type LineKind = 'chat' | 'emote' | 'system' | 'notice' | 'away' | 'cleared';
 
+/** The message a line replies to, as the server snapshotted it: enough to render the quote
+ *  without holding the original line. Decoupled from the protocol's `ReplyRef` like the rest
+ *  of this module. */
+export interface ReplyModel {
+  /** Server message id of the quoted message — the jump target (see ChatView's click handler). */
+  id: number;
+  authorName: string;
+  /** `#rrggbb`. */
+  authorColor: string;
+  /** One-line, already-truncated excerpt of the quoted message. */
+  excerpt: string;
+  /** A quoted `/me` renders as an action rather than `Name: text`. */
+  kind: 'chat' | 'emote';
+}
+
 /** A single conversation line, decoupled from transport/roster types. */
 export interface LineModel {
   kind: LineKind;
@@ -36,6 +51,8 @@ export interface LineModel {
   text: string;
   /** Pre-formatted timestamp string, or omit to render none. */
   timestamp?: string;
+  /** Set on a chat/emote that replies to another message: renders a quote bar above it. */
+  replyTo?: ReplyModel;
 }
 
 /** Per-line options: the text pipeline's options plus the line layout. */
@@ -89,6 +106,34 @@ function avatarHtml(line: LineModel, color: string, cls: string): string {
   return `<span class="mara-avatar mara-avatar-mono ${cls}" style="background:${color}" aria-hidden="true">${initial}</span>`;
 }
 
+// The quote bar above a reply, or empty when the line isn't one. It sits as a sibling BEFORE
+// the message row (ChatView injects both into the per-message wrapper), so it needs no changes
+// to either layout's internals; `mara-reply-discord` just indents it to that layout's text
+// column. The excerpt is ESCAPED TEXT ONLY — no markdown, links, or images — for the same
+// reason system lines are: it is another user's text lifted into the quoter's message, and a
+// quote bar that could render an image or a link would be a way to plant either in a reply.
+function replyHtml(line: LineModel, options: RenderLineOptions): string {
+  const reply = line.replyTo;
+  if (!reply) return '';
+  const color = /^#[0-9a-fA-F]{6}$/.test(reply.authorColor) ? reply.authorColor : '#888888';
+  const cls = options.layout === 'discord' ? 'mara-reply mara-reply-discord' : 'mara-reply';
+  const excerptCls =
+    reply.kind === 'emote' ? 'mara-reply-excerpt mara-reply-emote' : 'mara-reply-excerpt';
+  // A button, not a div: ChatView turns a click into a jump to the quoted message, and it
+  // should be reachable by keyboard like any other control.
+  //
+  // The `@` is markup, not part of the name: it's prepended here rather than folded into
+  // `authorName` so it can't be confused with a name that literally starts with one, and so
+  // the escaping still applies to the name alone.
+  return (
+    `<button type="button" class="${cls}" data-reply-id="${reply.id}" ` +
+    `title="Jump to the message being replied to">` +
+    `<span class="mara-reply-author" style="color:${color}">@${escapeHtml(reply.authorName)}</span>` +
+    `<span class="${excerptCls}">${escapeHtml(reply.excerpt)}</span>` +
+    `</button>`
+  );
+}
+
 /**
  * Render one conversation line to an HTML string. Mirrors Mara 2's chat/emote/
  * plain templates from `MaraStaticData`, but emits plain semantic markup the
@@ -109,6 +154,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
     case 'chat': {
       const showAv = options.avatars !== false;
       const textClass = jumboTextClass(line, options);
+      const quote = replyHtml(line, options);
       // discord (cozy): an avatar gutter, then a `Name  timestamp` header with the text
       // below in the default colour. A grouped continuation (same author, close in time)
       // drops the avatar + header and shows just the text, indented to line up under them
@@ -116,12 +162,14 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
       if (options.layout === 'discord') {
         if (options.continuation) {
           return (
+            quote +
             `<div class="mara-line mara-chat mara-discord mara-cont${showAv ? '' : ' mara-no-av'}">` +
             `<div class="${textClass}">${renderText(line.text, options)}</div>` +
             `</div>`
           );
         }
         return (
+          quote +
           `<div class="mara-line mara-chat mara-discord">` +
           (showAv ? avatarHtml(line, color, 'mara-avatar-lg') : '') +
           `<div class="mara-discord-main">` +
@@ -132,6 +180,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
       }
       // mara (compact): timestamp gutter, a small inline avatar, then `name: body` in colour.
       return (
+        quote +
         `<div class="mara-line mara-chat">${ts(line)}` +
         `<span class="mara-body" style="color:${color}">` +
         (showAv ? avatarHtml(line, color, 'mara-avatar-inline') : '') +
@@ -142,6 +191,7 @@ export function renderLine(line: LineModel, options: RenderLineOptions = {}): st
     }
     case 'emote':
       return (
+        replyHtml(line, options) +
         `<div class="mara-line mara-emote">${ts(line)}` +
         `<span class="mara-body mara-text" style="color:${color}"><em>${name} ${renderText(line.text, { ...options, blocks: false })}</em></span></div>`
       );
