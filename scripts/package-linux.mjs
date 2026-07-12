@@ -21,7 +21,7 @@
 //                         override it, use $HOME or an absolute path, not a ~)
 //   MARA_UPDATE_BASE_URL  update-nudge host (default below); MARA_UPDATE_URL= to disable
 
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -56,6 +56,32 @@ function wsl(cmd, opts = {}) {
   return execSync(`wsl ${distroArg} ${cmd}`, { stdio: 'pipe', ...opts })
     .toString()
     .trim();
+}
+
+/**
+ * Run the long WSL build, forwarding its output as it arrives.
+ *
+ * Deliberately NOT `stdio: 'inherit'`. When our own stdout is a **pipe** rather than a console
+ * or a file — `pnpm package:all | tee build.log`, a CI log capture, any `| tail` — inheriting it
+ * hands that pipe handle to the WSL interop process, and Node then dies with SIGSEGV (exit 139)
+ * *after* the build has already succeeded. That killed `package:all` before it ever reached
+ * zip-dist, while the identical command run straight to a terminal worked fine — which is a
+ * miserable thing to debug, because the build itself is blameless.
+ *
+ * Reading WSL's output through our own pipes and writing it on keeps that handle on our side of
+ * the fence. `spawn` (not `spawnSync`) so the output still streams line by line: a Tauri release
+ * build takes minutes, and it must not sit silent.
+ */
+function wslBuild(scriptMnt) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('wsl', [...(distro ? ['-d', distro] : []), 'bash', scriptMnt], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.on('data', (c) => process.stdout.write(c));
+    child.stderr.on('data', (c) => process.stderr.write(c));
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code ?? 1));
+  });
 }
 
 const winMnt = toMnt(root);
@@ -145,13 +171,18 @@ const scriptPath = join(prebuiltDir, '_build-linux.sh');
 writeFileSync(scriptPath, script.replace(/\r\n/g, '\n')); // LF for bash
 const scriptMnt = toMnt(scriptPath);
 
+let buildStatus;
 try {
-  execSync(`wsl ${distroArg} bash "${scriptMnt}"`, { stdio: 'inherit' });
-} catch {
-  console.error('\npackage:linux: the WSL build failed (see output above).');
+  buildStatus = await wslBuild(scriptMnt);
+} catch (err) {
+  console.error(`\npackage:linux: could not start the WSL build: ${err.message}`);
   process.exit(1);
 } finally {
   rmSync(scriptPath, { force: true });
+}
+if (buildStatus !== 0) {
+  console.error('\npackage:linux: the WSL build failed (see output above).');
+  process.exit(1);
 }
 
 const staged = join(prebuiltDir, stagedName);
