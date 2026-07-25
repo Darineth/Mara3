@@ -1,5 +1,6 @@
 import { get, writable, type Readable, type Writable } from 'svelte/store';
 import {
+  DEFAULT_MAX_MESSAGE_CHARS,
   PROTOCOL_VERSION,
   safeParseServerMessage,
   type ChannelHistoryEntry,
@@ -61,6 +62,10 @@ export class MaraClient {
   readonly serverInfo: Readable<ServerInfo | null>;
   /** The server's message of the day from `welcome` ('' when none is set). */
   readonly motd: Readable<string>;
+  /** Longest message this server accepts, in characters, from `welcome.limits`. The composer
+   *  caps typing at it. Falls back to `DEFAULT_MAX_MESSAGE_CHARS` before login and on a
+   *  server too old to advertise one (which is exactly the limit those servers enforce). */
+  readonly maxMessageChars: Readable<number>;
   /** The server's custom emoji set (shortcode → image URL) from `welcome`; empty until
    *  login, or when the server has none configured. Drives `:name:` rendering + the picker.
    *  Updated live via `emojiUpdate` when anyone adds/removes a user-contributed emoji. */
@@ -79,6 +84,7 @@ export class MaraClient {
   private readonly _privateMessages = writable<Map<Token, ChatLine[]>>(new Map());
   private readonly _serverInfo = writable<ServerInfo | null>(null);
   private readonly _motd = writable('');
+  private readonly _maxMessageChars = writable(DEFAULT_MAX_MESSAGE_CHARS);
   private readonly _emoji = writable<Record<string, string>>({});
   private readonly _emojiCatalog = writable<EmojiEntry[]>([]);
 
@@ -124,6 +130,7 @@ export class MaraClient {
     this.privateMessages = { subscribe: this._privateMessages.subscribe };
     this.serverInfo = { subscribe: this._serverInfo.subscribe };
     this.motd = { subscribe: this._motd.subscribe };
+    this.maxMessageChars = { subscribe: this._maxMessageChars.subscribe };
     this.emoji = { subscribe: this._emoji.subscribe };
     this.emojiCatalog = { subscribe: this._emojiCatalog.subscribe };
 
@@ -384,6 +391,7 @@ export class MaraClient {
         this._sessionToken = msg.sessionToken; // HTTP bearer (see `sessionToken`)
         this._serverInfo.set(msg.server ?? null);
         this._motd.set(msg.motd ?? '');
+        this._maxMessageChars.set(msg.limits?.maxMessageChars ?? DEFAULT_MAX_MESSAGE_CHARS);
         this.applyEmoji(msg.emoji);
         // Anchor the server-clock estimate to login time (0 = older server with no `at`,
         // so serverNow() == now()), keeping client-stamped notices on the server's clock.

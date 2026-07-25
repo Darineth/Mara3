@@ -114,6 +114,12 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
                                  # muted entirely until it next interacts (catches slow churn
                                  # that spaces reconnects past the flap window). 0 = off.
 
+# --- Messages ---
+#MARA_MAX_MESSAGE_CHARS=10000  # longest chat/emote/private message accepted, in characters.
+                               # Clients read this on connect and cap their composer at it,
+                               # so raising it just lets people type more. Max 32768 (the
+                               # protocol ceiling); anything higher is clamped to it.
+
 # --- Flood control (per-connection message rate limit) ---
 #MARA_MSG_RATE=15           # sustained messages/sec allowed; 0 disables the limit
 #MARA_MSG_BURST=30          # how many messages may be sent in a quick burst

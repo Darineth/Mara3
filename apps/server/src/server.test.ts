@@ -319,6 +319,67 @@ describe('rate limiting (flood control)', () => {
   });
 });
 
+describe('message length limit', () => {
+  // A server with a deliberately tiny cap, so the tests can overshoot it cheaply.
+  async function startCapped(maxMessageChars: number) {
+    return startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        userEmojiFile: '',
+        identityFile: '',
+        maxMessageChars,
+      },
+      createLogger('silent'),
+    );
+  }
+
+  it('advertises the configured limit in welcome', async () => {
+    const s2 = await startCapped(64);
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      c.send({ type: 'login', protocol: PROTOCOL_VERSION, name: 'alice', color: '#cccccc' });
+      const welcome = await c.waitFor('welcome');
+      expect(welcome.limits?.maxMessageChars).toBe(64);
+      c.close();
+    } finally {
+      await s2.close();
+    }
+  });
+
+  it('accepts a message at the limit and rejects one past it, in channels and PMs', async () => {
+    const s2 = await startCapped(64);
+    try {
+      const c = await TestClient.connect(`ws://127.0.0.1:${s2.port}/ws`);
+      const alice = await login(c, 'alice');
+      c.send({ type: 'joinChannel', channel: 'lobby' });
+      const joined = await c.waitFor('channelJoined');
+
+      c.send({ type: 'chat', channelToken: joined.channelToken, text: 'x'.repeat(64) });
+      expect((await c.waitFor('chat')).text).toBe('x'.repeat(64));
+
+      // One character over: the very next frame back is the error — nothing was
+      // broadcast, and nothing was quietly truncated to fit.
+      for (const over of [
+        { type: 'chat', channelToken: joined.channelToken, text: 'x'.repeat(65) },
+        { type: 'emote', channelToken: joined.channelToken, text: 'x'.repeat(65) },
+        { type: 'privateMessage', to: alice.token, text: 'x'.repeat(65) },
+      ] as const) {
+        c.send(over);
+        const reply = await c.next();
+        expect(reply.type).toBe('error');
+        expect(reply.type === 'error' && reply.message).toMatch(/too long/i);
+      }
+      c.close();
+    } finally {
+      await s2.close();
+    }
+  });
+});
+
 describe('channels and chat', () => {
   it('delivers a channel roster on join and notifies existing members', async () => {
     const a = await TestClient.connect(url);

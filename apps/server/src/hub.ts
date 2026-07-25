@@ -9,6 +9,7 @@ import {
   type EmojiEntry,
   type ReplyRef,
   type ServerInfo,
+  type ServerLimits,
   type ServerMessage,
   type Token,
   type UserInfo,
@@ -43,6 +44,9 @@ export class Hub {
   private nextMessageId: number;
   /** Our version + the web build we serve; echoed in every `welcome`. */
   readonly serverInfo: ServerInfo;
+  /** The operator-tunable limits clients need to know about (currently the message-length
+   *  cap); echoed in every `welcome` so composers match what we actually accept. */
+  readonly limits: ServerLimits;
   /** Users whose last socket has closed but whose disconnect is being held back
    *  for the grace window (keyed by user token → its pending timer). A reconnect
    *  clears the entry silently; otherwise the timer announces the disconnect. */
@@ -85,6 +89,7 @@ export class Hub {
     });
     this.state = new ServerState(this.identity);
     this.serverInfo = getServerInfo(cfg.webRoot, cfg.serverName);
+    this.limits = { maxMessageChars: cfg.maxMessageChars };
   }
 
   /** Persist any pending history + identities synchronously (call on shutdown). */
@@ -391,6 +396,7 @@ export class Hub {
         sessionToken,
         motd: this.currentMotd(),
         server: this.serverInfo,
+        limits: this.limits,
         emoji: this.emojiManifest(),
         at: this.now(),
       });
@@ -428,6 +434,7 @@ export class Hub {
       sessionToken,
       motd: this.currentMotd(),
       server: this.serverInfo,
+      limits: this.limits,
       emoji: this.emojiManifest(),
       at: this.now(),
     });
@@ -553,6 +560,7 @@ export class Hub {
       conn.send({ type: 'error', message: 'not in that channel' });
       return;
     }
+    if (this.tooLong(conn, text)) return;
     // First words this session prove a real presence: reveal the user if they were muted as
     // unreliable (announce the connect + joins that were suppressed) and reset the churn
     // count, then forget any flap history so their next disconnect announces normally.
@@ -746,6 +754,7 @@ export class Hub {
       conn.send({ type: 'error', message: 'user is offline' });
       return;
     }
+    if (this.tooLong(conn, msg.text)) return;
     const pm: ServerMessage = {
       type: 'privateMessage',
       from: session.info.token,
@@ -762,6 +771,23 @@ export class Hub {
   }
 
   // -- helpers --------------------------------------------------------------
+
+  /**
+   * Enforce the configured message-length cap (`MARA_MAX_MESSAGE_CHARS`), which sits below
+   * the protocol's own `CHAT_TEXT_MAX` (anything past *that* never parses). Rejected rather
+   * than truncated: silently clipping someone's message is worse than telling them. Every
+   * up-to-date client already caps its composer at the number we advertised in `welcome`,
+   * so this only fires for an older or hand-rolled client. Returns true if it rejected.
+   */
+  private tooLong(conn: Connection, text: string): boolean {
+    const max = this.cfg.maxMessageChars;
+    if (text.length <= max) return false;
+    conn.send({
+      type: 'error',
+      message: `Message too long (${text.length} characters; this server allows ${max}).`,
+    });
+    return true;
+  }
 
   /**
    * Map an identity key to its stable user token and stored profile: reuse the bound

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
-import { MOTD_MAX_LEN } from '@mara/protocol';
+import { CHAT_TEXT_MAX, DEFAULT_MAX_MESSAGE_CHARS, MOTD_MAX_LEN } from '@mara/protocol';
 
 /** Server configuration, resolved from environment with sensible defaults. */
 export interface ServerConfig {
@@ -43,6 +43,11 @@ export interface ServerConfig {
   /** Maximum size of a single avatar image, in bytes (avatars are downscaled client-side,
    *  so this is a small safety cap, not a UI limit). */
   maxAvatarBytes: number;
+  /** Longest chat / emote / private message accepted, in characters. Advertised to clients
+   *  in `welcome.limits` so their composer caps typing at the same number, and enforced on
+   *  arrival (a client that ignores it gets an error, not a truncated message). Clamped to
+   *  the protocol's `CHAT_TEXT_MAX`, which no server may exceed. */
+  maxMessageChars: number;
   /** Messages retained per channel (persisted, and the deepest a client can page back). */
   historyLimit: number;
   /** Messages sent on join, and per "load older" page as the user scrolls up. */
@@ -153,6 +158,7 @@ const DEFAULTS = {
   maxAvatarMb: 2,
   maxEmojiMb: 1,
   maxEmojiCount: 500,
+  maxMessageChars: DEFAULT_MAX_MESSAGE_CHARS,
   historyLimit: 1000,
   historyChunk: 50,
   msgRate: 15,
@@ -261,6 +267,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     maxAvatarBytes: mb(env.MARA_MAX_AVATAR_MB, DEFAULTS.maxAvatarMb),
     maxEmojiBytes: mb(env.MARA_MAX_EMOJI_MB, DEFAULTS.maxEmojiMb),
     maxEmojiCount: Math.max(0, num(env.MARA_MAX_EMOJI_COUNT, DEFAULTS.maxEmojiCount)),
+    // At least 1 (a 0-char limit would accept nothing), and never above the protocol
+    // ceiling — raising it past that would only produce messages the wire rejects.
+    maxMessageChars: Math.min(
+      CHAT_TEXT_MAX,
+      Math.max(1, Math.floor(num(env.MARA_MAX_MESSAGE_CHARS, DEFAULTS.maxMessageChars))),
+    ),
     historyLimit: Math.max(0, num(env.MARA_HISTORY_LIMIT, DEFAULTS.historyLimit)),
     historyChunk: Math.max(1, num(env.MARA_HISTORY_CHUNK, DEFAULTS.historyChunk)),
     msgRate: num(env.MARA_MSG_RATE, DEFAULTS.msgRate),

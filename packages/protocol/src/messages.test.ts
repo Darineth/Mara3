@@ -14,7 +14,7 @@ import {
   ProtocolError,
   safeParseClientMessage,
 } from './codec.js';
-import type { UserInfo } from './primitives.js';
+import { CHAT_TEXT_MAX, type UserInfo } from './primitives.js';
 
 const user: UserInfo = { token: 678, name: 'alice', color: '#3366cc', avatar: '', away: '' };
 
@@ -45,6 +45,7 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
     self: user,
     sessionToken: 'xyz',
     motd: 'Welcome',
+    limits: { maxMessageChars: 10000 },
     emoji: [{ name: 'blob', url: '/emoji/blob.png' }],
   },
   loginDenied: { type: 'loginDenied', reason: 'name taken' },
@@ -148,6 +149,26 @@ describe('validation failures', () => {
     expect(() => parseClientMessage(bad)).toThrow(ProtocolError);
   });
 
+  it('rejects message text past the wire ceiling, and accepts it at the ceiling', () => {
+    const chat = (len: number) =>
+      JSON.stringify({ type: 'chat', channelToken: 1, text: 'x'.repeat(len) });
+    expect(() => parseClientMessage(chat(CHAT_TEXT_MAX))).not.toThrow();
+    expect(() => parseClientMessage(chat(CHAT_TEXT_MAX + 1))).toThrow(ProtocolError);
+  });
+
+  it('rejects an advertised message limit above the wire ceiling', () => {
+    const welcome = (max: number) =>
+      JSON.stringify({
+        type: 'welcome',
+        self: user,
+        sessionToken: 's',
+        limits: { maxMessageChars: max },
+      });
+    expect(() => parseServerMessage(welcome(CHAT_TEXT_MAX))).not.toThrow();
+    expect(() => parseServerMessage(welcome(CHAT_TEXT_MAX + 1))).toThrow(ProtocolError);
+    expect(() => parseServerMessage(welcome(0))).toThrow(ProtocolError);
+  });
+
   it('safeParse reports issues without throwing', () => {
     const result = safeParseClientMessage('{"type":"chat"}');
     expect(result.success).toBe(false);
@@ -179,6 +200,8 @@ describe('schema defaults', () => {
     expect(welcome.motd).toBe('');
     // emoji is optional (omitted here → undefined).
     expect(welcome.emoji).toBeUndefined();
+    // So are limits — an older server sends none and the client assumes the default.
+    expect(welcome.limits).toBeUndefined();
 
     // A custom-emoji entry only accepts the shortcode charset in `name`.
     const withEmoji = parseServerMessage(

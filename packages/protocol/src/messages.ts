@@ -5,6 +5,7 @@ import {
   colorSchema,
   tokenSchema,
   userInfoSchema,
+  CHAT_TEXT_MAX,
 } from './primitives.js';
 
 /**
@@ -171,6 +172,16 @@ export type ServerInfo = z.infer<typeof serverInfoSchema>;
  *  markdown message; `welcome` is infrequent, so the extra payload is negligible. */
 export const MOTD_MAX_LEN = 65536;
 
+/** Operator-tunable limits a client needs to know to behave correctly — sent in `welcome`
+ *  so composers can size themselves to *this* server instead of guessing. An object (not a
+ *  flat field) so future limits join it without another optional at the top level. */
+export const serverLimitsSchema = z.object({
+  /** Longest chat / emote / private message this server accepts, in characters
+   *  (`MARA_MAX_MESSAGE_CHARS`). Never above the protocol's {@link CHAT_TEXT_MAX}. */
+  maxMessageChars: z.number().int().positive().max(CHAT_TEXT_MAX),
+});
+export type ServerLimits = z.infer<typeof serverLimitsSchema>;
+
 /** A custom (server-hosted) emoji: a shortcode `name` and the URL of its image.
  *  Typing `:name:` renders the image inline. `name` is the shortcode charset only. */
 export const emojiEntrySchema = z.object({
@@ -197,6 +208,9 @@ const welcome = z.object({
   motd: z.string().max(MOTD_MAX_LEN).default(''),
   /** Server + build identity. Optional so a newer client tolerates an older server. */
   server: serverInfoSchema.optional(),
+  /** This server's operator-tunable limits. Optional — an older server sends none, and the
+   *  client falls back to `DEFAULT_MAX_MESSAGE_CHARS` (what every server used before). */
+  limits: serverLimitsSchema.optional(),
   /** The server's custom emoji set (shortcode → image URL). Absent on servers with none
    *  configured, or older servers; a newer client just renders no custom emoji then. */
   emoji: z.array(emojiEntrySchema).max(2000).optional(),

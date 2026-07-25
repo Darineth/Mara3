@@ -88,6 +88,7 @@
     privateMessages,
     serverInfo,
     motd,
+    maxMessageChars,
     emoji,
     emojiCatalog,
   } = client;
@@ -1274,6 +1275,7 @@
       </div>
       <ChatInput
         onsend={handleSend}
+        maxLength={$maxMessageChars}
         disabled={$connection !== 'active'}
         placeholder={`Message ${title}`}
         macros={settings.macros}

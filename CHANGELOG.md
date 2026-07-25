@@ -4,7 +4,13 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.27] - unreleased
 
-_In development._
+### Added
+
+- **The message length limit is the operator's call.** A server sets how long a message may
+  be with `MARA_MAX_MESSAGE_CHARS` (default 10000 characters, as before, up to 32768).
+  Clients pick the number up on connect and cap the composer at it, so the field simply stops
+  where the server would have said no — nothing gets typed out and then rejected. Attached
+  images count toward it too, so a full message plus pictures still goes through.
 
 ## [3.0.26] - 2026-07-11
 

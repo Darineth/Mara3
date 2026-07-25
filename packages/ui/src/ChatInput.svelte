@@ -23,6 +23,10 @@
     onCancelReply,
   }: {
     onsend: (text: string) => void;
+    /** Hard cap on the field's length, in characters. Owners pass the connected server's
+     *  advertised limit (`client.maxMessageChars`) so typing stops exactly where the server
+     *  would start rejecting; the default matches what a server with no limit configured
+     *  enforces. */
     maxLength?: number;
     placeholder?: string;
     disabled?: boolean;
@@ -199,6 +203,13 @@
   // blocks it; gates both the button and the Enter handler.
   const canSend = $derived(
     !disabled && !uploading && (text.trim() !== '' || attachments.length > 0),
+  );
+  // Attached image URLs are appended to the message on send (each on its own line), so they
+  // count against the server's limit as well — reserve their footprint here so a brim-full
+  // field plus attachments can't compose a message the server would then reject. Never
+  // below 1, so the field stays usable no matter how much is attached.
+  const typedMax = $derived(
+    Math.max(1, maxLength - attachments.reduce((n, a) => n + (a.url ? a.url.length + 1 : 0), 0)),
   );
 
   /** Upload dropped/pasted image files, each shown as a tile until it resolves. */
@@ -620,7 +631,7 @@
       style={inputColor ? `color:${inputColor}` : undefined}
       {placeholder}
       {disabled}
-      maxlength={maxLength}
+      maxlength={typedMax}
       rows="1"
       onkeydown={onKeydown}
       oninput={() => {

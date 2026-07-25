@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CHAT_TEXT_MAX, DEFAULT_MAX_MESSAGE_CHARS } from '@mara/protocol';
 import { loadConfig, loadConfigFile } from './config.js';
 
 // Each test writes a throwaway config file under a fresh temp dir and points the
@@ -115,6 +116,29 @@ describe('loadConfig storage paths', () => {
     const cfg = loadConfig({});
     expect(cfg.uploadDir.endsWith('uploads')).toBe(true);
     expect(cfg.historyFile.endsWith(join('data', 'history.json'))).toBe(true);
+  });
+});
+
+describe('loadConfig maxMessageChars', () => {
+  it('defaults to the protocol default when unset', () => {
+    expect(loadConfig({}).maxMessageChars).toBe(DEFAULT_MAX_MESSAGE_CHARS);
+  });
+
+  it('takes the operator value', () => {
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: '2000' }).maxMessageChars).toBe(2000);
+  });
+
+  it('clamps above the protocol ceiling and below 1, and ignores a non-number', () => {
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: '999999' }).maxMessageChars).toBe(CHAT_TEXT_MAX);
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: '0' }).maxMessageChars).toBe(1);
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: '-5' }).maxMessageChars).toBe(1);
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: 'lots' }).maxMessageChars).toBe(
+      DEFAULT_MAX_MESSAGE_CHARS,
+    );
+  });
+
+  it('floors a fractional value so the cap stays a whole character count', () => {
+    expect(loadConfig({ MARA_MAX_MESSAGE_CHARS: '512.9' }).maxMessageChars).toBe(512);
   });
 });
 

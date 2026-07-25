@@ -44,7 +44,7 @@ with direction-appropriate shapes.
 
 | Message             | Fields                                  | Purpose                                       |
 | ------------------- | --------------------------------------- | --------------------------------------------- |
-| `welcome`           | `self, sessionToken, motd, server?`     | Login accepted; `self` is your `UserInfo`.    |
+| `welcome`           | `self, sessionToken, motd, server?, limits?` | Login accepted; `self` is your `UserInfo`. |
 | `loginDenied`       | `reason`                                | Login rejected (terminal; no auto-reconnect). |
 | `userConnect`       | `user`                                  | Someone logged in.                            |
 | `userDisconnect`    | `token`                                 | Someone disconnected.                         |
@@ -64,7 +64,7 @@ with direction-appropriate shapes.
 The client speaks first — there is no separate version/hello round-trip.
 
 1. Client opens the socket and sends `login { protocol, name, color, identityKey? }`.
-2. Server replies `welcome { self, sessionToken, motd, server? }` **or**
+2. Server replies `welcome { self, sessionToken, motd, server?, limits? }` **or**
    `loginDenied { reason }` (and closes).
 3. Steady state: join/leave channels, chat/emote/away, private messages, ping/pong.
 
@@ -78,6 +78,16 @@ running versions and detect when it is itself stale: `webBuild` is the build id
 of the web assets the server is serving, and a client whose own compiled build id
 differs knows its page is running cached old code and prompts a reload. It is
 optional (absent for a headless/dev server, or one too old to send it).
+
+`limits` carries the operator-tunable bounds a client must know to behave correctly —
+currently `{ maxMessageChars }`, the longest chat/emote/private message this server
+accepts (`MARA_MAX_MESSAGE_CHARS`, default 10000). A client sizes its composer to it
+rather than assuming a number. It is optional: a server too old to send it enforces
+the default, which is what a client assumes when the field is absent. Independently of
+the setting, the wire format caps message text at 32768 characters — past that a frame
+is malformed and never parses — so a server can lower or raise its limit within that
+ceiling but never beyond it. Over-limit text sent anyway is **rejected** with `error`,
+never silently truncated.
 
 ## Identity & presence
 

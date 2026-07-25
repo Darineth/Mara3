@@ -28,9 +28,22 @@ export const avatarSchema = z
   );
 export type Avatar = z.infer<typeof avatarSchema>;
 
+/**
+ * Absolute wire ceiling for chat / emote / PM text (characters). This is the *protocol's*
+ * hard bound — a frame over it is malformed and rejected at parse — not the effective
+ * limit users see: that one is per-server (`MARA_MAX_MESSAGE_CHARS`), enforced by the hub
+ * and advertised in `welcome.limits` so composers can size themselves to it. Chosen so
+ * even a worst-case JSON-escaped message stays well inside the socket's 256 KB frame cap.
+ */
+export const CHAT_TEXT_MAX = 32768;
+
+/** Effective message limit a server uses when the operator sets none, and what a client
+ *  assumes when talking to a server too old to advertise one. */
+export const DEFAULT_MAX_MESSAGE_CHARS = 10000;
+
 /** Bounds shared by chat / emote / PM text. A server abuse guard with headroom over the
- *  composer's 10k character limit, not the UI limit itself. */
-export const chatTextSchema = z.string().max(10240);
+ *  configured per-server limit, not that limit itself (see {@link CHAT_TEXT_MAX}). */
+export const chatTextSchema = z.string().max(CHAT_TEXT_MAX);
 export type ChatText = z.infer<typeof chatTextSchema>;
 
 /** A user as seen by others: identity, colour, and away status (`""` = present). */

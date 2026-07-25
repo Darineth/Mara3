@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { WebSocket } from 'ws';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, startServer, createLogger, type MaraServer } from '@mara/server';
+import { DEFAULT_MAX_MESSAGE_CHARS } from '@mara/protocol';
 import { MaraClient } from './client.js';
 import type { ClientEvents, ClientOptions, WebSocketCtor } from './types.js';
 
@@ -98,6 +99,30 @@ describe('handshake + session', () => {
     await connected(client);
     client.disconnect();
     expect(client.status).toBe('closed');
+  });
+
+  it("adopts the server's message limit from welcome, and assumes the default before login", async () => {
+    const capped = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        identityFile: '',
+        maxMessageChars: 250,
+      },
+      createLogger('silent'),
+    );
+    try {
+      const client = makeClient('alice', { url: `ws://127.0.0.1:${capped.port}/ws` });
+      expect(get(client.maxMessageChars)).toBe(DEFAULT_MAX_MESSAGE_CHARS); // pre-login
+      await connected(client);
+      expect(get(client.maxMessageChars)).toBe(250);
+      client.disconnect();
+    } finally {
+      await capped.close();
+    }
   });
 });
 
