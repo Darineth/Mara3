@@ -489,10 +489,36 @@ describe('presence system messages', () => {
     a.disconnect();
     await gone;
 
+    // disconnect() closes with 1000, which the server reads as a deliberate quit — so the
+    // line says she left, rather than the neutral wording used when a connection dies.
     const lines = get(b.channelMessages).get(bJoin.token) ?? [];
-    expect(lines.some((l) => l.kind === 'system' && l.text.includes('alice disconnected'))).toBe(
+    expect(lines.some((l) => l.kind === 'system' && l.text.includes('alice left'))).toBe(true);
+
+    b.disconnect();
+  });
+
+  it('distinguishes a dropped connection from a quit in the notice', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    await connected(a);
+    await connected(b);
+    a.joinChannel('lobby');
+    await waitEvent(a, 'channelJoined');
+    b.joinChannel('lobby');
+    const bJoin = await waitEvent(b, 'channelJoined');
+
+    // Kill the socket outright instead of closing it cleanly — no close frame, so the
+    // server sees the connection die rather than a goodbye. (This server runs with
+    // disconnectGraceMs: 0, so the departure announces immediately.)
+    const gone = waitEvent(b, 'userDisconnect');
+    (a as unknown as { socket: { terminate(): void } }).socket.terminate();
+    await gone;
+
+    const lines = get(b.channelMessages).get(bJoin.token) ?? [];
+    expect(lines.some((l) => l.kind === 'system' && l.text.includes('alice lost connection'))).toBe(
       true,
     );
+    expect(lines.some((l) => l.text.includes('alice left'))).toBe(false);
 
     b.disconnect();
   });
@@ -596,7 +622,7 @@ describe('private messages + ping', () => {
     b.disconnect();
     await gone;
     const lines = get(a.privateMessages).get(bob.token) ?? [];
-    expect(lines.some((l) => l.kind === 'system' && /disconnected/.test(l.text))).toBe(true);
+    expect(lines.some((l) => l.kind === 'system' && /left/.test(l.text))).toBe(true);
 
     a.disconnect();
   });

@@ -1085,6 +1085,68 @@ describe('disconnect grace period', () => {
     watcher.close();
   });
 
+  // A user who quits is not coming back, so holding their departure for the grace window
+  // only makes the room wrong about who is in it. A dropped connection still gets the
+  // window, because that user very well might return.
+  it('announces a deliberate quit immediately, tagged as a quit', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(graceUrl);
+    const alice = await login(w1, 'alice', '#ffffff', 'alice-key');
+    await watcher.waitFor('userConnect');
+
+    // Our client's goodbye: close(1000). Well inside the grace window, so a drop would
+    // still be silent here.
+    const started = Date.now();
+    w1.close(1000, 'client disconnect');
+    const gone = await watcher.waitFor('userDisconnect', GRACE_MS);
+    expect(gone.token).toBe(alice.token);
+    expect(gone.reason).toBe('quit');
+    expect(Date.now() - started).toBeLessThan(GRACE_MS);
+
+    watcher.close();
+  });
+
+  it('tags a dropped connection as lost, after the grace window', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(graceUrl);
+    await login(w1, 'alice', '#ffffff', 'alice-key');
+    await watcher.waitFor('userConnect');
+
+    w1.close(); // no status code — what a died connection looks like (1005)
+    const gone = await watcher.waitFor('userDisconnect', GRACE_MS + 1000);
+    expect(gone.reason).toBe('lost');
+
+    watcher.close();
+  });
+
+  it('says nothing when one window of a multiplexed user quits', async () => {
+    const watcher = await TestClient.connect(graceUrl);
+    await login(watcher, 'bob');
+
+    const w1 = await TestClient.connect(graceUrl);
+    await login(w1, 'alice', '#ffffff', 'alice-key');
+    await watcher.waitFor('userConnect');
+    const w2 = await TestClient.connect(graceUrl);
+    await login(w2, 'alice', '#ffffff', 'alice-key'); // same identity, second window
+
+    // Closing one window deliberately must NOT announce a departure — she is still here
+    // in the other one. Only the last window closing counts.
+    w1.close(1000, 'client disconnect');
+    await sleep(GRACE_MS / 2);
+    watcher.send({ type: 'ping', id: 7 });
+    expect((await watcher.next()).type).toBe('pong');
+
+    // ...and when that last window quits, it announces at once.
+    w2.close(1000, 'client disconnect');
+    expect((await watcher.waitFor('userDisconnect', GRACE_MS)).reason).toBe('quit');
+
+    watcher.close();
+  });
+
   it('keeps channel membership intact across a within-grace reconnect', async () => {
     const watcher = await TestClient.connect(graceUrl);
     await login(watcher, 'bob');

@@ -242,6 +242,17 @@ const userDisconnect = z.object({
   type: z.literal('userDisconnect'),
   token: tokenSchema,
   at: serverEventAt,
+  /**
+   * How the user went, so clients can say which happened:
+   *
+   * - `quit` — they closed the client deliberately (it said so before hanging up).
+   * - `lost` — the connection dropped and never came back inside the grace window.
+   *
+   * A free-form string rather than an enum, following `loginDenied.code`: an older client
+   * tolerates a value it doesn't know instead of failing to parse the whole frame.
+   * Absent from older servers, where a client should keep its existing wording.
+   */
+  reason: z.string().max(16).optional(),
 });
 
 /** Longest quoted excerpt carried on a reply. Enough to recognise the message being

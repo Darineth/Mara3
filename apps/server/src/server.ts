@@ -211,7 +211,9 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       const conn = new Connection(`c${++counter}`, ws);
       hub.onConnect(conn);
       ws.on('message', (data) => hub.onMessage(conn, data.toString()));
-      ws.on('close', () => hub.onClose(conn));
+      // The close CODE is the only thing separating "they quit" from "their connection
+      // died", so it has to reach the hub rather than being dropped here.
+      ws.on('close', (code: number) => hub.onClose(conn, code));
       ws.on('error', (err) => log.warn({ err, conn: conn.id }, 'socket error'));
     });
 

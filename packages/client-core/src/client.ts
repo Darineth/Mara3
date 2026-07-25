@@ -431,11 +431,20 @@ export class MaraClient {
         // Note the disconnect in each channel the user was in (capture the name and the
         // channel set before removing them, then drop them from every channel/roster).
         const name = this.nameOf(msg.token);
+        // Say which kind of departure it was, when the server tells us: someone who quit
+        // is gone on purpose, someone who dropped may well be back. An unknown or absent
+        // reason (an older server, or a value added later) keeps the neutral wording.
+        const text =
+          msg.reason === 'quit'
+            ? `${name} left`
+            : msg.reason === 'lost'
+              ? `${name} lost connection`
+              : `${name} disconnected`;
         const channelTokens: Token[] = [];
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) {
             channelTokens.push(channelToken);
-            this.systemLine(channelToken, `${name} disconnected`, msg.at);
+            this.systemLine(channelToken, text, msg.at);
           }
         }
         // Also note it in any private conversation with them, so a PM clearly
@@ -444,7 +453,7 @@ export class MaraClient {
           this.pushLine(this._privateMessages, msg.token, {
             kind: 'system',
             from: null,
-            text: `${name} disconnected`,
+            text,
             at: msg.at,
           });
         }

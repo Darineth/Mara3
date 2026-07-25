@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.29] - unreleased
 
-_In development._
+### Changed
+
+- **Leaving and dropping off now read differently.** Someone who closes Mara shows as
+  **left** the moment they go; someone whose connection dies shows as **lost connection**,
+  and only after the grace period has given them a chance to come back. Before, both waited
+  out the same fifteen seconds and said the same thing — so a person who had plainly gone
+  lingered in the room, and a phone that ducked into a tunnel looked like it had walked out.
+  Quitting properly also clears any "unreliable connection" marks against you, since
+  hanging up cleanly is the opposite of flapping.
 
 ## [3.0.28] - 2026-07-24
 

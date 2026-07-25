@@ -47,7 +47,7 @@ with direction-appropriate shapes.
 | `welcome`           | `self, sessionToken, motd, server?, limits?` | Login accepted; `self` is your `UserInfo`. |
 | `loginDenied`       | `reason`                                | Login rejected (terminal; no auto-reconnect). |
 | `userConnect`       | `user`                                  | Someone logged in.                            |
-| `userDisconnect`    | `token`                                 | Someone disconnected.                         |
+| `userDisconnect`    | `token, at, reason?`                    | Someone left (`quit`) or dropped (`lost`).    |
 | `channelJoined`     | `channelToken, channel, users, history` | You joined; carries the roster + backlog.     |
 | `channelLeft`       | `channelToken`                          | You left a channel.                           |
 | `userJoinedChannel` | `token, channelToken`                   | Someone joined a channel you're in.           |
@@ -120,6 +120,25 @@ There are still no accounts — a chosen name is a display label, not proof of
 identity. Presence is per-channel: clients learn who is present from each
 `channelJoined` roster and the `userJoinedChannel`/`userLeftChannel`/
 `userDisconnect` notices. There is no global user list.
+
+### Leaving vs dropping
+
+`userDisconnect.reason` says which happened, because the two deserve different treatment:
+
+- **`quit`** — the client closed the socket with WebSocket code **1000**, which is what
+  our clients send when the user disconnects deliberately. Nothing is coming back, so the
+  departure is announced **immediately**, skipping the grace window, and the user's flap
+  and churn history is cleared (a client that says goodbye is the opposite of a flapper).
+- **`lost`** — anything else: 1006 abnormal, a ping timeout, a proxy hanging up, or a close
+  frame with no status (1005). The departure is held for `MARA_DISCONNECT_GRACE_MS` (and
+  longer for a flapping client), so a reconnect inside that window is silent.
+
+A browser tab closing or navigating away sends **1001**, which counts as `lost` on purpose:
+that is the backgrounded-mobile-tab case the grace window exists to absorb, and reading it
+as a goodbye would announce departures for users who are about to return.
+
+`reason` is a free-form string and optional — an older server sends none, and a client that
+doesn't recognise the value should fall back to neutral wording rather than reject the frame.
 
 ## Message backlog
 

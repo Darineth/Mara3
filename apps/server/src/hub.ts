@@ -27,6 +27,20 @@ import { deleteAvatar, deleteUserEmoji, userEmojiName } from './uploads.js';
 import { getServerInfo } from './version.js';
 
 /**
+ * Whether a socket closing means the user *left*, as opposed to their connection dying.
+ *
+ * Only 1000 (normal closure) counts, and deliberately so: our client calls `close(1000)`
+ * itself when the user disconnects, and nothing else produces it. A browser tab being
+ * closed or navigated away sends 1001 ("going away") — which is the backgrounded-mobile-tab
+ * case the grace window exists to absorb, so reading it as a goodbye would announce a
+ * departure for someone who is about to come straight back. Everything else (1006 abnormal,
+ * a ping timeout, a proxy hanging up) is a dropped connection by definition.
+ */
+function isDeliberateClose(code?: number): boolean {
+  return code === 1000;
+}
+
+/**
  * The message-handling core. One instance owns all shared state and processes
  * every client message synchronously on Node's event loop, so state mutations
  * never interleave — the modern equivalent of Mara 2's single-thread Qt server.
@@ -168,16 +182,24 @@ export class Hub {
     }
   }
 
-  onClose(conn: Connection): void {
+  onClose(conn: Connection, code?: number): void {
     // Detach this socket. A pre-login drop (userToken null) leaves nothing to do.
     // For a multiplexed user we only announce a disconnect once their *last*
     // window closes — other windows keep them present.
     const result = this.state.detachConnection(conn);
     if (result?.lastClosed) {
-      // Hold the disconnect for the grace window: a reconnect within it (common on
-      // mobile, where the socket drops on backgrounding/network switches) cancels
-      // this quietly, so other users never see leave/join churn.
-      this.scheduleDisconnect(result.session);
+      if (isDeliberateClose(code)) {
+        // They said goodbye: nothing is coming back, so announce it now. Holding a
+        // deliberate departure for the grace window would just make the room wrong
+        // about who is in it for fifteen seconds.
+        this.log.info({ user: result.session.info.name }, 'quit');
+        this.finalizeDisconnect(result.session.info.token, 'quit');
+      } else {
+        // The connection died. Hold the disconnect for the grace window: a reconnect
+        // within it (common on mobile, where the socket drops on backgrounding/network
+        // switches) cancels this quietly, so other users never see leave/join churn.
+        this.scheduleDisconnect(result.session);
+      }
     } else if (result) {
       this.log.debug({ user: result.session.info.name }, 'window closed (still online elsewhere)');
     }
@@ -272,7 +294,12 @@ export class Hub {
    * finally stayed away past the long window — announce once and forget them, so a
    * later return starts clean.
    */
-  private finalizeDisconnect(token: Token): void {
+  private finalizeDisconnect(token: Token, reason: 'quit' | 'lost' = 'lost'): void {
+    // Cancel any armed timer as well as forgetting it: a deliberate quit can land while a
+    // grace window from an earlier dropped window is still counting down, and that timer
+    // must not fire into a session that has already been retired.
+    const pending = this.pendingDisconnects.get(token);
+    if (pending) clearTimeout(pending);
     this.pendingDisconnects.delete(token);
     const session = this.state.dropSession(token);
     if (!session) return; // reconnected in the meantime, or already gone
@@ -283,8 +310,16 @@ export class Hub {
     // if we announce it. Then update the count: a session that ended without a single
     // chat/emote is another quiet cycle (flag once it reaches the threshold); one that
     // interacted was a real presence, so forget the count and announce normally.
+    //
+    // A deliberate quit counts as a real presence too, whether or not they said anything:
+    // the churn counter is there to catch clients that drop and reconnect on their own, and
+    // a client that hangs up cleanly is doing the opposite of that. It also forgets any flap
+    // history, so their next connect starts from a clean slate.
     const muted = this.isUnreliable(token);
-    if (session.interacted) {
+    if (reason === 'quit') {
+      this.quiet.delete(token);
+      this.clearFlap(token);
+    } else if (session.interacted) {
       this.quiet.delete(token);
     } else if (this.cfg.unreliableDrops > 0) {
       const rec = this.quiet.get(token) ?? { drops: 0, unreliable: false };
@@ -296,8 +331,8 @@ export class Hub {
       this.log.debug({ user: session.info.name }, 'disconnected (muted — unreliable)');
       return;
     }
-    this.log.info({ user: session.info.name, flapping: wasFlapping }, 'disconnected');
-    this.broadcastAll({ type: 'userDisconnect', token, at: this.now() }, token);
+    this.log.info({ user: session.info.name, flapping: wasFlapping, reason }, 'disconnected');
+    this.broadcastAll({ type: 'userDisconnect', token, at: this.now(), reason }, token);
   }
 
   // -- dispatch -------------------------------------------------------------

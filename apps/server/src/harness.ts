@@ -82,8 +82,14 @@ export class TestClient {
     }
   }
 
-  close(): void {
-    this.ws.close();
+  /**
+   * Close the socket. With no arguments the close frame carries NO status code, which the
+   * server sees as 1005 — the shape of a connection that died, and what the drop/grace
+   * tests want. Pass 1000 to imitate our real client saying goodbye (`close(1000, …)`),
+   * which is what the server reads as a deliberate quit.
+   */
+  close(code?: number, reason?: string): void {
+    this.ws.close(code, reason);
   }
 }
 
