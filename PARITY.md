@@ -64,9 +64,11 @@ plugin data, response/error. ✅
 
 ## Known gaps / follow-ups
 
-- File transfers — send/receive arbitrary (non-image) files between users.
-  Images now upload via drag-drop/paste to `/upload` (hosted, size-capped,
-  rolling cache); generalising this to any file type is the remaining piece.
+- ~~File transfers~~ — **done**: any file type shares via drag-drop/paste/attach to
+  `/file` (hosted, size-capped, its own rolling store), rendering as a download card
+  with the original name and size. Unlike Mara 2 this is a server-hosted share, not a
+  peer-to-peer transfer — an offline recipient collects it later, and the operator's
+  cap decides how long it stays.
 - Remember joined channels across sessions (rejoin them automatically on login).
 - Optional: private-message history, and a real database if scale outgrows the
   current JSON-file history store. (Per-channel backlog now persists across

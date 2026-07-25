@@ -54,9 +54,10 @@ notifications today.
 
 ## 3. Messaging richness
 
-- [ ] **Arbitrary file attachments** — generalize the image upload pipeline
-      (`/upload`, rolling cache, size caps) to any file type. Already flagged in
-      PARITY as the remaining piece next to inline images.
+- [x] **Arbitrary file attachments** — any file type shares via drag-drop/paste/attach to
+      `/file`, with its own rolling store (`MARA_MAX_FILE_MB`, `MARA_MAX_FILES_MB`) kept
+      apart from the image cache, and renders as a download card carrying the original name
+      and size. Served as opaque attachments so nothing shared can execute in a browser.
 - [ ] **Rich link unfurling** — OpenGraph cards for non-image links (Mara inlines
       image URLs/uploads but not regular-link previews).
 - [ ] **Pinned messages** — pin/unpin per channel, with a pinned view.

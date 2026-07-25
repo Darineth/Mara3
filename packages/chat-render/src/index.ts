@@ -3,6 +3,7 @@ export {
   escapeHtml,
   applyEmoticons,
   applyMarkdown,
+  formatBytes,
   linkify,
   renderText,
   toRenderUrl,

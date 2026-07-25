@@ -8,7 +8,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { get } from 'svelte/store';
-  import { ChatView, ChatInput, UserList, Lightbox } from '@mara/ui';
+  import { ChatView, ChatInput, UserList, Lightbox, markFileGone, markFileSaving } from '@mara/ui';
   import { replyExcerpt } from '@mara/protocol';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
   import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
@@ -18,6 +18,7 @@
     isDesktop,
     nativeLog,
     openExternal,
+    openExternalNative,
     requestAttention,
     switchServer,
   } from './lib/native.js';
@@ -33,7 +34,7 @@
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
   import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
-  import { uploadAvatar, uploadEmoji, uploadImage } from './lib/upload.js';
+  import { uploadAttachment, uploadAvatar, uploadEmoji } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
   import FormattingHelp from './FormattingHelp.svelte';
   import OptionsDialog from './OptionsDialog.svelte';
@@ -642,6 +643,57 @@
     return () => offs.forEach((off) => off());
   });
 
+  /**
+   * Download a shared file, after checking it's still there. Files roll out of the
+   * server's store oldest-first, so a card in old scrollback can outlive its file — and
+   * without this a click on a dead one navigates the window to a bare 404 page, or saves
+   * that page's text as the "file". A cheap HEAD first turns that into the card saying
+   * so, in place.
+   *
+   * Only an explicit 404/410 marks it gone: a network blip or an offline window must not
+   * brand a file that is still on the server, so anything else is left alone.
+   *
+   * This runs ALONGSIDE the download rather than gating it, which is load-bearing on the
+   * in-page path: the anchor's own `download` only works inside the click's transient user
+   * activation, and `await`ing this check first would spend it — after which Chromium
+   * refuses the download in silence.
+   *
+   * The cost of not gating: clicking a file that HAS expired still starts a download (or
+   * opens a browser tab) that then fails on the 404, instead of never starting. The card
+   * explains itself a moment later, which is the part that matters.
+   */
+  /**
+   * Download a shared file from one of the desktop shells: hand the URL to the system
+   * browser, whose download UI is better than anything we would build.
+   *
+   * The fallback is for the Win7 client connected to a bare-IP server, where Tauri 1
+   * grants the page no IPC at all (it matches remote access by domain, and an IP has
+   * none — tauri#7009) and so there is no bridge to ask. That client's older embedded
+   * WebView2 shows a download UI of its own and still permits a click synthesized after
+   * an await, so downloading in place is a decent second best there. Notably it is NOT a
+   * `window.open` fallback: in a shell that opens an internal window, and pointing one at
+   * an attachment produces the blank window this used to show.
+   */
+  async function downloadSharedFile(a: HTMLAnchorElement) {
+    if (await openExternalNative(a.href)) return;
+    const tmp = document.createElement('a');
+    tmp.href = a.href;
+    tmp.download = a.getAttribute('download') ?? '';
+    tmp.rel = 'noopener';
+    tmp.click();
+  }
+
+  async function markSharedFileIfGone(a: HTMLAnchorElement) {
+    try {
+      const res = await fetch(a.href, { method: 'HEAD' });
+      if (res.status === 404 || res.status === 410) {
+        markFileGone(a.getAttribute('href') ?? a.href);
+      }
+    } catch {
+      /* couldn't ask — leave the card alone rather than brand a live file dead */
+    }
+  }
+
   // Open external links ourselves so they work everywhere. Chat links carry no
   // target="_blank" (see chat-render), so a plain click would otherwise navigate the app
   // window away; here we route it to the native opener in the desktop shells (the Tauri 2
@@ -654,6 +706,24 @@
       const a = (e.target as HTMLElement | null)?.closest('a[href]') as HTMLAnchorElement | null;
       if (!a || a.closest('.mara-img-box')) return;
       if (a.protocol !== 'http:' && a.protocol !== 'https:') return;
+      // A shared-file chip is a download, not a link to visit. Deliberately NOT
+      // prevented: the anchor's own `download` (plus the server's Content-Disposition)
+      // saves the file, and it needs this click's user activation to be allowed — so we
+      // get out of its way and only check, in parallel, whether the file is still there.
+      if (a.classList.contains('mara-file')) {
+        // Downloads go to the system browser, which has the download UI worth having —
+        // real progress, pause/resume, history — and costs us nothing to maintain. In a
+        // plain browser that's already true of the anchor itself, so it is simply left
+        // alone; in a shell we hand the URL over (see downloadSharedFile for the case
+        // where there is no shell bridge to hand it to).
+        markFileSaving(a.getAttribute('href') ?? a.href);
+        if (isDesktop()) {
+          e.preventDefault();
+          void downloadSharedFile(a);
+        }
+        void markSharedFileIfGone(a);
+        return;
+      }
       e.preventDefault();
       void openExternal(a.href);
     };
@@ -1279,7 +1349,7 @@
         disabled={$connection !== 'active'}
         placeholder={`Message ${title}`}
         macros={settings.macros}
-        upload={(file) => uploadImage(file, client.sessionToken)}
+        upload={(file) => uploadAttachment(file, client.sessionToken)}
         focusKey={activeKey}
         color={settings.color}
         emoji={$emoji}

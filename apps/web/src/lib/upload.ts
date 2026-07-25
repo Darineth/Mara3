@@ -1,4 +1,4 @@
-/** Image upload to the Mara server's `/upload` endpoint (same origin). */
+/** Uploads to the Mara server (same origin): chat images, avatars, emoji, and shared files. */
 
 /** Content types the server accepts; mirror of the server's allow-list. */
 const ACCEPTED = new Set([
@@ -50,6 +50,42 @@ async function postImage(
 /** POST a chat image to `/upload` (rolling cache) and return its hosted path. */
 export function uploadImage(file: File, token: string | null): Promise<string> {
   return postImage('upload', file, file.type, token);
+}
+
+/**
+ * POST any file to `/file` and return its hosted path — `/files/<id>/<bytes>/<name>`,
+ * which carries the original name and size so the message renders as a file card without
+ * any extra metadata on the wire. The name travels in a header (the body is the raw
+ * bytes) percent-encoded, since headers are latin-1 and a filename is not.
+ *
+ * The server stores the bytes without interpreting them and serves them back as an opaque
+ * attachment, so no type gate is needed here — anything the user picked can go.
+ */
+export async function uploadFile(file: File, token: string | null): Promise<string> {
+  const res = await fetch(new URL('file', document.baseURI), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-mara-filename': encodeURIComponent(file.name),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(detail || `Upload failed (${res.status})`);
+  }
+  const { url } = (await res.json()) as { url: string };
+  return url;
+}
+
+/**
+ * Route a picked/dropped/pasted file to the right store: an image the server will host
+ * inline goes to `/upload`, everything else (including image types we don't inline, like
+ * SVG) is shared as a file. One entry point so every attachment path agrees.
+ */
+export function uploadAttachment(file: File, token: string | null): Promise<string> {
+  return isUploadableImage(file) ? uploadImage(file, token) : uploadFile(file, token);
 }
 
 /**

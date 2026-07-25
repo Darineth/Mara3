@@ -118,14 +118,31 @@
     };
   });
 
-  /** A pending image attachment shown as a tile above the input. */
+  /** A pending attachment shown as a tile above the input — an image thumbnail, or a
+   *  name/size chip for any other kind of file. */
   interface Attachment {
     id: number;
     name: string;
-    /** Object URL for an instant local preview while the upload is in flight. */
-    preview: string;
+    /** Byte size, shown on a file chip (an image tile shows the picture instead). */
+    size: number;
+    /** Object URL for an instant local preview while an IMAGE upload is in flight.
+     *  Absent for a non-image file, which has nothing to preview. */
+    preview?: string;
     /** Hosted URL once the upload resolves; undefined while uploading. */
     url?: string;
+  }
+
+  /** `1.4 MB` — matches how a sent file's chip reads in the message log. */
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
   }
 
   let text = $state('');
@@ -212,16 +229,16 @@
     Math.max(1, maxLength - attachments.reduce((n, a) => n + (a.url ? a.url.length + 1 : 0), 0)),
   );
 
-  /** Upload dropped/pasted image files, each shown as a tile until it resolves. */
+  /** Upload dropped/pasted/picked files of ANY type, each shown as a tile until it
+   *  resolves. Images get a local thumbnail; anything else shows a name/size chip. The
+   *  owner's `upload` decides where each one is stored. */
   async function uploadFiles(files: File[]) {
-    if (!upload) return;
-    const images = files.filter((f) => f.type.startsWith('image/'));
-    if (images.length === 0) return;
+    if (!upload || files.length === 0) return;
     uploadError = '';
-    for (const file of images) {
+    for (const file of files) {
       const id = nextAttachId++;
-      const preview = URL.createObjectURL(file);
-      attachments = [...attachments, { id, name: file.name, preview }];
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      attachments = [...attachments, { id, name: file.name, size: file.size, preview }];
       try {
         const url = await upload(file);
         attachments = attachments.map((a) => (a.id === id ? { ...a, url } : a));
@@ -238,7 +255,7 @@
     const gone = attachments.find((a) => a.id === id);
     if (gone) {
       closeLightboxFor([gone.preview, gone.url].filter((s): s is string => !!s));
-      URL.revokeObjectURL(gone.preview);
+      if (gone.preview) URL.revokeObjectURL(gone.preview);
     }
     attachments = attachments.filter((a) => a.id !== id);
   }
@@ -254,7 +271,7 @@
   function onDrop(event: DragEvent) {
     if (!upload) return;
     const files = [...(event.dataTransfer?.files ?? [])];
-    if (files.some((f) => f.type.startsWith('image/'))) {
+    if (files.length > 0) {
       event.preventDefault();
       dragOver = false;
       void uploadFiles(files);
@@ -269,27 +286,26 @@
     }
   }
 
-  // Pull image files out of a clipboard payload. Chromium/WebView2 (Windows) exposes a pasted
-  // bitmap via clipboardData.files, but WebKitGTK (the Linux client's webview) only exposes it
-  // via items[].getAsFile() — so fall back to items when .files has no image, or paste silently
-  // does nothing there.
-  function imagesFromClipboard(cd: DataTransfer): File[] {
-    let images = [...cd.files].filter((f) => f.type.startsWith('image/'));
-    if (images.length === 0) {
-      images = [...cd.items]
-        .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
-        .map((i) => i.getAsFile())
-        .filter((f): f is File => f != null);
-    }
-    return images;
+  // Pull files out of a clipboard payload — a pasted screenshot, or a file copied in the
+  // OS file manager. Chromium/WebView2 (Windows) exposes them via clipboardData.files, but
+  // WebKitGTK (the Linux client's webview) only exposes them via items[].getAsFile() — so
+  // fall back to items when .files is empty, or paste silently does nothing there. Only
+  // `kind === 'file'` items are taken, so pasted text still pastes as text.
+  function filesFromClipboard(cd: DataTransfer): File[] {
+    const files = [...cd.files];
+    if (files.length > 0) return files;
+    return [...cd.items]
+      .filter((i) => i.kind === 'file')
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => f != null);
   }
 
   function onPaste(event: ClipboardEvent) {
     if (!upload || !event.clipboardData) return;
-    const images = imagesFromClipboard(event.clipboardData);
-    if (images.length > 0) {
+    const files = filesFromClipboard(event.clipboardData);
+    if (files.length > 0) {
       event.preventDefault();
-      void uploadFiles(images);
+      void uploadFiles(files);
     }
   }
 
@@ -302,11 +318,11 @@
       if (disabled || !event.clipboardData) return;
       const t = event.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(?:input|textarea|select)$/i.test(t.tagName))) return;
-      const images = imagesFromClipboard(event.clipboardData);
-      if (images.length > 0) {
+      const files = filesFromClipboard(event.clipboardData);
+      if (files.length > 0) {
         if (!upload) return;
         event.preventDefault();
-        void uploadFiles(images);
+        void uploadFiles(files);
         return;
       }
       const pasted = event.clipboardData.getData('text');
@@ -435,7 +451,7 @@
     historyIndex = -1;
     draft = '';
     text = '';
-    for (const a of attachments) URL.revokeObjectURL(a.preview);
+    for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
     attachments = [];
     queueMicrotask(autosize);
   }
@@ -597,20 +613,37 @@
       </button>
     </div>
   {/if}
-  <!-- Attachment tiles: local `preview` stays the thumbnail throughout (no
-       re-fetch of the hosted URL); a spinner overlays until the upload resolves. -->
+  <!-- Attachment tiles. An image keeps its local `preview` as the thumbnail throughout (no
+       re-fetch of the hosted URL) and opens in the lightbox; any other file shows a
+       name/size chip with nothing to preview. A spinner overlays until the upload resolves. -->
   {#if attachments.length > 0}
     <div class="mara-attachments">
       {#each attachments as att (att.id)}
-        <div class="mara-tile" class:uploading={att.url === undefined} title={att.name}>
-          <button
-            type="button"
-            class="open"
-            onclick={() => openLightbox(att.url ?? att.preview, att.name)}
-            aria-label="Preview {att.name || 'image'}"
-          >
-            <img src={att.preview} alt={att.name} />
-          </button>
+        <div
+          class="mara-tile"
+          class:uploading={att.url === undefined}
+          class:file={!att.preview}
+          title={att.name}
+        >
+          {#if att.preview}
+            <button
+              type="button"
+              class="open"
+              onclick={() => openLightbox(att.url ?? att.preview!, att.name)}
+              aria-label="Preview {att.name || 'image'}"
+            >
+              <img src={att.preview} alt={att.name} />
+            </button>
+          {:else}
+            <span class="file-info">
+              <svg class="file-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
+              <span class="file-name">{att.name}</span>
+              <span class="file-size">{formatSize(att.size)}</span>
+            </span>
+          {/if}
           {#if att.url === undefined}
             <span class="spinner" aria-label="Uploading"></span>
           {/if}
@@ -618,7 +651,7 @@
             type="button"
             class="remove"
             onclick={() => removeAttachment(att.id)}
-            aria-label="Remove image">×</button
+            aria-label="Remove attachment">×</button
           >
         </div>
       {/each}
@@ -701,10 +734,11 @@
           type="button"
           class="emoji-btn attach-btn"
           onclick={() => fileInput?.click()}
-          aria-label="Attach image"
-          title="Attach image"
+          aria-label="Attach a file"
+          title="Attach a file"
           {disabled}
         >
+          <!-- A paperclip: the button takes any file now, not just pictures. -->
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -714,15 +748,14 @@
             stroke-linejoin="round"
             aria-hidden="true"
           >
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
+            <path
+              d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+            />
           </svg>
         </button>
         <input
           class="hidden-file"
           type="file"
-          accept="image/*"
           multiple
           bind:this={fileInput}
           onchange={pickFiles}
@@ -901,6 +934,50 @@
     display: block;
   }
   .mara-tile.uploading img {
+    opacity: 0.4;
+  }
+  /* A non-image attachment: no thumbnail to show, so the tile widens into a chip carrying
+     the filename and size instead of staying a 56px square. */
+  .mara-tile.file {
+    width: auto;
+    max-width: 15rem;
+    height: auto;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+  }
+  .mara-tile .file-info {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 0.45rem;
+    padding: 0.4rem 1.4rem 0.4rem 0.5rem;
+    min-width: 0;
+  }
+  .mara-tile .file-icon {
+    grid-row: 1 / span 2;
+    width: 1.5rem;
+    height: 1.5rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.75;
+  }
+  .mara-tile .file-name {
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .mara-tile .file-size {
+    font-size: 0.72rem;
+    opacity: 0.6;
+  }
+  .mara-tile.file.uploading .file-info {
     opacity: 0.4;
   }
   .mara-tile .remove {

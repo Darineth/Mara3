@@ -4,7 +4,25 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.28] - unreleased
 
-_In development._
+### Added
+
+- **Share any file, not just pictures.** Drag one onto the composer, paste it, or use the
+  attach button — a PDF, a zip, a log, whatever — and it goes up like an image does. In the
+  message it appears as a card with the file's real name and size; click to download. The
+  composer shows the same name and size on the pending tile before you send.
+  Servers keep shared files in their own rolling store, separate from the image cache, so a
+  big upload no longer pushes everyone's recent images out of scrollback. Operators get
+  `MARA_MAX_FILE_MB` (100 by default) and `MARA_MAX_FILES_MB` (2 GB) to size it; files
+  stream to disk as they arrive rather than being held in memory. As with images, the store
+  is a rolling window, and when a file has aged out the card says **File no longer
+  available** in place rather than sending you to a blank error page. Clicking a card
+  briefly says **Downloading…** on it, so it's clear the click landed.
+  On the desktop clients the download is handed to your normal browser, so you get its
+  download UI — progress, pause/resume, and your usual downloads list — instead of the
+  file appearing silently somewhere. (In the Win7 client that needs the server addressed
+  by hostname rather than a bare IP; see its README.)
+  Anything shared is handed back as a download and never rendered, so a file someone
+  uploads can't run in anybody's browser.
 
 ## [3.0.27] - 2026-07-24
 

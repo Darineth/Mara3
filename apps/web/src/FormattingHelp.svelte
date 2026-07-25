@@ -82,6 +82,11 @@
       <div class="row">
         <code>[img]https://…[/img]</code><span class="dim">inline image (legacy)</span>
       </div>
+      <div class="row">
+        <code>drag / paste / 📎</code><span class="dim"
+          >attach a file of any type — it posts and lands as a download card</span
+        >
+      </div>
     </div>
 
     <h3>Legacy Mara 2 tags</h3>

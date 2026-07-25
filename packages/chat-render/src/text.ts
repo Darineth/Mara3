@@ -53,7 +53,8 @@ const HTML_ESCAPES: Record<string, string> = {
 //   - `[/` — a legacy BBCode closing tag opener, so `[spoiler]https://x.com[/spoiler]`
 //     (and `[b]…[/b]`, etc.) don't lose their closing tag into the link.
 // Both only ever make a matched URL SHORTER, never longer.
-const URL_RE = /(?:https?:\/\/|(?<![^\s])\/uploads\/)(?:(?!\[\/)[^\s<|])+(?!\[\/)[^\s<|.,!?;:)]/g;
+const URL_RE =
+  /(?:https?:\/\/|(?<![^\s])\/(?:uploads|files)\/)(?:(?!\[\/)[^\s<|])+(?!\[\/)[^\s<|.,!?;:)]/g;
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]\S*)?$/i;
 // Some hosts carry no file extension but *declare* the image format in the query
 // string instead (`?format=jpg`, `&fm=png`, `?ext=webp`). Treat those as images
@@ -65,6 +66,28 @@ const IMAGE_QUERY_RE = /[?&](?:format|fm|ext)=(?:png|jpe?g|gif|webp|avif|bmp|svg
 /** A URL whose path extension OR query-declared format says it's an image. */
 function isImageUrl(url: string): boolean {
   return IMAGE_RE.test(url) || IMAGE_QUERY_RE.test(url);
+}
+
+// A shared file, as issued by the server's `/file` endpoint:
+//   /files/<32hex>.<ext>/<bytes>/<percent-encoded original name>
+// The name and size ride in the URL itself, so a file card renders from the message text
+// alone — nothing extra on the wire, no request to make, and it survives history and
+// quoting like any other URL. Matched strictly against the shape the server generates, so
+// a `/files/…` path a user typed by hand stays an ordinary link.
+const FILE_URL_RE = /^\/files\/[0-9a-f]{32}\.[a-z0-9]{1,12}\/(\d{1,15})\/([^\s<|]*)$/;
+
+/** `1.4 MB` — a size for humans. Binary units, one decimal once past KB. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  // Whole numbers below 10 read better with a decimal (1.4 MB), above it without (247 MB).
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 // URL pattern with an optional leading `!` sender marker captured separately. A
@@ -145,7 +168,7 @@ function anchor(url: string): string {
 // unchanged. Detection elsewhere still keys on the leading-slash form; this only adjusts the
 // rendered href/src (a subpath deployment must be served with a trailing slash).
 export function toRenderUrl(url: string): string {
-  return /^\/(?:uploads|emoji|avatars)\//.test(url) ? url.slice(1) : url;
+  return /^\/(?:uploads|emoji|avatars|files)\//.test(url) ? url.slice(1) : url;
 }
 // Inline custom-emoji image. `name` is the shortcode (charset-limited by EMOJI_RE) and
 // `safeUrl` is already validated + escaped. Sized to the line via `.mara-emoji`; the
@@ -174,6 +197,30 @@ function imageTag(url: string, alt = ''): string {
     `</span>`
   );
 }
+/**
+ * A shared file: a download chip carrying the original name and size, in place of the
+ * long opaque URL. `safeUrl` is the escaped, base-relative href; `name` and `size` are
+ * already escaped display text.
+ *
+ * The `download` attribute names the saved file (the server also sends a matching
+ * `Content-Disposition`, so a middle-click or a copied link lands the same way). The
+ * class marks it as a download for the client, which leaves such links to the browser
+ * instead of routing them through the desktop shells' external opener.
+ */
+function fileCard(safeUrl: string, name: string, size: string): string {
+  return (
+    `<a class="mara-file" href="${safeUrl}" download="${name}" rel="noopener noreferrer">` +
+    `<svg class="mara-file-icon" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />` +
+    `<path d="M14 2v6h6" />` +
+    `</svg>` +
+    `<span class="mara-file-meta">` +
+    `<span class="mara-file-name">${name}</span>` +
+    `<span class="mara-file-size">${size}</span>` +
+    `</span></a>`
+  );
+}
+
 // A null character: cannot appear in normal escaped chat text, so it is a safe
 // placeholder marker. Built at runtime to keep control chars out of the source.
 const SENTINEL = String.fromCharCode(0);
@@ -511,6 +558,21 @@ export function renderText(raw: string, options: RenderTextOptions = {}): string
     s = s.replace(MARKED_URL_RE, (_m, bang: string, url: string) => {
       // Detection uses the raw url; the rendered href/src uses the base-relative form.
       const safe = escapeHtml(toRenderUrl(url));
+      // A shared file renders as a download chip (name + size), never inline — the server
+      // hands every one of them back as an opaque attachment, whatever it contains.
+      const file = FILE_URL_RE.exec(url);
+      if (file) {
+        const bytes = Number(file[1]);
+        let name = file[2] ?? '';
+        try {
+          name = decodeURIComponent(name);
+        } catch {
+          /* not valid percent-encoding — show it as it came */
+        }
+        return stash(
+          fileCard(safe, escapeHtml(name || 'download'), escapeHtml(formatBytes(bytes))),
+        );
+      }
       // A leading `!` forces inline; otherwise auto-detect by extension/format.
       const forced = bang === '!';
       const isImg = options.images !== false && (forced || isImageUrl(url));

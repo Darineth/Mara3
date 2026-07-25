@@ -38,6 +38,21 @@ reach the server."
   filename regex blocks path traversal; per-file + rolling-cache size caps.
   (`apps/server/src/uploads.ts`)
 - `POST /upload` requires a valid WS session token (`Authorization: Bearer`). _(commit 84b907e)_
+- **Shared files (any type) are inert by construction.** `/file` accepts an arbitrary body
+  with no type gate — that is the feature — so the containment is at the read end instead:
+  `GET /files/…` always answers `application/octet-stream` with
+  `Content-Disposition: attachment`, `nosniff`, and `default-src 'none'; sandbox`. An
+  uploaded `.html`/`.svg`/`.js` therefore downloads rather than executing on our origin,
+  which is the only reason hosting them is acceptable. Only the id segment of the URL
+  selects a file (`^[0-9a-f]{32}\.[a-z0-9]{1,12}$`, our own generated shape), so the
+  attacker-controlled name and size segments can't traverse anywhere; the name is
+  re-sanitized (path separators + control characters stripped) before it reaches the
+  `Content-Disposition` header, and again HTML-escaped before it reaches a file card.
+  Writes need the same session bearer as an image upload, bodies stream to disk under
+  `MARA_MAX_FILE_MB`, and the store rolls at `MARA_MAX_FILES_MB`. **Note what this does
+  NOT do:** the server does not scan content, so it will happily host malware for anyone
+  who can reach it — an operator on an untrusted network should treat the file store as
+  they would any open drop box. (`apps/server/src/uploads.ts`) _(2026-07-24)_
 - WebSocket `maxPayload` 256 KB; `pluginData` capped at 16 KB. _(commit 84b907e)_
 - **Per-connection flood control** (was M3): a token bucket per socket
   (`MARA_MSG_RATE`/`MARA_MSG_BURST`, default 15/s, burst 30); over-limit frames are

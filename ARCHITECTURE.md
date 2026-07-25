@@ -110,12 +110,12 @@ rarely build a single piece by hand — but each is documented below.
 ### `@mara/server` — the server · `apps/server`
 
 - **Platform/runtime:** Node.js ≥ 20.
-- **Purpose:** one process that (a) serves the built web client over HTTP via `sirv`, (b) handles image upload/serve (`/upload`, `/uploads/*`), and (c) runs the WebSocket hub on `/ws` — channels, private messages, presence, all validated by `@mara/protocol`.
+- **Purpose:** one process that (a) serves the built web client over HTTP via `sirv`, (b) handles image and file upload/serve (`/upload`, `/uploads/*`, `/file`, `/files/*`), and (c) runs the WebSocket hub on `/ws` — channels, private messages, presence, all validated by `@mara/protocol`.
 - **Primary deps:** `@mara/protocol`, `ws` (WebSocket), `sirv` (static hosting), `pino` (logging); dev: `tsx` (run TS directly), `pino-pretty`.
 - **Build / run:**
   - Dev: `pnpm --filter @mara/server dev` (tsx, watch) or `serve` (tsx, once) — **server.bat**.
   - Prod: `pnpm --filter @mara/server build` (`tsc` → `dist/`), then `node dist/main.js`.
-- **Config (env):** `MARA_PORT` (5050), `MARA_HOST`, `MARA_WEB_ROOT`, `MARA_WS_PATH` (`/ws`), `MARA_DEFAULT_CHANNEL` (`Main`), `MARA_UPLOAD_DIR` (defaults to `apps/server/uploads`), `MARA_MAX_UPLOAD_MB` (10), `MARA_MAX_CACHE_MB` (512), `MARA_MAX_MESSAGE_CHARS` (10000; longest message accepted, advertised to clients in `welcome.limits` and capped at the protocol's 32768), `MARA_HISTORY_LIMIT` (1000; retained per channel, the deepest a client can page back), `MARA_HISTORY_CHUNK` (50; messages sent on join and per scroll-up page), `MARA_HISTORY_FILE` (defaults to `apps/server/data/history.json`; empty disables), `MARA_IDENTITY_FILE` (defaults to `apps/server/data/identity.json`; empty disables — the persistent client-identity → token map).
+- **Config (env):** `MARA_PORT` (5050), `MARA_HOST`, `MARA_WEB_ROOT`, `MARA_WS_PATH` (`/ws`), `MARA_DEFAULT_CHANNEL` (`Main`), `MARA_UPLOAD_DIR` (defaults to `apps/server/uploads`), `MARA_MAX_UPLOAD_MB` (10), `MARA_MAX_CACHE_MB` (512), `MARA_FILE_DIR` (shared files; defaults to `apps/server/files`), `MARA_MAX_FILE_MB` (100; per shared file), `MARA_MAX_FILES_MB` (2048; rolling cap on the file store), `MARA_MAX_MESSAGE_CHARS` (10000; longest message accepted, advertised to clients in `welcome.limits` and capped at the protocol's 32768), `MARA_HISTORY_LIMIT` (1000; retained per channel, the deepest a client can page back), `MARA_HISTORY_CHUNK` (50; messages sent on join and per scroll-up page), `MARA_HISTORY_FILE` (defaults to `apps/server/data/history.json`; empty disables), `MARA_IDENTITY_FILE` (defaults to `apps/server/data/identity.json`; empty disables — the persistent client-identity → token map).
 
 ### `@mara/web` — the UI app · `apps/web`
 

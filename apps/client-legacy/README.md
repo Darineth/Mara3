@@ -40,9 +40,14 @@ connect to servers you trust, since that page can then call the native command.
 
 > ⚠️ **Bare IP-address servers won't get the native bridge** (e.g.
 > `http://192.168.1.5:5050`): Tauri 1's remote-IPC matching can't match IP hosts
-> ([tauri#7009](https://github.com/tauri-apps/tauri/issues/7009)), so logging silently
-> no-ops there. Use a DNS hostname. The remote-page → native-command path also has
-> **not** been runtime-verified on Win7 yet.
+> ([tauri#7009](https://github.com/tauri-apps/tauri/issues/7009)). Use a DNS hostname.
+>
+> This costs more than logging. With no bridge the page can't reach `shell.open`
+> either, so **external links and file downloads fall back to `window.open`** — which
+> the webview services by opening an **internal window** rather than your browser (and
+> for a download, that window is blank, since an attachment has nothing to render).
+> Connected by hostname, both open in the default browser as intended. Confirmed
+> behaviour, 2026-07-25.
 
 ## Updates (portable "update available" nudge)
 

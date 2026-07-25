@@ -15,6 +15,9 @@ references/
 # Runtime upload cache (server-local image hosting)
 apps/server/uploads/
 
+# Runtime store for shared files of any type (server-local)
+apps/server/files/
+
 # Durable avatar store (server-local)
 apps/server/avatars/
 
@@ -49,6 +52,7 @@ TestApps/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+logs/
 
 # Editor / OS
 .DS_Store

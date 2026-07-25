@@ -60,6 +60,34 @@ export function isDesktop(): boolean {
 }
 
 /**
+ * Ask the shell to open `url` in the system browser, reporting whether that actually
+ * happened.
+ *
+ * Unlike {@link openExternal} this NEVER falls back to `window.open`. In a shell that call
+ * doesn't reach a browser at all — the webview services it by opening an internal window,
+ * which for a download is a blank one. A caller that needs to know (the shared-file path)
+ * can pick its own fallback instead.
+ *
+ * Returns false when there is no native bridge to ask. That is normal in the Win7 client
+ * when the server is addressed by bare IP: Tauri 1 grants remote IPC by domain and an IP
+ * has none (tauri#7009), so the page is left without native commands entirely.
+ */
+export async function openExternalNative(url: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    const shell = tauri()?.shell;
+    if (shell?.open) {
+      await shell.open(url);
+      return true;
+    }
+    await rawInvoke('open_external', { url });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Append a line to the desktop client's local log, filed under `channel` (its own
  * sub-folder, one file per month: `<logDir>/<channel>/Mara3_YYYY-MM.log`). No-op in a
  * plain browser.

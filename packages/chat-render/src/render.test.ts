@@ -3,6 +3,7 @@ import {
   applyEmoticons,
   DEFAULT_EMOTICONS,
   escapeHtml,
+  formatBytes,
   linkify,
   renderLine,
   renderText,
@@ -18,6 +19,22 @@ const spoiler = (inner: string) =>
 const codeblock = (code: string) =>
   `<span class="mara-codeblock-wrap"><code class="mara-codeblock">${code}</code>` +
   `<button type="button" class="mara-copy" title="Copy code" aria-label="Copy code"></button></span>`;
+
+describe('formatBytes', () => {
+  it('reads like a human wrote it at every scale', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(999)).toBe('999 B');
+    expect(formatBytes(1024)).toBe('1.0 KB');
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    // Past 10 the decimal stops earning its place.
+    expect(formatBytes(10 * 1024)).toBe('10 KB');
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MB');
+    expect(formatBytes(259 * 1024 * 1024)).toBe('259 MB');
+    expect(formatBytes(3.5 * 1024 ** 3)).toBe('3.5 GB');
+    // Caps out at TB rather than inventing units.
+    expect(formatBytes(5 * 1024 ** 4)).toBe('5.0 TB');
+  });
+});
 
 describe('escapeHtml', () => {
   it('neutralizes markup', () => {
@@ -326,6 +343,41 @@ describe('renderText — safety + links', () => {
     expect(html).not.toContain('src="/uploads/'); // not root-absolute
     expect(html).toContain('href="uploads/abc123.png"'); // lightbox link too
     expect(html).toContain('here you go'); // surrounding text stays
+  });
+
+  it('renders a shared-file URL as a download card with its name and size', () => {
+    const id = 'a'.repeat(32);
+    const html = renderText(`grab it /files/${id}.pdf/1536/Q3%20report.pdf please`);
+    expect(html).toContain('class="mara-file"');
+    // Base-relative href (subpath deployments), original name, human-readable size.
+    expect(html).toContain(`href="files/${id}.pdf/1536/Q3%20report.pdf"`);
+    expect(html).toContain('<span class="mara-file-name">Q3 report.pdf</span>');
+    expect(html).toContain('<span class="mara-file-size">1.5 KB</span>');
+    expect(html).toContain('download="Q3 report.pdf"');
+    expect(html).not.toContain('<img'); // never inlined, whatever the extension says
+    expect(html).toContain('grab it'); // surrounding text stays
+  });
+
+  it('renders a file card for an image-extension file URL too (files never inline)', () => {
+    // The extension says png, but a /files/ URL is served as an opaque attachment —
+    // so it must render as a download, not an <img> pointed at a download.
+    const html = renderText(`/files/${'b'.repeat(32)}.png/2048/shot.png`);
+    expect(html).toContain('class="mara-file"');
+    expect(html).not.toContain('<img');
+  });
+
+  it('escapes a hostile filename in a file card instead of emitting markup', () => {
+    const encoded = encodeURIComponent('"><img src=x onerror=alert(1)>.txt');
+    const html = renderText(`/files/${'c'.repeat(32)}.txt/10/${encoded}`);
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('leaves a /files/ path that is not one of ours as an ordinary link', () => {
+    // Hand-typed, wrong shape (no 32-hex id): a link, not a card claiming a size.
+    const html = renderText('/files/secret/1/passwd');
+    expect(html).not.toContain('mara-file');
+    expect(html).toContain('<a href="files/secret/1/passwd"');
   });
 
   it('renders an inline image IN PLACE, between the surrounding text', () => {

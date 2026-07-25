@@ -20,6 +20,10 @@ for the wire format used by both server and clients.
 - **Image uploads** — server temp-stores with per-file and rolling-cache size caps;
   `/upload` requires a WS session token; SVG rejected; served with `nosniff` + a
   sandbox CSP.
+- **File sharing** — drop, paste, or attach a file of any type; it posts to `/file`
+  (same session token, own rolling store and size caps) and lands in the message as a
+  download card showing its name and size. Files are always served back as opaque
+  attachments, so nothing shared can run in anyone's browser.
 - **Persistent identity** — a client-chosen identity key maps to a stable server
   token, so reconnects and restarts keep your identity; message history is persisted
   and replayed on join.

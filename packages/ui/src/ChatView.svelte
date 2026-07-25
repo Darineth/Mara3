@@ -3,9 +3,10 @@
      top imperatively since the markup isn't ours to bind handlers onto. -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { renderLine, type LineModel } from '@mara/chat-render';
+  import { formatBytes, renderLine, type LineModel } from '@mara/chat-render';
   import type { ChatLine, Token, UserInfo } from '@mara/client-core';
   import { openLightbox } from './lightbox.js';
+  import { goneFiles, savingFiles } from './fileState.js';
   import { copyText } from './clipboard.js';
   import { freezeAnimatedImages } from './freezeAnimated.js';
 
@@ -767,6 +768,31 @@
     for (const box of el.querySelectorAll('.mara-img-box')) {
       box.classList.toggle('hidden', set.has(imgSrcOf(box)));
     }
+    // Same reconcile for shared-file cards. Two states, both keyed by href so they stick
+    // across re-renders: the file is gone from the server, or a download for it has just
+    // been started (which is otherwise invisible — see markFileSaving). Each replaces the
+    // size line, so the card always says the most useful thing about itself.
+    //
+    // Every branch must set the text, including the ordinary one. This runs on a store
+    // change as well as a re-render, so when a transient state clears there is no fresh
+    // HTML to fall back on — leaving the text alone would strand the card mid-state.
+    // The size is recomputed from the URL's own byte count (the same value, through the
+    // same formatter, that the renderer put there), so nothing has to be stashed.
+    for (const card of el.querySelectorAll<HTMLElement>('.mara-file')) {
+      const href = card.getAttribute('href') ?? '';
+      const missing = $goneFiles.has(href);
+      const saving = !missing && $savingFiles.has(href);
+      card.classList.toggle('gone', missing);
+      card.classList.toggle('saving', saving);
+      const size = card.querySelector('.mara-file-size');
+      if (!size) continue;
+      if (missing) size.textContent = 'File no longer available';
+      else if (saving) size.textContent = 'Downloading…';
+      else {
+        const bytes = Number(href.split('/')[2]);
+        if (Number.isFinite(bytes)) size.textContent = formatBytes(bytes);
+      }
+    }
   });
 
   // Measure which messages overflow the height clamp, so only those show a "Show more" toggle.
@@ -1378,6 +1404,75 @@
     margin: 0.3rem 0;
     object-fit: contain;
     cursor: zoom-in;
+  }
+  /* A shared file: a download chip carrying the original name and size, in place of the
+     long opaque URL the message actually contains (see chat-render's fileCard). Sized to
+     the text around it and clipped rather than wrapped, so a very long filename can't
+     stretch the message. */
+  .mara-chatview :global(.mara-file) {
+    display: inline-grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 0.5rem;
+    max-width: min(22rem, 100%);
+    margin: 0.15rem 0;
+    padding: 0.4rem 0.7rem 0.4rem 0.55rem;
+    vertical-align: top;
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    background: rgba(127, 127, 127, 0.1);
+    color: inherit;
+    text-decoration: none;
+  }
+  .mara-chatview :global(.mara-file:hover) {
+    background: rgba(127, 127, 127, 0.18);
+  }
+  /* The file rolled out of the server's store: the card stays in place (the message said
+     a file was shared, and that's still true) but reads as spent rather than clickable. */
+  .mara-chatview :global(.mara-file.gone) {
+    opacity: 0.55;
+    border-style: dashed;
+    cursor: not-allowed;
+  }
+  .mara-chatview :global(.mara-file.gone:hover) {
+    background: rgba(127, 127, 127, 0.1);
+  }
+  .mara-chatview :global(.mara-file.gone .mara-file-name) {
+    text-decoration: line-through;
+  }
+  /* Download started. Brief, and deliberately quiet — it's an acknowledgement that the
+     click landed, not a progress bar (nothing tells the page when a download finishes). */
+  .mara-chatview :global(.mara-file.saving) {
+    border-color: currentColor;
+    background: rgba(127, 127, 127, 0.2);
+  }
+  .mara-chatview :global(.mara-file.saving .mara-file-size) {
+    opacity: 0.9;
+  }
+  .mara-chatview :global(.mara-file-icon) {
+    grid-row: 1 / span 2;
+    width: 1.6rem;
+    height: 1.6rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.75;
+  }
+  .mara-chatview :global(.mara-file-meta) {
+    display: contents;
+  }
+  .mara-chatview :global(.mara-file-name) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .mara-chatview :global(.mara-file-size) {
+    font-size: 0.78em;
+    opacity: 0.6;
   }
   .mara-chatview :global(.mara-img-box) {
     position: relative;

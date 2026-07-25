@@ -10,10 +10,14 @@ import {
   AVATAR_ENDPOINT,
   AVATAR_ROUTE,
   EMOJI_UPLOAD_ENDPOINT,
+  FILE_ENDPOINT,
+  FILE_ROUTE,
   handleAvatarUpload,
   handleEmojiUpload,
+  handleFileUpload,
   handleUpload,
   serveAvatar,
+  serveFile,
   serveUpload,
   UPLOAD_ENDPOINT,
   UPLOAD_ROUTE,
@@ -133,6 +137,22 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
       }
       if (req.url?.startsWith(UPLOAD_ROUTE)) {
         void serveUpload(req, res, cfg);
+        return;
+      }
+      if (req.url === FILE_ENDPOINT) {
+        // Same session authorization as image uploads. GETs on FILE_ROUTE stay open
+        // (capability URLs), and every one of them downloads rather than renders.
+        void handleFileUpload(
+          req,
+          res,
+          cfg,
+          log,
+          (token) => token !== undefined && hub.state.sessionBySessionToken(token) !== undefined,
+        );
+        return;
+      }
+      if (req.url?.startsWith(FILE_ROUTE)) {
+        void serveFile(req, res, cfg);
         return;
       }
       if (req.url === AVATAR_ENDPOINT) {

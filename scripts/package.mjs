@@ -125,9 +125,15 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_MSG_BURST=30          # how many messages may be sent in a quick burst
 #MARA_MSG_FLOOD_KICK=300    # consecutive over-limit messages before the socket is closed
 
-# --- Uploads ---
-#MARA_MAX_UPLOAD_MB=10       # per-file cap
-#MARA_MAX_CACHE_MB=512       # total upload-cache cap (oldest evicted first)
+# --- Image uploads ---
+#MARA_MAX_UPLOAD_MB=10       # per-image cap
+#MARA_MAX_CACHE_MB=512       # total image-cache cap (oldest evicted first)
+
+# --- Shared files (any type; served as downloads, never rendered) ---
+#MARA_MAX_FILE_MB=100        # per-file cap; bodies stream to disk, so this can be large
+#MARA_MAX_FILES_MB=2048      # total file-store cap (oldest evicted first). Kept separate
+                             # from the image cache so big files don't flush recent images.
+#MARA_FILE_DIR=D:\\Mara3-Data\\files
 
 # --- Avatars (durable, never evicted; downscaled client-side before upload) ---
 #MARA_MAX_AVATAR_MB=2        # per-avatar cap

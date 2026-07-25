@@ -134,6 +134,37 @@ server keeps no PM history, on disk or in memory, as a deliberate privacy decisi
 (see [SECURITY-TODO.md](SECURITY-TODO.md)); a PM reaches only the devices connected
 when it was sent.
 
+## Attachments (images and files)
+
+Attachments are **not** a wire concept — nothing in the message set carries file metadata.
+An upload happens over HTTP first, and the URL it returns is appended to the message text,
+so an attachment survives history, quoting, and editing exactly like any other text.
+
+| Kind  | POST      | Served at    | Returned URL                                |
+| ----- | --------- | ------------ | ------------------------------------------- |
+| Image | `/upload` | `/uploads/…` | `/uploads/<32hex>.<ext>`                    |
+| File  | `/file`   | `/files/…`   | `/files/<32hex>.<ext>/<bytes>/<name>`       |
+
+Both require the session bearer from `welcome.sessionToken`; both return `{ url }`; both
+are left **relative** so each client resolves them against the origin it connected to.
+
+A file URL carries two extra segments — the byte size and the percent-encoded original
+filename — purely so a client can render a download card (name + size) from the message
+text alone, with no extra request and no attachment metadata on the wire. Neither is
+trusted when serving: only the id segment selects a file, the size sent is the real
+file's, and the name is re-sanitized. The original filename travels up in the
+`x-mara-filename` header (percent-encoded), since the request body is the raw bytes.
+
+Images are hosted for inline display. **Files of any type are accepted and always served
+back as `application/octet-stream` with `Content-Disposition: attachment`** — a shared
+file downloads, never renders, whatever its extension claims (see
+[SECURITY-TODO.md](SECURITY-TODO.md)). Each store rolls independently:
+`MARA_MAX_UPLOAD_MB`/`MARA_MAX_CACHE_MB` for images, `MARA_MAX_FILE_MB`/`MARA_MAX_FILES_MB`
+for files. Both evict oldest-first, so a link in old scrollback eventually 404s — for a
+well-formed file URL that 404 carries a "no longer available" body, and clients check with
+a `HEAD` before starting a download so they can mark the card instead of navigating to an
+error page.
+
 ## Replies
 
 A `chat`/`emote` may carry `replyTo`, quoting an earlier message in the same channel. The

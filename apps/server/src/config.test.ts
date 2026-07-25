@@ -119,6 +119,27 @@ describe('loadConfig storage paths', () => {
   });
 });
 
+describe('loadConfig file store', () => {
+  it('keeps shared files in their own directory and caps, apart from the image cache', () => {
+    const cfg = loadConfig({ MARA_BASE_DIR: join(tmpdir(), 'mara-base') });
+    expect(cfg.fileDir).toBe(join(tmpdir(), 'mara-base', 'files'));
+    expect(cfg.fileDir).not.toBe(cfg.uploadDir);
+    expect(cfg.maxFileBytes).toBe(100 * 1024 * 1024);
+    expect(cfg.maxFilesBytes).toBe(2048 * 1024 * 1024);
+  });
+
+  it('takes operator overrides in MB', () => {
+    const cfg = loadConfig({ MARA_MAX_FILE_MB: '25', MARA_MAX_FILES_MB: '512' });
+    expect(cfg.maxFileBytes).toBe(25 * 1024 * 1024);
+    expect(cfg.maxFilesBytes).toBe(512 * 1024 * 1024);
+  });
+
+  it('lets MARA_FILE_DIR win over the base dir', () => {
+    const cfg = loadConfig({ MARA_BASE_DIR: '/base', MARA_FILE_DIR: '/mnt/bulk/files' });
+    expect(cfg.fileDir).toBe('/mnt/bulk/files');
+  });
+});
+
 describe('loadConfig maxMessageChars', () => {
   it('defaults to the protocol default when unset', () => {
     expect(loadConfig({}).maxMessageChars).toBe(DEFAULT_MAX_MESSAGE_CHARS);

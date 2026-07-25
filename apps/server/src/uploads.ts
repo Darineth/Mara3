@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
@@ -11,6 +11,18 @@ import type { Logger } from './logger.js';
 export const UPLOAD_ROUTE = '/uploads/';
 /** Endpoint that accepts a raw image body and returns its hosted URL. */
 export const UPLOAD_ENDPOINT = '/upload';
+
+/**
+ * Public route prefix shared (non-image) files are served from, and the endpoint that
+ * accepts one. Unlike `/uploads/`, a URL here carries the original filename and byte size
+ * so a client can render a file card straight from the message text — no extra request and
+ * nothing added to the wire format. See {@link fileUrl} for the shape.
+ */
+export const FILE_ROUTE = '/files/';
+export const FILE_ENDPOINT = '/file';
+/** Header carrying the original filename on a `POST /file`, percent-encoded (the body is
+ *  the raw bytes, so there is nowhere else to put it and a header must be latin-1). */
+export const FILENAME_HEADER = 'x-mara-filename';
 
 /** Avatars get their own durable store: a set avatar must not vanish from the rolling,
  *  LRU-evicted upload cache, so it's stored in a separate directory that is never evicted
@@ -97,6 +109,9 @@ async function evictToFit(
   maxBytes: number,
   incoming: number,
   log: Logger,
+  /** Never evict this file — the one we just wrote. Without it a single upload larger
+   *  than the whole store would delete itself and 404 the moment it was shared. */
+  keep?: string,
 ): Promise<void> {
   let entries: { name: string; size: number; mtime: number }[];
   try {
@@ -120,6 +135,7 @@ async function evictToFit(
   entries.sort((a, b) => a.mtime - b.mtime); // oldest first
   for (const e of entries) {
     if (total + incoming <= maxBytes) break;
+    if (e.name === keep) continue;
     try {
       await unlink(join(dir, e.name));
       total -= e.size;
@@ -275,6 +291,229 @@ export function handleAvatarUpload(
     route: AVATAR_ROUTE,
     kind: 'avatar',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Shared files (any type)
+// ---------------------------------------------------------------------------
+
+/** A stored file on disk: random id + a sanitized extension (`bin` when the original had
+ *  none). Same shape as the image store, so the traversal-proofing is identical. */
+const STORED_FILE_RE = /^[0-9a-f]{32}\.[a-z0-9]{1,12}$/;
+
+/**
+ * The extension we store a file under, taken from the original name: lowercased, letters
+ * and digits only, at most 12 chars. Anything else (no extension, an odd one, a trailing
+ * dot) becomes `bin`. It never reaches a `Content-Type` — every file is served as
+ * `application/octet-stream` — it just keeps the store legible to an operator.
+ */
+function safeExt(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const raw = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+  return /^[a-z0-9]{1,12}$/.test(raw) ? raw : 'bin';
+}
+
+/**
+ * The original filename, made safe to hand back out: path separators and control
+ * characters removed (so it can never escape a download directory or smuggle a newline
+ * into a header), leading dots stripped, and capped at 128 chars. Empty input — or input
+ * that sanitizes away to nothing — becomes `download`.
+ */
+export function safeFilename(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\\/]/g, '')
+    .replace(/^\.+/, '')
+    .trim()
+    .slice(0, 128);
+  return cleaned || 'download';
+}
+
+/**
+ * The URL a stored file is shared under:
+ *
+ *     /files/<32hex>.<ext>/<bytes>/<percent-encoded original name>
+ *
+ * Only the first segment addresses anything on disk. The other two are display data
+ * riding in the URL so a client can render a file card — name and size — from the message
+ * text alone, with no extra fetch and no attachment metadata on the wire. Neither is
+ * trusted when serving: the size sent to the browser is the real file's, and the name is
+ * re-sanitized before it goes into a header.
+ */
+export function fileUrl(stored: string, bytes: number, name: string): string {
+  return `${FILE_ROUTE}${stored}/${bytes}/${encodeURIComponent(safeFilename(name))}`;
+}
+
+/**
+ * Stream a request body straight to `path`, enforcing `cap` as it arrives — a shared file
+ * can be hundreds of MB, so it is never buffered in memory the way an image is. Resolves
+ * the byte count, or null if the body ran past the cap (the partial file is removed).
+ */
+function streamToFile(req: IncomingMessage, path: string, cap: number): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    const out = createWriteStream(path);
+    let size = 0;
+    let settled = false;
+    // Abandon the write and remove what was written. The unlink has to wait for the
+    // stream's `close`: createWriteStream opens the fd asynchronously, so deleting
+    // straight after destroy() can race the open and leave the partial file behind.
+    const discard = (done: () => void) => {
+      out.once('close', () => {
+        void unlink(path)
+          .catch(() => {})
+          .then(done);
+      });
+      out.destroy();
+    };
+    req.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      size += chunk.length;
+      if (size > cap) {
+        settled = true;
+        req.resume(); // drain the rest so we can still answer 413, not reset the socket
+        discard(() => resolve(null));
+      } else {
+        out.write(chunk);
+      }
+    });
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      out.end(() => resolve(size));
+    });
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      discard(() => reject(err));
+    };
+    req.on('error', fail);
+    out.on('error', fail);
+  });
+}
+
+/**
+ * Handle `POST /file`: store a shared file of ANY type and return `{ url }`.
+ *
+ * Deliberately no type gate and no magic-byte sniff — that is the point of the feature.
+ * Safety comes at the other end instead: {@link serveFile} hands every file back as an
+ * opaque `application/octet-stream` attachment that a browser downloads rather than
+ * renders, so an uploaded `.html`/`.svg` is inert even though it sits on our own origin.
+ * The original filename arrives percent-encoded in `x-mara-filename`.
+ */
+export async function handleFileUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+  log: Logger,
+  authorize: (token: string | undefined) => boolean,
+): Promise<void> {
+  if (req.method !== 'POST') {
+    send(res, 405, 'Method not allowed');
+    return;
+  }
+  // Reject before reading the body so an unauthorized client can't stream us 100 MB.
+  if (!authorize(bearerToken(req))) {
+    send(res, 401, 'Unauthorized');
+    return;
+  }
+  const header = req.headers[FILENAME_HEADER];
+  const raw = Array.isArray(header) ? header[0] : header;
+  let original: string;
+  try {
+    original = safeFilename(decodeURIComponent(raw ?? ''));
+  } catch {
+    original = safeFilename(raw ?? ''); // not valid percent-encoding; take it literally
+  }
+
+  const stored = `${randomBytes(16).toString('hex')}.${safeExt(original)}`;
+  const target = join(cfg.fileDir, stored);
+  let bytes: number | null;
+  try {
+    await mkdir(cfg.fileDir, { recursive: true });
+    bytes = await streamToFile(req, target, cfg.maxFileBytes);
+  } catch (err) {
+    log.error({ err, dir: cfg.fileDir }, 'file upload failed');
+    send(res, 500, 'Could not store file');
+    return;
+  }
+  if (bytes === null) {
+    send(res, 413, `File exceeds ${Math.round(cfg.maxFileBytes / 1024 / 1024)} MB limit`);
+    return;
+  }
+  if (bytes === 0) {
+    await unlink(target).catch(() => {});
+    send(res, 400, 'Empty upload');
+    return;
+  }
+  // Trim the store to its cap now that the new file is in it (never evicting the new file
+  // itself, so sharing something bigger than the whole cap still works — briefly).
+  await evictToFit(cfg.fileDir, cfg.maxFilesBytes, 0, log, stored);
+
+  const url = fileUrl(stored, bytes, original);
+  log.info({ stored, bytes, name: original }, 'stored file');
+  send(res, 200, JSON.stringify({ url }), 'application/json');
+}
+
+/**
+ * Handle `GET /files/<stored>/<bytes>/<name>`: stream a shared file back as a download.
+ *
+ * The response is deliberately inert. Everything is `application/octet-stream` with
+ * `Content-Disposition: attachment`, `nosniff`, and the same sandbox CSP the image store
+ * uses, so no uploaded file — HTML, SVG, anything — can execute script on our origin or
+ * be framed into something that does. Only the first path segment selects the file (and
+ * must match our own generated shape); the size segment is ignored in favour of the real
+ * file's, and the name is re-sanitized before it reaches a header.
+ */
+export async function serveFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+): Promise<void> {
+  const path = (req.url ?? '').slice(FILE_ROUTE.length).split(/[?#]/)[0] ?? '';
+  const [stored = '', , rawName = ''] = path.split('/');
+  if (!STORED_FILE_RE.test(stored)) {
+    send(res, 404, 'Not found'); // never one of ours — say nothing more
+    return;
+  }
+  let name: string;
+  try {
+    name = safeFilename(decodeURIComponent(rawName));
+  } catch {
+    name = 'download';
+  }
+  // RFC 6266: a plain ASCII `filename` for old clients, plus `filename*` carrying the real
+  // UTF-8 name. Quotes/backslashes are stripped from the ASCII form so it can't break out
+  // of its own quoting; control characters are already gone (safeFilename).
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '') || 'download';
+  // A well-formed id with nothing behind it is the ordinary end of a shared file's life:
+  // the store rolls oldest-first, so a link in old scrollback outlives its file. Say that,
+  // rather than a bare "Not found" — this text is what someone sees if they open the URL
+  // directly, and clients key their own "no longer available" state off this 404.
+  const gone = 'File no longer available — shared files are removed as the store fills up.';
+  const file = join(cfg.fileDir, stored);
+  try {
+    const s = await stat(file);
+    if (!s.isFile()) {
+      send(res, 404, gone);
+      return;
+    }
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': s.size,
+      'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      // Ids are content-random and never reused, so cache aggressively.
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox",
+    });
+    res.on('error', () => {});
+    const stream = createReadStream(file);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+  } catch {
+    send(res, 404, gone); // the usual case: evicted out of the store
+  }
 }
 
 /** Best-effort delete of a stored avatar file, given its `/avatars/<name>` URL — called

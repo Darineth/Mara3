@@ -53,7 +53,17 @@ const redirectToBase = (base: string): Plugin => ({
 // subpath prefix is stripped before forwarding (so `/mara/uploads/x` → `/uploads/x`). `ws` is
 // the WebSocket; the rest are plain HTTP. Vite matches by prefix, so `/…/upload` also covers
 // `/…/uploads/…`, and `/…/emoji` covers `/…/emoji-upload` — every match strips the same prefix.
-const serverRoutes = ['ws', 'info', 'upload', 'uploads', 'avatar', 'avatars', 'emoji'];
+const serverRoutes = [
+  'ws',
+  'info',
+  'upload',
+  'uploads',
+  'file',
+  'files',
+  'avatar',
+  'avatars',
+  'emoji',
+];
 const strip = devBase.length - 1; // keep the leading slash: '/mara/ws'.slice(5) === '/ws'
 const proxy = Object.fromEntries(
   serverRoutes.map((route) => [

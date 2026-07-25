@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isDesktop, nativeLog, requestAttention } from './native.js';
+import { isDesktop, nativeLog, openExternalNative, requestAttention } from './native.js';
 
 type Invoke = ReturnType<typeof vi.fn>;
 type G = {
-  __TAURI__?: { core?: { invoke: Invoke }; tauri?: { invoke: Invoke } };
+  __TAURI__?: {
+    core?: { invoke: Invoke };
+    tauri?: { invoke: Invoke };
+    shell?: { open: Invoke };
+  };
   __TAURI_INTERNALS__?: { invoke: Invoke };
 };
 
@@ -16,6 +20,31 @@ describe('native bridge', () => {
   it('reports not-desktop and no-ops in a plain browser', async () => {
     expect(isDesktop()).toBe(false);
     await expect(nativeLog('system', 'hi')).resolves.toBeUndefined();
+  });
+
+  // Shared files are downloaded by handing the URL to the system browser. The caller has
+  // to be able to tell a real hand-off from a failed one, because the fallback differs —
+  // and must never be window.open, which in a shell opens an internal window (a blank one
+  // for an attachment). A no-IPC page is the Win7-on-a-bare-IP case (tauri#7009).
+  it('reports whether a native open actually happened', async () => {
+    expect(await openExternalNative('https://example.com')).toBe(false); // plain browser
+
+    const open = vi.fn().mockResolvedValue(undefined);
+    (globalThis as G).__TAURI__ = { shell: { open } }; // Tauri 1 with IPC (hostname server)
+    expect(await openExternalNative('https://example.com')).toBe(true);
+    expect(open).toHaveBeenCalledWith('https://example.com');
+    delete (globalThis as G).__TAURI__;
+
+    // Tauri 2 remote page: the scheme-checked command.
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    (globalThis as G).__TAURI_INTERNALS__ = { invoke };
+    expect(await openExternalNative('https://example.com')).toBe(true);
+    expect(invoke).toHaveBeenCalledWith('open_external', { url: 'https://example.com' });
+
+    // The command rejecting (no such command, or IPC denied) is a failure, not a silent
+    // success — the caller downloads in place instead.
+    invoke.mockRejectedValue(new Error('not allowed'));
+    expect(await openExternalNative('https://example.com')).toBe(false);
   });
 
   it('detects the shell and forwards logs to the native command', async () => {

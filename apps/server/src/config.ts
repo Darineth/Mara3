@@ -22,6 +22,10 @@ export interface ServerConfig {
   defaultChannel: string;
   /** Directory where uploaded images are cached and served from. */
   uploadDir: string;
+  /** Directory where shared (non-image) files are cached and served from. Kept apart from
+   *  `uploadDir` so a burst of large files can't evict every recent image, and vice versa —
+   *  the two stores roll independently. */
+  fileDir: string;
   /** Directory where user avatars are stored durably (never evicted) and served from. */
   avatarDir: string;
   /** Directory of custom emoji images the operator provides; each file's name (sans
@@ -36,10 +40,15 @@ export interface ServerConfig {
   maxEmojiBytes: number;
   /** Cap on how many user-contributed emoji may exist at once. */
   maxEmojiCount: number;
-  /** Maximum size of a single uploaded file, in bytes. */
+  /** Maximum size of a single uploaded image, in bytes. */
   maxUploadBytes: number;
   /** Cap on total upload-cache size; oldest files are evicted on new uploads. */
   maxCacheBytes: number;
+  /** Maximum size of a single shared file, in bytes. Much larger than the image cap —
+   *  files are streamed to disk as they arrive, never buffered whole. */
+  maxFileBytes: number;
+  /** Cap on the total file store; oldest files are evicted once a new one lands. */
+  maxFilesBytes: number;
   /** Maximum size of a single avatar image, in bytes (avatars are downscaled client-side,
    *  so this is a small safety cap, not a UI limit). */
   maxAvatarBytes: number;
@@ -155,6 +164,8 @@ const DEFAULTS = {
   defaultChannel: 'Main',
   maxUploadMb: 10,
   maxCacheMb: 512,
+  maxFileMb: 100,
+  maxFilesMb: 2048,
   maxAvatarMb: 2,
   maxEmojiMb: 1,
   maxEmojiCount: 500,
@@ -256,6 +267,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     wsPath: env.MARA_WS_PATH?.trim() || DEFAULTS.wsPath,
     defaultChannel: (env.MARA_DEFAULT_CHANNEL ?? DEFAULTS.defaultChannel).trim(),
     uploadDir: env.MARA_UPLOAD_DIR?.trim() || join(base, 'uploads'),
+    fileDir: env.MARA_FILE_DIR?.trim() || join(base, 'files'),
     avatarDir: env.MARA_AVATAR_DIR?.trim() || join(base, 'avatars'),
     emojiDir: env.MARA_EMOJI_DIR?.trim() || join(base, 'emoji'),
     userEmojiDir,
@@ -264,6 +276,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     userEmojiFile: env.MARA_USER_EMOJI_FILE?.trim() || join(userEmojiDir, 'index.json'),
     maxUploadBytes: mb(env.MARA_MAX_UPLOAD_MB, DEFAULTS.maxUploadMb),
     maxCacheBytes: mb(env.MARA_MAX_CACHE_MB, DEFAULTS.maxCacheMb),
+    maxFileBytes: mb(env.MARA_MAX_FILE_MB, DEFAULTS.maxFileMb),
+    maxFilesBytes: mb(env.MARA_MAX_FILES_MB, DEFAULTS.maxFilesMb),
     maxAvatarBytes: mb(env.MARA_MAX_AVATAR_MB, DEFAULTS.maxAvatarMb),
     maxEmojiBytes: mb(env.MARA_MAX_EMOJI_MB, DEFAULTS.maxEmojiMb),
     maxEmojiCount: Math.max(0, num(env.MARA_MAX_EMOJI_COUNT, DEFAULTS.maxEmojiCount)),
