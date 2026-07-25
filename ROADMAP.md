@@ -36,16 +36,21 @@ on it.
       no message ids. Threaded views remain a possible follow-up.
 - [ ] **Edit & delete** — author edits/removes their own message; broadcast an
       update so every client (and the backlog) reflects it.
-- [ ] **@mentions** — `@name` parsing with highlight, plus the notification hooks
-      below. Foundation for "only ping me when mentioned."
+- [x] **@mentions** — `@name` renders bold in the mentioned user's colour (matched
+      case-insensitively, longest name first, and never inside a code span or an image's alt
+      text), with `@`-autocomplete in the composer offering the current roster. Being
+      mentioned while the window is unfocused raises the desktop shell's attention request.
+      The "only ping me when mentioned" part is the per-conversation notification level below.
 
 ## 2. Notifications & presence
 
 Plays directly to the existing Tauri desktop shell, which can raise native
 notifications today.
 
-- [ ] **Desktop notifications** — native ping on mention / DM / (optionally) any
-      message, via the Tauri shell; nothing alerts you when unfocused today.
+- [ ] **Desktop notifications** — a native OS notification (who, and what they said) on
+      mention / DM / (optionally) any message, via the Tauri shell. An unfocused window is
+      already *flashed* for a mention or a PM — what's missing is a real notification, one
+      you can see and act on without switching to the app.
 - [ ] **Per-conversation mute + notification level** — all / mentions-only / none,
       per channel and DM.
 - [ ] **Keyword alerts** — notify on configurable words even without an @mention.
@@ -77,8 +82,11 @@ identity-key based.
 - [x] **Portable shared identity** — your display name + colour belong to your identity
       (persisted server-side) and follow it across clients; export/import your identity key
       to act as one identity on several devices.
-- [ ] **Avatars** — per-user image (uploaded like attachments), shown in roster
-      and message lines.
+- [x] **Avatars** — per-user image, uploaded like an attachment but downscaled client-side to
+      a 256px square and kept in a durable store that is never evicted (the previous one is
+      deleted on change, so it stays ~one file per user). Shown in the roster and on message
+      lines, with a monogram fallback for anyone who hasn't set one, and a client-side toggle
+      to hide them. Belongs to the identity, so it follows you across clients.
 - [ ] **Richer profile / custom status** — bio and a free-form status beyond the
       current away note.
 
@@ -94,7 +102,7 @@ identity-key based.
 ## 6. In-session profile editing
 
 - [x] **Change name / colour without reconnecting** — edit them in-session via the options
-      dialog; changes broadcast live and follow your identity. Avatar follows the Avatars item.
+      dialog, along with your avatar; changes broadcast live and follow your identity.
 
 ## 7. Appearance & personalization (client-side)
 
@@ -102,11 +110,11 @@ Local display preferences — purely how *this* client renders chat for you, sto
 per-install like the existing theme toggle. No protocol or server changes needed;
 the palette is already CSS-variable driven (`--mara-*`).
 
-- [ ] **Message display style** — let the user choose how messages are laid out: the
-      current compact single-line style, a roomier Discord-like style (avatar +
-      grouped author headers + more spacing), and room for others (e.g. IRC-style).
-      A per-client setting; the renderer (`@mara/chat-render` + `ChatView`) switches
-      layout from it.
+- [x] **Message display style** — pick between **mara** (compact: a timestamp gutter, then
+      `Name: text` on one line) and **discord** (cozy: an avatar gutter, a `Name  timestamp`
+      header, text below, and consecutive messages from one author grouped into a run). A
+      per-client setting in the options dialog; `renderLine` takes the layout and `ChatView`
+      styles it, quote bars included. Room remains for further layouts (e.g. IRC-style).
 - [ ] **Detailed theme / colour choices** — go beyond the System / Dark / Light
       toggle: pick an accent colour, choose from preset themes, and (longer term)
       tweak individual palette tokens (background, text, link, …). Mostly a settings
