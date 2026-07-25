@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  MAX_REACTIONS_PER_MESSAGE,
   MOTD_MAX_LEN,
   PROTOCOL_VERSION,
   replyExcerpt,
@@ -129,6 +130,12 @@ export class Hub {
     const reserved = new Set(operator.map((e) => e.name));
     const user = this.userEmoji.manifest().filter((e) => !reserved.has(e.name));
     return [...operator, ...user];
+  }
+
+  /** Whether a shortcode names an emoji this server actually serves — operator or
+   *  user-contributed. Used to refuse a reaction naming an emoji that doesn't exist. */
+  private emojiUrl(name: string): string | undefined {
+    return this.emojiManifest().find((e) => e.name === name)?.url;
   }
 
   /**
@@ -381,6 +388,8 @@ export class Hub {
         return this.handleAddEmoji(session, conn, msg);
       case 'removeEmoji':
         return this.handleRemoveEmoji(session, conn, msg);
+      case 'react':
+        return this.handleReact(session, conn, msg);
       case 'privateMessage':
         return this.handlePrivateMessage(session, conn, msg);
       case 'ping':
@@ -777,6 +786,80 @@ export class Hub {
   /** Push the current merged emoji set to everyone so pickers + `:name:` rendering update live. */
   private broadcastEmoji(): void {
     this.broadcastAll({ type: 'emojiUpdate', emoji: this.emojiManifest() });
+  }
+
+  /**
+   * Add or remove one user's reaction to a channel message, then broadcast that emoji's
+   * complete reactor set.
+   *
+   * The message is looked up in the *server's* copy of the channel's backlog, which is what
+   * makes a reaction trustworthy: a client can only react to something that really was said
+   * in a channel it is really in, and can only ever add or remove *itself* (the reactor is
+   * the session, never a field the client sends). A message that has aged out of history is
+   * refused rather than silently ignored, since the reaction would vanish on the next
+   * restart otherwise.
+   *
+   * `on` is applied as stated rather than toggled, so repeats are idempotent — two windows
+   * of the same user, or a retry after a reconnect, all converge instead of flip-flopping.
+   */
+  private handleReact(
+    session: Session,
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: 'react' }>,
+  ): void {
+    const channel = this.state.channelsByToken.get(msg.channelToken);
+    if (!channel || !session.channels.has(msg.channelToken)) {
+      conn.send({ type: 'error', message: 'not in that channel' });
+      return;
+    }
+    const entry = this.history.find(channel.name, msg.messageId);
+    if (!entry) {
+      conn.send({ type: 'error', message: 'no such message to react to' });
+      return;
+    }
+    // A shortcode-shaped reaction has to name an emoji this server actually has — the wire
+    // format can't know the set, so this is where a bogus one is caught. Anything else is a
+    // literal emoji cluster, which the schema has already vetted.
+    if (/^[a-zA-Z0-9_+-]+$/.test(msg.emoji) && !this.emojiUrl(msg.emoji)) {
+      conn.send({ type: 'error', message: 'no such emoji' });
+      return;
+    }
+
+    const token = session.info.token;
+    const reactions = entry.reactions ?? [];
+    const existing = reactions.find((r) => r.emoji === msg.emoji);
+    if (msg.on) {
+      if (!existing && reactions.length >= MAX_REACTIONS_PER_MESSAGE) {
+        conn.send({ type: 'error', message: 'that message has too many reactions already' });
+        return;
+      }
+      if (existing) {
+        if (existing.by.includes(token)) return; // already reacted — nothing changed
+        existing.by.push(token);
+      } else {
+        reactions.push({ emoji: msg.emoji, by: [token] });
+      }
+    } else {
+      if (!existing || !existing.by.includes(token)) return; // wasn't reacting — nothing to undo
+      existing.by = existing.by.filter((t) => t !== token);
+      // Drop an emoji nobody is left reacting with, so it neither renders as an empty chip
+      // nor counts against the per-message cap.
+      if (existing.by.length === 0) reactions.splice(reactions.indexOf(existing), 1);
+    }
+    // Keep `reactions` off an entry that has none, so untouched messages stay as they were
+    // on disk (and in the frames that replay them).
+    if (reactions.length > 0) entry.reactions = reactions;
+    else delete entry.reactions;
+    this.history.touch();
+
+    this.broadcastChannel(msg.channelToken, {
+      type: 'reaction',
+      channelToken: msg.channelToken,
+      messageId: msg.messageId,
+      emoji: msg.emoji,
+      by: reactions.find((r) => r.emoji === msg.emoji)?.by ?? [],
+      at: this.now(),
+    });
   }
 
   private handlePrivateMessage(

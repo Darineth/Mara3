@@ -36,6 +36,7 @@ with direction-appropriate shapes.
 | `leaveChannel`   | `channelToken`                        | Leave a channel.                         |
 | `chat`           | `channelToken, text, replyTo?`        | Send to a channel (see Replies).         |
 | `emote`          | `channelToken, text, replyTo?`        | `/me`-style action to a channel.         |
+| `react`          | `channelToken, messageId, emoji, on`  | Add/remove your reaction (see Reactions).|
 | `privateMessage` | `to, text`                            | Direct message to a user token.          |
 | `away`           | `text`                                | Set away note; `""` clears it.           |
 | `ping`           | `id`                                  | Heartbeat; echoed in `pong`.             |
@@ -54,6 +55,7 @@ with direction-appropriate shapes.
 | `userLeftChannel`   | `token, channelToken`                   | Someone left a channel you're in.             |
 | `chat`              | `id, from, channelToken, text, at, replyTo?` | A channel message (`at` = server send time). |
 | `emote`             | `id, from, channelToken, text, at, replyTo?` | A channel action.                        |
+| `reaction`          | `channelToken, messageId, emoji, by, at` | A message's reactors for one emoji changed.  |
 | `away`              | `token, text`                           | A user's away status changed.                 |
 | `privateMessage`    | `from, to, text`                        | A direct message; `to` keys the sender's copy.|
 | `pong`              | `id`                                    | Reply to `ping`.                              |
@@ -208,6 +210,31 @@ losing the quote is better than losing what someone typed.
 
 Private messages cannot be replied to: the server assigns them no ids and stores nothing
 for them.
+
+## Reactions
+
+`react { channelToken, messageId, emoji, on }` adds or removes **your own** reaction to a
+channel message; the server broadcasts `reaction { channelToken, messageId, emoji, by, at }`
+to that channel. Like replies, this leans on the server's own copy of the backlog:
+
+- The reactor is the **session**, never a field the client sends — you can only ever add or
+  remove yourself.
+- The message must exist in that channel's retained history, and you must be in the channel.
+  A message that has aged out is refused, since a reaction on it could not be kept.
+- `by` is the **complete** set of reactors for that emoji, not a delta, so a client that
+  missed a frame converges instead of drifting. An empty `by` means the emoji is gone from
+  the message.
+- `on` is applied as stated rather than toggled, so repeats are idempotent — several windows
+  of the same user, or a retry after a reconnect, all land on the same answer.
+
+`emoji` is either a literal emoji or a custom emoji's bare `shortcode` (no colons). The wire
+format admits shortcode-shaped values and any run of non-letter, non-digit, non-whitespace
+characters — the latter is what keeps a reaction from becoming free text — and the server
+then requires a shortcode to name an emoji it actually serves. A message carries at most 20
+distinct emoji; reacting past that is refused, though joining an emoji already there is not.
+
+Reactions are retained on the history entry, so they replay with the backlog and survive a
+restart. Channels only — private messages have no ids to react to.
 
 ## Keepalive
 

@@ -46,6 +46,37 @@ export const DEFAULT_MAX_MESSAGE_CHARS = 10000;
 export const chatTextSchema = z.string().max(CHAT_TEXT_MAX);
 export type ChatText = z.infer<typeof chatTextSchema>;
 
+/**
+ * What may be reacted with: either a custom emoji's bare `shortcode` (the same charset the
+ * emoji manifest uses, no colons) or a literal emoji cluster.
+ *
+ * The second branch admits nothing containing letters, digits, or whitespace, which is what
+ * stops a reaction being used to staple arbitrary text under someone's message — emoji,
+ * ZWJ sequences, variation selectors and regional-indicator flags are all symbols, not
+ * letters. A shortcode is checked against the server's actual emoji set when it arrives,
+ * so the letters that branch does allow can't be arbitrary either.
+ */
+export const reactionEmojiSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .refine((v) => /^[a-zA-Z0-9_+-]+$/.test(v) || !/[\s\p{L}\p{N}]/u.test(v), {
+    message: 'expected an emoji or a custom emoji shortcode',
+  });
+export type ReactionEmoji = z.infer<typeof reactionEmojiSchema>;
+
+/** Who reacted to a message with one emoji. `by` is the full set, never a delta, so a
+ *  client that missed a frame still converges on the truth. */
+export const reactionSchema = z.object({
+  emoji: reactionEmojiSchema,
+  by: z.array(tokenSchema).max(1000),
+});
+export type Reaction = z.infer<typeof reactionSchema>;
+
+/** Cap on how many DISTINCT emoji one message may carry, so a message's reactions can't
+ *  grow without bound in history. Reacting past it is refused; existing ones still toggle. */
+export const MAX_REACTIONS_PER_MESSAGE = 20;
+
 /** A user as seen by others: identity, colour, and away status (`""` = present). */
 export const userInfoSchema = z.object({
   token: tokenSchema,

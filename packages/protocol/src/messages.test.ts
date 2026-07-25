@@ -36,6 +36,7 @@ const clientSamples: Record<ClientMessage['type'], ClientMessage> = {
   },
   addEmoji: { type: 'addEmoji', name: 'blobwave', url: '/emoji/abc123.png' },
   removeEmoji: { type: 'removeEmoji', name: 'blobwave' },
+  react: { type: 'react', channelToken: 12345, messageId: 42, emoji: '👍', on: true },
   ping: { type: 'ping', id: 1 },
 };
 
@@ -74,6 +75,14 @@ const serverSamples: Record<ServerMessage['type'], ServerMessage> = {
   userLeftChannel: { type: 'userLeftChannel', token: 678, channelToken: 12345 },
   chat: { type: 'chat', id: 2, from: 678, channelToken: 12345, text: 'hello', at: 1700000001 },
   emote: { type: 'emote', id: 3, from: 678, channelToken: 12345, text: 'waves', at: 1700000002 },
+  reaction: {
+    type: 'reaction',
+    channelToken: 12345,
+    messageId: 3,
+    emoji: 'blobwave',
+    by: [678, 999],
+    at: 1700000003,
+  },
   away: { type: 'away', token: 678, text: 'brb' },
   userProfile: { type: 'userProfile', user },
   emojiUpdate: {
@@ -167,6 +176,25 @@ describe('validation failures', () => {
     expect(() => parseServerMessage(welcome(CHAT_TEXT_MAX))).not.toThrow();
     expect(() => parseServerMessage(welcome(CHAT_TEXT_MAX + 1))).toThrow(ProtocolError);
     expect(() => parseServerMessage(welcome(0))).toThrow(ProtocolError);
+  });
+
+  it('accepts emoji and shortcodes as reactions, but not arbitrary text', () => {
+    const react = (emoji: string) =>
+      JSON.stringify({ type: 'react', channelToken: 1, messageId: 1, emoji, on: true });
+    // Literal emoji, including ZWJ sequences, skin tones and flags — none are letters.
+    for (const ok of ['👍', '❤️', '👩‍💻', '🏳️‍🌈', '🇬🇧', '🤦🏽‍♀️']) {
+      expect(() => parseClientMessage(react(ok))).not.toThrow();
+    }
+    // A custom emoji's bare shortcode. Anything shaped like one parses here — including a
+    // word like "hello", since the wire format has no idea which shortcodes a given server
+    // actually has. Existence is the server's check, not the schema's.
+    expect(() => parseClientMessage(react('blob_wave-2'))).not.toThrow();
+    expect(() => parseClientMessage(react('hello'))).not.toThrow();
+    // What the schema DOES keep out is free text: no whitespace, and no mixing letters
+    // into a non-shortcode value, so a reaction can't staple a sentence under a message.
+    for (const bad of ['nice one', 'x '.repeat(16), '👍 nice', '', 'a'.repeat(33)]) {
+      expect(() => parseClientMessage(react(bad))).toThrow(ProtocolError);
+    }
   });
 
   it('safeParse reports issues without throwing', () => {

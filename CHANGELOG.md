@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.30] - unreleased
 
-_In development._
+### Added
+
+- **Reactions.** Hover a message, hit the smiley, and pick something — a handful of common
+  emoji, plus whatever custom emoji your server has. Reactions gather into chips under the
+  message showing a count; click one to join it or to take yours back, and hover to see who
+  reacted. Yours are outlined so you can tell at a glance which ones you're in.
+  They stick around: reactions are stored with the message, so they're still there after a
+  reload, for someone joining later, and after a server restart. Channel messages only —
+  private messages aren't stored server-side, so there's nothing to attach them to.
 
 ## [3.0.29] - 2026-07-25
 

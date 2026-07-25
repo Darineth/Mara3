@@ -169,6 +169,51 @@ describe('channels + chat', () => {
     client.disconnect();
   });
 
+  it('puts reactions on the line, and takes them off again', async () => {
+    const a = makeClient('alice');
+    const b = makeClient('bob');
+    const alice = await connected(a);
+    await connected(b);
+    a.joinChannel('lobby');
+    const aCh = await waitEvent(a, 'channelJoined');
+    b.joinChannel('lobby');
+    const bCh = await waitEvent(b, 'channelJoined');
+
+    a.sendChat(aCh.token, 'ship it');
+    await waitEvent(b, 'chat');
+    const messageId = (get(b.channelMessages).get(bCh.token) ?? []).at(-1)?.serverId;
+    expect(messageId).toBeGreaterThan(0);
+
+    // A reaction is echoed to the whole channel, reactor included — so BOTH clients have to
+    // be awaited before asserting, or the next wait can resolve on the previous echo and the
+    // assertion runs against a store that hasn't caught up.
+    const bothSee = (act: () => void) => {
+      const seen = Promise.all([waitEvent(a, 'reaction'), waitEvent(b, 'reaction')]);
+      act();
+      return seen;
+    };
+    const lastOf = (c: typeof a, token: number) => (get(c.channelMessages).get(token) ?? []).at(-1);
+
+    // Bob reacts; both converge on the same reactor set from the broadcast, with no
+    // optimistic local guess involved.
+    await bothSee(() => b.react(bCh.token, messageId!, '👍', true));
+    expect(lastOf(a, aCh.token)?.reactions).toEqual([{ emoji: '👍', by: [get(b.self)!.token] }]);
+
+    // Alice joins the same reaction: one emoji, two reactors — not two chips.
+    await bothSee(() => a.react(aCh.token, messageId!, '👍', true));
+    expect(lastOf(b, bCh.token)?.reactions).toEqual([
+      { emoji: '👍', by: [get(b.self)!.token, alice.token] },
+    ]);
+
+    // The last reactor leaving clears the key entirely, so nothing renders an empty chip.
+    await bothSee(() => b.react(bCh.token, messageId!, '👍', false));
+    await bothSee(() => a.react(aCh.token, messageId!, '👍', false));
+    expect(lastOf(a, aCh.token)?.reactions).toBeUndefined();
+
+    a.disconnect();
+    b.disconnect();
+  });
+
   it('carries a reply through to the line, quoting the parent it names', async () => {
     const client = makeClient('alice');
     const me = await connected(client);

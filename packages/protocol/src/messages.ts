@@ -5,7 +5,10 @@ import {
   colorSchema,
   tokenSchema,
   userInfoSchema,
+  reactionEmojiSchema,
+  reactionSchema,
   CHAT_TEXT_MAX,
+  MAX_REACTIONS_PER_MESSAGE,
 } from './primitives.js';
 
 /**
@@ -114,6 +117,25 @@ const clientRemoveEmoji = z.object({
   name: emojiNameSchema,
 });
 
+/**
+ * React to a channel message, or take a reaction back.
+ *
+ * `on` is explicit rather than a toggle: a user can have the same conversation open in
+ * several windows, and two toggles racing would land them in whichever state arrived last
+ * instead of the one they asked for. Applying a *stated* value is idempotent, so a repeat
+ * (a double-click, a retry after a reconnect) changes nothing.
+ *
+ * Channels only — private messages carry no server ids, so there is nothing to react to.
+ */
+const clientReact = z.object({
+  type: z.literal('react'),
+  channelToken: tokenSchema,
+  /** The message being reacted to; must still be in that channel's server-side history. */
+  messageId: z.number().int().nonnegative(),
+  emoji: reactionEmojiSchema,
+  on: z.boolean(),
+});
+
 const ping = z.object({
   type: z.literal('ping'),
   /** Client-chosen id echoed back in `pong`, for liveness + RTT. */
@@ -141,6 +163,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   clientSetProfile,
   clientAddEmoji,
   clientRemoveEmoji,
+  clientReact,
   ping,
   requestHistory,
 ]);
@@ -311,6 +334,9 @@ export const channelHistoryEntrySchema = z.object({
   at: z.number().int().nonnegative(),
   /** Set when this message replies to another; retained so backlog replays the quote too. */
   replyTo: replyRefSchema.optional(),
+  /** Reactions on this message, retained so backlog replays them. Absent when there are
+   *  none, which is the common case — an empty array would bloat every stored line. */
+  reactions: z.array(reactionSchema).max(MAX_REACTIONS_PER_MESSAGE).optional(),
 });
 export type ChannelHistoryEntry = z.infer<typeof channelHistoryEntrySchema>;
 
@@ -357,6 +383,21 @@ const serverChat = z.object({
   at: z.number().int().nonnegative(),
   /** The message this replies to, resolved server-side (see {@link replyRefSchema}). */
   replyTo: replyRefSchema.optional(),
+});
+
+/**
+ * A message's reactions for ONE emoji changed. Carries the complete set of reactors rather
+ * than a delta, so a client that missed a frame (or reconnected mid-conversation) converges
+ * on the server's truth instead of accumulating drift. An empty `by` means that emoji is
+ * gone from the message entirely.
+ */
+const serverReaction = z.object({
+  type: z.literal('reaction'),
+  channelToken: tokenSchema,
+  messageId: z.number().int().nonnegative(),
+  emoji: reactionEmojiSchema,
+  by: z.array(tokenSchema).max(1000),
+  at: serverEventAt,
 });
 
 const serverEmote = z.object({
@@ -431,6 +472,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   userLeftChannel,
   serverChat,
   serverEmote,
+  serverReaction,
   serverAway,
   serverUserProfile,
   serverEmojiUpdate,

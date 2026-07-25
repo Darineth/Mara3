@@ -8,6 +8,7 @@
   import { openLightbox } from './lightbox.js';
   import { goneFiles, savingFiles } from './fileState.js';
   import { copyText } from './clipboard.js';
+  import { emojiSrc } from './emojiComplete.js';
   import { freezeAnimatedImages } from './freezeAnimated.js';
 
   let {
@@ -18,6 +19,8 @@
     onLoadOlder,
     onRestore,
     onReply,
+    onReact,
+    selfToken = null,
     conversationKey = null,
     emoji = {},
     messageStyle = 'mara',
@@ -37,6 +40,13 @@
     /** Called when the user picks Reply on a message. Omit (as PMs do — they have no server
      *  message ids) and no reply affordance is offered. */
     onReply?: (line: ChatLine) => void;
+    /** Called to add or take back a reaction: `emoji` is a literal emoji or a custom
+     *  emoji's bare shortcode, `on` is the state being asked for. Omit (as PMs do) and no
+     *  reaction affordance is offered. */
+    onReact?: (line: ChatLine, emoji: string, on: boolean) => void;
+    /** Our own user token, so a reaction chip can show whether WE are one of its reactors
+     *  (and clicking it takes ours back rather than adding a second). */
+    selfToken?: Token | null;
     /** Identifies the conversation on show (e.g. `ch:1`/`pm:2`). When it changes, the view
      *  lands on the new conversation's latest instead of inheriting the old scroll/pin. */
     conversationKey?: string | null;
@@ -52,6 +62,112 @@
   // from the same map that names the lines, so mentions of departed users in
   // backlog still render styled.
   const mentionUsers = $derived([...users.values()].map((u) => ({ name: u.name, color: u.color })));
+
+  // -- reactions ------------------------------------------------------------
+
+  /** A short menu of emoji offered on the react button, ahead of the server's own set.
+   *  Deliberately tiny: the common answers, not a picker to browse. */
+  const QUICK_REACTIONS = ['👍', '😂', '❤️', '🎉', '👀', '😢'];
+  /** Which message's react menu is open (client line id), or null. */
+  let reactMenuFor = $state<number | null>(null);
+  /** Whether that menu hangs ABOVE its button instead of below. Decided when it opens: a
+   *  message near the bottom of the log has no room underneath, and the log clips its own
+   *  overflow, so a downward menu would be cut off (worst case, invisible). */
+  let reactMenuUp = $state(false);
+  /** The menu's tallest form — max-height plus padding and border — used to decide whether
+   *  it fits below. Kept in step with `.mara-react-menu` in the styles. */
+  const REACT_MENU_MAX_PX = 190;
+
+  /** Open (or close) the react menu for a line, choosing the direction it opens in. */
+  function toggleReactMenu(line: ChatLine, event: MouseEvent) {
+    if (reactMenuFor === line.id) {
+      reactMenuFor = null;
+      return;
+    }
+    const button = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    // Measure against the log's own box, not the window: the log is the element that clips,
+    // and it rarely reaches the bottom of the screen (the composer sits under it).
+    const clip = viewport?.getBoundingClientRect();
+    const roomBelow = (clip?.bottom ?? window.innerHeight) - (button?.bottom ?? 0);
+    reactMenuUp = roomBelow < REACT_MENU_MAX_PX;
+    reactMenuFor = line.id;
+  }
+
+  /** Reactor names for a chip's tooltip. Users we no longer know (left, or never in our
+   *  roster) are counted rather than named — better than inventing a name for them. */
+  function reactorTitle(by: Token[]): string {
+    const names: string[] = [];
+    let unknown = 0;
+    for (const t of by) {
+      const name = users.get(t)?.name;
+      if (name) names.push(name);
+      else unknown++;
+    }
+    if (unknown > 0) names.push(unknown === 1 ? '1 other' : `${unknown} others`);
+    return names.join(', ');
+  }
+
+  /** How an emoji is named in a tooltip: a custom one by its `:shortcode:` (the chip shows
+   *  only its image, so the name is otherwise nowhere on screen), a literal one by itself. */
+  function emojiLabel(emojiValue: string): string {
+    return emoji[emojiValue] ? `:${emojiValue}:` : emojiValue;
+  }
+
+  /** A chip's label: what was reacted with, then who reacted. Used for assistive tech (the
+   *  visible version is the hover card below). */
+  function reactionTitle(emojiValue: string, by: Token[]): string {
+    return `${emojiLabel(emojiValue)} — ${reactorTitle(by)}`;
+  }
+
+  /** The chip whose hover card is showing: its line and emoji, or null for none. */
+  let hoveredReaction = $state<{ lineId: number; emoji: string } | null>(null);
+  /** Whether that card hangs below its chip instead of above — same clipping problem the
+   *  react menu has, and the reactions row often sits at the very bottom of the log. */
+  let reactionCardBelow = $state(false);
+  /** The card's tallest form, for the fits-above check. Kept in step with the styles. */
+  const REACTION_CARD_MAX_PX = 96;
+
+  function showReactionCard(line: ChatLine, emojiValue: string, event: Event) {
+    const chip = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    const clip = viewport?.getBoundingClientRect();
+    reactionCardBelow = (chip?.top ?? 0) - (clip?.top ?? 0) < REACTION_CARD_MAX_PX;
+    hoveredReaction = { lineId: line.id, emoji: emojiValue };
+  }
+
+  function hideReactionCard() {
+    hoveredReaction = null;
+  }
+
+  /** Whether WE are already reacting to this message with this emoji. Drives the chip and
+   *  menu highlighting, and decides which way a click toggles. */
+  function reactedByMe(line: ChatLine, emoji: string): boolean {
+    if (selfToken == null) return false;
+    return line.reactions?.find((r) => r.emoji === emoji)?.by.includes(selfToken) ?? false;
+  }
+
+  /** Toggle our own reaction on a line: whether we're currently in `by` decides which way. */
+  function toggleReaction(line: ChatLine, emoji: string) {
+    onReact?.(line, emoji, !reactedByMe(line, emoji));
+    reactMenuFor = null;
+  }
+
+  // Dismiss the react menu on an outside click or Escape (only wired while one is open),
+  // matching how the composer's emoji picker behaves.
+  $effect(() => {
+    if (reactMenuFor === null) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest('.mara-react-wrap')) reactMenuFor = null;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') reactMenuFor = null;
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
   let viewport = $state<HTMLDivElement | null>(null);
   let content = $state<HTMLDivElement | null>(null);
@@ -731,9 +847,18 @@
         openLightbox(img.currentSrc || img.src, img.alt);
         return;
       }
-      // Custom emoji zoom to full resolution in the lightbox on a plain left-click.
+      // Custom emoji zoom to full resolution in the lightbox on a plain left-click — unless
+      // the emoji is the label of a control (a reaction chip), where the control owns the
+      // click and zooming would fire alongside it.
       const emojiImg = target?.closest('img.mara-emoji') as HTMLImageElement | null;
-      if (emojiImg && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      if (
+        emojiImg &&
+        !emojiImg.closest('button') &&
+        event.button === 0 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey
+      ) {
         openLightbox(emojiImg.currentSrc || emojiImg.src, emojiImg.alt);
         return;
       }
@@ -853,29 +978,159 @@
           continuation: isContinuation(i),
           avatars: showAvatars,
         })}
-        <!-- Reply affordance, revealed on hover/focus. Only a real server-side message can be
-             replied to: system/away/cleared lines and PMs (no ids) carry no button. -->
-        {#if onReply && line.serverId != null && (line.kind === 'chat' || line.kind === 'emote')}
-          <button
-            type="button"
-            class="mara-reply-btn"
-            title="Reply to this message"
-            aria-label="Reply to this message"
-            onclick={() => onReply?.(line)}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="9 17 4 12 9 7" />
-              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-            </svg>
-          </button>
+        <!-- Reactions already on this message. Each chip is its own toggle: click to join or
+             to take yours back, with the reactors named on hover. Rendered under the message
+             text (and inside the same row) so a grouped run stays visually attached. -->
+        {#if line.reactions && line.reactions.length > 0}
+          <div class="mara-reactions" class:discord={messageStyle === 'discord'}>
+            {#if messageStyle !== 'discord'}
+              <!-- Compact layout: step the chips over the timestamp gutter and the inline
+                   avatar so they start under the NAME. The gutter is content-sized (tabular
+                   digits, locale-dependent), so it's reserved with an invisible copy of the
+                   real timestamp rather than a guessed width that would drift. -->
+              <span class="mara-ts mara-gutter-spacer" aria-hidden="true"
+                >{toModel(line).timestamp}</span
+              >
+              {#if showAvatars}
+                <span class="mara-av-spacer" aria-hidden="true"></span>
+              {/if}
+            {/if}
+            <div class="mara-reaction-chips">
+              {#each line.reactions as r (r.emoji)}
+                {@const custom = emoji[r.emoji]}
+                <span class="mara-reaction-wrap">
+                  <button
+                    type="button"
+                    class="mara-reaction"
+                    class:mine={reactedByMe(line, r.emoji)}
+                    aria-label={reactionTitle(r.emoji, r.by)}
+                    disabled={!onReact}
+                    onclick={() => toggleReaction(line, r.emoji)}
+                    onmouseenter={(e) => showReactionCard(line, r.emoji, e)}
+                    onmouseleave={hideReactionCard}
+                    onfocus={(e) => showReactionCard(line, r.emoji, e)}
+                    onblur={hideReactionCard}
+                  >
+                    {#if custom}
+                      <img class="mara-emoji" src={emojiSrc(custom)} alt={`:${r.emoji}:`} />
+                    {:else}
+                      <span class="glyph">{r.emoji}</span>
+                    {/if}
+                    <span class="count">{r.by.length}</span>
+                  </button>
+                  <!-- Hover card: the emoji at a size you can actually see (a custom one is
+                       art, and the chip renders it at 1.1em), its name, and who reacted. -->
+                  {#if hoveredReaction?.lineId === line.id && hoveredReaction.emoji === r.emoji}
+                    <span class="mara-reaction-card" class:below={reactionCardBelow}>
+                      {#if custom}
+                        <!-- Deliberately NOT `.mara-emoji`: that class is the chip/inline
+                             sizing AND what the animation freezer watches. A preview wants
+                             neither — it shows the art at size, still animating. -->
+                        <img class="art" src={emojiSrc(custom)} alt="" />
+                      {:else}
+                        <span class="art glyph">{r.emoji}</span>
+                      {/if}
+                      <span class="meta">
+                        <span class="name">{emojiLabel(r.emoji)}</span>
+                        <span class="who">{reactorTitle(r.by)}</span>
+                      </span>
+                    </span>
+                  {/if}
+                </span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        <!-- Per-message actions, revealed on hover/focus: one toolbar laid out as a flex row,
+             so buttons sit beside each other rather than each claiming its own corner (which
+             is how the react button ended up underneath Reply). Every affordance goes in
+             here; only messages the server can act on get one. -->
+        {#if (onReact || onReply) && line.serverId != null && (line.kind === 'chat' || line.kind === 'emote')}
+          <div class="mara-msg-actions">
+            {#if onReact}
+              <div class="mara-react-wrap">
+                <button
+                  type="button"
+                  class="mara-msg-action"
+                  title="React to this message"
+                  aria-label="React to this message"
+                  aria-expanded={reactMenuFor === line.id}
+                  onclick={(e) => toggleReactMenu(line, e)}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    <line x1="9" y1="9" x2="9.01" y2="9" />
+                    <line x1="15" y1="9" x2="15.01" y2="9" />
+                  </svg>
+                </button>
+                {#if reactMenuFor === line.id}
+                  <!-- Picking one you're already in takes it back, so the ones you've used
+                       are marked (and announced as pressed) rather than looking untouched. -->
+                  <div class="mara-react-menu" class:up={reactMenuUp} role="menu">
+                    {#each QUICK_REACTIONS as e (e)}
+                      <button
+                        type="button"
+                        class="pick"
+                        class:mine={reactedByMe(line, e)}
+                        role="menuitemcheckbox"
+                        aria-checked={reactedByMe(line, e)}
+                        title={reactedByMe(line, e)
+                          ? `${emojiLabel(e)} — remove yours`
+                          : emojiLabel(e)}
+                        onclick={() => toggleReaction(line, e)}>{e}</button
+                      >
+                    {/each}
+                    {#each Object.entries(emoji).slice(0, 24) as [name, url] (name)}
+                      <button
+                        type="button"
+                        class="pick"
+                        class:mine={reactedByMe(line, name)}
+                        role="menuitemcheckbox"
+                        aria-checked={reactedByMe(line, name)}
+                        title={reactedByMe(line, name)
+                          ? `${emojiLabel(name)} — remove yours`
+                          : emojiLabel(name)}
+                        onclick={() => toggleReaction(line, name)}
+                      >
+                        <img src={emojiSrc(url)} alt={`:${name}:`} />
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            {#if onReply}
+              <button
+                type="button"
+                class="mara-msg-action"
+                title="Reply to this message"
+                aria-label="Reply to this message"
+                onclick={() => onReply?.(line)}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="9 17 4 12 9 7" />
+                  <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+                </svg>
+              </button>
+            {/if}
+          </div>
         {/if}
         {#if clippedMessages.has(line.id)}
           {@const tint = authorColorOf(line)}
@@ -1081,13 +1336,170 @@
       box-shadow: inset 0 0 0 1px transparent;
     }
   }
-  /* Reply affordance: a bare icon pinned to the message's top-right, revealed on hover or
-     when focused (so it's reachable by keyboard without a mouse ever entering the log). */
-  .mara-reply-btn {
+  /* Reactions on a message: a row of chips under the text. Each is a toggle — yours is
+     outlined in the accent so you can see at a glance which ones you're in. */
+  /* Mirrors the message row's own shape — gutter spacer, then the content column — so the
+     chips begin exactly where the author's name does, not out in the timestamp. The gap
+     matches `.mara-line`'s. */
+  .mara-reactions {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0.15rem 0 0.1rem;
+  }
+  /* An invisible copy of the timestamp: it inherits `.mara-ts` sizing, so it reserves the
+     gutter to the pixel while showing nothing. `visibility` (not `display`) is what keeps
+     the width. */
+  .mara-gutter-spacer {
+    visibility: hidden;
+  }
+  /* The compact layout's inline avatar — 1.2rem plus the 0.35rem it reserves after itself
+     (see `.mara-avatar-inline`) — so the chips clear it and land under the name. */
+  .mara-av-spacer {
+    flex: none;
+    width: 1.2rem;
+    margin-right: 0.35rem;
+  }
+  /* The chips themselves wrap within the content column, so a second row of them still
+     lines up under the name rather than sliding back under the timestamp. */
+  .mara-reaction-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  /* discord layout: no gutter to mirror — one indent clears the avatar column (2.4rem
+     avatar + 0.6rem gap), the same 3rem the reply quote bar lines up to. */
+  .mara-reactions.discord {
+    padding-left: 3rem;
+  }
+  /* Anchors a chip's hover card to that chip. */
+  .mara-reaction-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+  /* The hover card: the emoji big enough to see, its name, and the reactors. Sits above the
+     chip (below it when the row is near the top of the log). `pointer-events: none` is
+     load-bearing — the card overlaps the chip it belongs to, and without it the pointer
+     would enter the card, leave the chip, and flicker the card off and on. */
+  .mara-reaction-card {
+    position: absolute;
+    bottom: calc(100% + 0.3rem);
+    left: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: max-content;
+    max-width: 15rem;
+    padding: 0.4rem 0.55rem;
+    background: var(--mara-bg-alt, #111);
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
+  .mara-reaction-card.below {
+    bottom: auto;
+    top: calc(100% + 0.3rem);
+  }
+  .mara-reaction-card .art {
+    flex: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    object-fit: contain;
+  }
+  /* A literal emoji has no image to show, so scale the glyph to the same box instead. */
+  .mara-reaction-card span.art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    line-height: 1;
+  }
+  .mara-reaction-card .meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .mara-reaction-card .name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mara-reaction-card .who {
+    font-size: 0.78rem;
+    opacity: 0.7;
+    /* Wrap a long list rather than clipping it — knowing who reacted is the point. */
+    overflow-wrap: break-word;
+  }
+  .mara-reaction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.05rem 0.4rem;
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: inherit;
+    background: rgba(127, 127, 127, 0.14);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .mara-reaction:hover:not(:disabled) {
+    background: rgba(127, 127, 127, 0.24);
+  }
+  .mara-reaction:disabled {
+    cursor: default;
+  }
+  .mara-reaction.mine {
+    border-color: var(--mara-accent, #4a9eff);
+    background: color-mix(in srgb, var(--mara-accent, #4a9eff) 18%, transparent);
+  }
+  .mara-reaction .count {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+  }
+  /* Deliberately NOT qualified with `img`: an animated custom emoji freezes by swapping the
+     <img> for a <canvas> carrying the same class (see freezeAnimated.ts), and that swap only
+     stays invisible if the class alone sizes both. Qualifying it left the canvas at the
+     default 1.4em, so a chip was wider while frozen and snapped narrower on hover — which
+     replays the image. Scoped from `.mara-chatview` so it outranks the default by
+     specificity rather than by source order. */
+  .mara-chatview :global(.mara-reaction .mara-emoji) {
+    height: 1.1em;
+    width: auto;
+    vertical-align: -0.2em;
+    margin: 0;
+    /* Not zoom-in: here the emoji is a button's label, not something to open. `inherit`
+       follows the chip — pointer normally, default when reactions are read-only. */
+    cursor: inherit;
+  }
+  /* The per-message toolbar: one row pinned to the message's top-right, holding every
+     hover action (react, reply, and whatever comes next). A single positioned container
+     laid out with flex — buttons can't collide the way two separately-positioned ones did,
+     and adding another is just another child. */
+  .mara-msg-actions {
     position: absolute;
     top: 0;
-    /* 0.25rem in from the message's visual edge, plus the 0.75rem the wrapper bleeds out by. */
+    /* 0.25rem in from the message's visual edge, plus the 0.75rem the wrapper bleeds out
+       by (see .mara-msg's negative margin). */
     right: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    /* Above the message text, and above a neighbouring row's toolbar, so an open react
+       menu is never clipped behind the next message. */
+    z-index: 2;
+  }
+  /* Each action keeps the look the reply button had on its own — a small bordered plate
+     rather than a bare glyph, which is what keeps it legible sitting on top of message
+     text — so unifying them changed the layout, not the appearance. */
+  .mara-msg-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1102,18 +1514,78 @@
     opacity: 0;
     transition: opacity 0.1s ease;
   }
-  .mara-msg:hover .mara-reply-btn,
-  .mara-reply-btn:focus-visible {
-    opacity: 0.75;
-  }
-  .mara-reply-btn:hover {
-    opacity: 1;
-    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
-  }
-  .mara-reply-btn svg {
+  .mara-msg-action svg {
     width: 0.85rem;
     height: 0.85rem;
   }
+  /* Revealed together: hovering the message shows the whole toolbar, and keyboard focus or
+     an open menu keeps it up even when the pointer is elsewhere. */
+  .mara-msg:hover .mara-msg-action,
+  .mara-msg-actions:focus-within .mara-msg-action,
+  .mara-msg-action[aria-expanded='true'] {
+    opacity: 0.75;
+  }
+  .mara-msg-action:hover {
+    opacity: 1;
+    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
+  }
+  /* Anchors the react menu under its own button rather than the whole toolbar. */
+  .mara-react-wrap {
+    position: relative;
+    display: flex;
+  }
+  /* The quick menu: common emoji first, then this server's own set. */
+  .mara-react-menu {
+    position: absolute;
+    top: 1.5rem;
+    right: 0;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: repeat(6, 1.6rem);
+    gap: 0.15rem;
+    padding: 0.3rem;
+    /* Keep REACT_MENU_MAX_PX in the script in step with this. */
+    max-height: 11rem;
+    overflow-y: auto;
+    background: var(--mara-bg-alt, #111);
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+  /* Flipped above the button, for a message sitting at the bottom of the log where a
+     downward menu would be clipped away. Chosen at open time (see toggleReactMenu). */
+  .mara-react-menu.up {
+    top: auto;
+    bottom: 1.5rem;
+  }
+  .mara-react-menu .pick {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    font-size: 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .mara-react-menu .pick:hover {
+    background: var(--mara-hover, #2f2f2f);
+  }
+  /* Already yours — marked the same way your chips are, so "which have I used?" reads the
+     same in the menu as it does under the message. Clicking one takes it back. */
+  .mara-react-menu .pick.mine {
+    background: color-mix(in srgb, var(--mara-accent, #4a9eff) 22%, transparent);
+    box-shadow: inset 0 0 0 1px var(--mara-accent, #4a9eff);
+  }
+  .mara-react-menu .pick.mine:hover {
+    background: color-mix(in srgb, var(--mara-accent, #4a9eff) 34%, transparent);
+  }
+  .mara-react-menu .pick img {
+    max-width: 1.2rem;
+    max-height: 1.2rem;
+  }
+
   /* The quote bar a reply renders above itself (chat-render emits it as a sibling of the
      message row): a single clipped line — author, then the excerpt — that jumps to the
      quoted message on click.

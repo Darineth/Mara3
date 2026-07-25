@@ -1333,6 +1333,18 @@
             if (activeChannel !== null) client.restoreChannel(activeChannel);
           }}
           onReply={activeChannel !== null ? (line) => (replyTarget = line) : undefined}
+          selfToken={$self?.token ?? null}
+          onReact={activeChannel !== null
+            ? (line, emoji, on) => {
+                // Re-read the channel at click time rather than closing over it: the
+                // callback outlives the render that made it, and a reaction must land on
+                // the conversation actually on screen.
+                const channel = activeChannel;
+                if (channel !== null && line.serverId != null) {
+                  client.react(channel, line.serverId, emoji, on);
+                }
+              }
+            : undefined}
         />
         {#if sidebarInline}
           <UserList

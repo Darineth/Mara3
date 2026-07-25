@@ -63,6 +63,21 @@ export class HistoryStore {
     return max;
   }
 
+  /**
+   * A retained message by id, within one channel — or undefined if it was never here or
+   * has already aged out. Scoped to the channel on purpose: ids are global, and looking one
+   * up across channels would let a reaction (or anything else keyed by id) reach a message
+   * in a channel the caller isn't in.
+   */
+  find(name: string, id: number): ChannelHistoryEntry | undefined {
+    return this.data.get(name)?.find((e) => e.id === id);
+  }
+
+  /** Note that a retained entry was modified in place (reactions), so it gets persisted. */
+  touch(): void {
+    this.schedule();
+  }
+
   /** Append a message, cap the buffer, and schedule a save. */
   append(name: string, entry: ChannelHistoryEntry, cap: number): void {
     const arr = this.data.get(name) ?? [];

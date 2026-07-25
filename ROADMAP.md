@@ -26,8 +26,12 @@ on it.
 - [x] **Stable message ids** — server-assigned id on every chat/emote, carried in
       history (used to order and de-duplicate the backlog). The prerequisite for the
       rest of this section.
-- [ ] **Reactions** — emoji reactions on a message; add/remove broadcast to the
-      channel, tallied per emoji.
+- [x] **Reactions** — emoji reactions on a message (literal emoji, or this server's custom
+      `:shortcode:` set) from a hover toolbar; chips under the message tally each emoji and
+      toggle on click, with a hover card showing the emoji at size and who reacted. The
+      server broadcasts the full reactor set per emoji — you can only ever add or remove
+      yourself — and retains them on the history entry, so they replay with the backlog.
+      Channels only; PMs have no message ids.
 - [x] **Replies / threads** — reply to a specific message id, rendered as an inline
       "replying to…" quote bar above the message (click it to jump to the original).
       The client sends only the parent's id; the server resolves it against that channel's

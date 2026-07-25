@@ -110,9 +110,15 @@ class Freezer {
   };
 
   /** A click on the frozen frame should still open the lightbox: re-show the image and forward
-   *  the click so ChatView's existing image/emoji click handler fires. */
+   *  the click so ChatView's existing image/emoji click handler fires.
+   *
+   *  Not forwarded when the image is the label of a control (a custom emoji on a reaction
+   *  chip): the real click already reached that control by bubbling, and a second, synthetic
+   *  one would fire it again — on a toggle like a reaction, undoing itself. Replaying the
+   *  animation is still right there. */
   private onCanvasClick = (): void => {
     this.play();
+    if (this.img.closest('button')) return;
     this.img.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
   };
 

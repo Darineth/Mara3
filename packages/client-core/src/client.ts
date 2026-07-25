@@ -234,6 +234,19 @@ export class MaraClient {
   }
 
   /**
+   * React to a channel message, or take the reaction back (`on: false`).
+   *
+   * `emoji` is either a literal emoji or a custom emoji's bare shortcode (no colons). The
+   * state is stated, not toggled, so calling it twice the same way is harmless — the caller
+   * decides from what it can see, and the server applies exactly that. The resulting set of
+   * reactors is broadcast to the channel, so our own line updates from the echo rather than
+   * optimistically (there is no local guess to get wrong).
+   */
+  react(channelToken: Token, messageId: number, emoji: string, on: boolean): void {
+    this.send({ type: 'react', channelToken, messageId, emoji, on });
+  }
+
+  /**
    * Change our display name and/or colour mid-session. The server dedupes the name
    * on a clash and broadcasts the result to everyone (including us) as `userProfile`,
    * so our own `self`/roster reflect the actual applied name. Pass only what changed.
@@ -459,6 +472,34 @@ export class MaraClient {
         }
         this.removeUser(msg.token);
         this.events.emit('userDisconnect', { token: msg.token, channelTokens });
+        return;
+      }
+
+      case 'reaction': {
+        // Replace this emoji's reactor set on the line, wholesale. An empty `by` means the
+        // emoji is gone. Lines we don't hold (scrolled past our loaded window, or a channel
+        // we're not showing) are simply not there to update — the reactions arrive with the
+        // backlog if we ever page that far back.
+        this._channelMessages.update((map) => {
+          const lines = map.get(msg.channelToken);
+          if (!lines) return map;
+          const i = lines.findIndex((l) => l.serverId === msg.messageId);
+          if (i < 0) return map;
+          const line = lines[i];
+          if (!line) return map;
+          const others = (line.reactions ?? []).filter((r) => r.emoji !== msg.emoji);
+          const reactions =
+            msg.by.length > 0 ? [...others, { emoji: msg.emoji, by: msg.by }] : others;
+          const next = [...lines];
+          next[i] = { ...line, reactions: reactions.length > 0 ? reactions : undefined };
+          return new Map(map).set(msg.channelToken, next);
+        });
+        this.events.emit('reaction', {
+          channelToken: msg.channelToken,
+          messageId: msg.messageId,
+          emoji: msg.emoji,
+          by: msg.by,
+        });
         return;
       }
 
@@ -814,6 +855,7 @@ export class MaraClient {
           text,
           at: e.at,
           replyTo: e.replyTo,
+          reactions: e.reactions,
         };
         if (seen.has(keyOf(line))) continue;
         seen.add(keyOf(line));
