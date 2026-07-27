@@ -55,6 +55,9 @@ const HTML_ESCAPES: Record<string, string> = {
 // Both only ever make a matched URL SHORTER, never longer.
 const URL_RE =
   /(?:https?:\/\/|(?<![^\s])\/(?:uploads|files)\/)(?:(?!\[\/)[^\s<|])+(?!\[\/)[^\s<|.,!?;:)]/g;
+// The token patterns below are exported for `highlight.ts` ONLY, so the composer's live
+// syntax highlighting recognises exactly what this renderer will act on. They are an
+// internal contract between the two modules, not part of the package's public surface.
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]\S*)?$/i;
 // Some hosts carry no file extension but *declare* the image format in the query
 // string instead (`?format=jpg`, `&fm=png`, `?ext=webp`). Treat those as images
@@ -95,28 +98,28 @@ export function formatBytes(bytes: number): string {
 // extension/format (the per-URL opt-in escape hatch for opaque image URLs); the
 // `!` itself is consumed so it never shows in the rendered text. Built from
 // URL_RE so the two stay in lock-step.
-const MARKED_URL_RE = new RegExp(`(!?)(${URL_RE.source})`, 'g');
+export const MARKED_URL_RE = new RegExp(`(!?)(${URL_RE.source})`, 'g');
 
 // Legacy Mara 2 BBCode tags for backwards compatibility (see TODO.md §Features).
 // `[img]URL[/img]` forces the wrapped URL inline as an image; `[spoiler]…[/spoiler]`
 // maps to the same hidden-until-clicked treatment as `||…||`. Both are
 // case-insensitive and non-greedy so multiple tags on one line stay separate.
-const IMG_TAG_RE = /\[img\]([\s\S]+?)\[\/img\]/gi;
+export const IMG_TAG_RE = /\[img\]([\s\S]+?)\[\/img\]/gi;
 // A `[img]` payload is only honored if its trimmed contents are a clean http(s)
 // or server-relative upload URL with no whitespace/`<` — same scheme allowlist as
 // auto-detected links, so the tag can't smuggle a `javascript:`/`data:` src.
-const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
+export const IMG_URL_RE = /^(?:https?:\/\/|\/uploads\/)[^\s<]+$/i;
 // Standard Markdown image syntax `![alt](url)`, in addition to the legacy `[img]`
 // tag and the `!`/auto-detect forms. `alt` is optional; the URL (no spaces or `)`)
 // is validated against IMG_URL_RE before it's honored.
-const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
+export const IMG_MD_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 
 // Custom emoji shortcode `:name:` (shortcode charset only, so `12:30:45` and `:)` never
 // match). Only substituted when `name` is in the supplied emoji map — an unknown name is
 // left as literal text. The manifest URL is re-validated against this allowlist (the
 // server's own `/emoji/` route, or an absolute http(s) URL) before it's trusted.
-const EMOJI_RE = /:([a-zA-Z0-9_+-]+):/g;
-const EMOJI_URL_RE = /^(?:https?:\/\/|\/emoji\/)[^\s<]+$/i;
+export const EMOJI_RE = /:([a-zA-Z0-9_+-]+):/g;
+export const EMOJI_URL_RE = /^(?:https?:\/\/|\/emoji\/)[^\s<]+$/i;
 
 // A native (unicode) emoji cluster: a pictographic base plus any trailing variation selector,
 // skin-tone modifier, or ZWJ-joined pictographs — or a two-char regional-indicator flag. Used
@@ -230,7 +233,8 @@ export function escapeHtml(input: string): string {
   return input.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
 
-function escapeRegExp(input: string): string {
+/** @internal — shared with `highlight.ts` (see the note by URL_RE). */
+export function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 

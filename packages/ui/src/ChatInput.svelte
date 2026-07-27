@@ -1,8 +1,13 @@
-<!-- Message composer: autosizing textarea with sent-line history recall, F-key
+﻿<!-- Message composer: autosizing textarea with sent-line history recall, F-key
      macros, and image attachments (drag-drop / paste) that upload in the
-     background and are appended to the message as URLs on send. -->
+     background and are appended to the message as URLs on send.
+
+     The field shows its own formatting as it is typed (see the `.mara-hl` mirror below):
+     the textarea's text is transparent and a highlighted copy of the draft is painted
+     directly behind it, pixel-for-pixel. -->
 <script lang="ts">
   import { tick } from 'svelte';
+  import { highlightComposer } from '@mara/chat-render';
   import { openLightbox, closeLightboxFor } from './lightbox.js';
   import { emojiSrc, matchEmojiShortcode } from './emojiComplete.js';
   import { matchMention } from './mentionComplete.js';
@@ -59,7 +64,7 @@
   } = $props();
 
   // Validate before it's interpolated into an inline style (as renderLine does for the
-  // author colour); an invalid value falls through to the textarea's `color: inherit`.
+  // author colour); an invalid value falls through to the mirror's `color: inherit`.
   const inputColor = $derived(/^#[0-9a-fA-F]{6}$/.test(color ?? '') ? color : null);
 
   // Emoji picker: opens a popover of the server's custom emoji; picking one inserts its
@@ -150,10 +155,22 @@
   let historyIndex = $state(-1); // -1 = editing a fresh line
   let draft = ''; // the in-progress line, stashed while walking back through history
   let textarea = $state<HTMLTextAreaElement | null>(null);
+  // The highlighted copy of the draft, painted behind the (transparent-text) textarea.
+  let mirror = $state<HTMLElement | null>(null);
   let attachments = $state<Attachment[]>([]);
   let dragOver = $state(false);
   let uploadError = $state('');
   let nextAttachId = 0;
+
+  // The draft, marked up so its formatting is visible while it's being written — the same
+  // rules the sent message will be rendered with (@mara/chat-render owns both, so the field
+  // can't promise formatting the renderer wouldn't apply). A trailing newline is padded with
+  // a zero-width space: the browser drops the last empty line of a `pre-wrap` block, and
+  // without it the mirror can't scroll as far down as the textarea can.
+  const highlighted = $derived(
+    highlightComposer(text, { emoji, mentions: mentionNames }) +
+      (text.endsWith('\n') ? '\u200b' : ''),
+  );
 
   // Touch devices pop a soft keyboard whenever the field takes focus, which covers the
   // chat and is jarring when you only wanted to read. Detect a touch-primary device so we
@@ -436,6 +453,18 @@
     // Only allow scrolling once the content exceeds the cap; below it, keep the
     // scrollbar hidden so the expanding field never flashes one.
     textarea.style.overflowY = full > 160 ? 'auto' : 'hidden';
+    // A scrollbar narrows the textarea's text column, so the mirror behind it has to give
+    // up the same width or the two would wrap at different points. Measured rather than
+    // assumed: the width is platform- and setting-dependent, and is 0 for overlay scrollbars.
+    // (Reading clientWidth here is after the height/overflow above, so it's the settled value.)
+    const sideBorder = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+    const gutter = textarea.offsetWidth - textarea.clientWidth - sideBorder;
+    mirror?.style.setProperty('--mara-hl-gutter', `${Math.max(0, gutter)}px`);
+  }
+
+  // Keep the mirror's viewport locked to the textarea's once the field is scrolling.
+  function syncScroll() {
+    if (mirror && textarea) mirror.scrollTop = textarea.scrollTop;
   }
 
   function submit() {
@@ -658,10 +687,21 @@
     </div>
   {/if}
   <div class="mara-field" style="--mara-actions-pad:{trailingCount * 1.95 + 0.4}rem">
+    <!-- The draft as it will be formatted, drawn behind the field. It carries the box the
+         textarea used to (background, border, text colour); the textarea itself is left
+         transparent on top, so the caret, selection and every editing behaviour stay
+         exactly as they were. Hidden from assistive tech — the textarea is the real
+         content, and this is a duplicate of it.
+
+         Kept on one line, and left alone by the formatter: the mirror renders with
+         `white-space: pre-wrap`, so a newline between the tag and the content would be a
+         newline in the drawn text and would push the whole draft off the first line. -->
+    <!-- prettier-ignore -->
+    <div class="mara-hl" bind:this={mirror} style={inputColor ? `color:${inputColor}` : undefined} aria-hidden="true">{@html highlighted}</div>
     <textarea
       bind:this={textarea}
       bind:value={text}
-      style={inputColor ? `color:${inputColor}` : undefined}
+      style={inputColor ? `caret-color:${inputColor}` : undefined}
       {placeholder}
       {disabled}
       maxlength={typedMax}
@@ -673,6 +713,7 @@
       }}
       onkeyup={onKeyup}
       onclick={updateMenus}
+      onscroll={syncScroll}
       onblur={() => {
         emojiMenu = null;
         mentionMenu = null;
@@ -1020,6 +1061,9 @@
     position: absolute;
     right: 0.3rem;
     bottom: 0.3rem;
+    /* Above the textarea (which is itself lifted over the formatting mirror), or the field
+       would cover the buttons and swallow their clicks. */
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 0.1rem;
@@ -1165,13 +1209,131 @@
        inside the field; sized to how many are shown via --mara-actions-pad. */
     padding: 0.45rem var(--mara-actions-pad, 4.3rem) 0.45rem 0.6rem;
     border-radius: 6px;
-    border: 1px solid var(--mara-border, #333);
-    background: var(--mara-input-bg, #2a2a2a);
-    color: inherit;
+    /* The visible box is drawn by .mara-hl behind this. The border is kept (transparent) so
+       both elements have the same geometry, and the background is dropped so the highlighted
+       copy shows through. */
+    border: 1px solid transparent;
+    background: transparent;
+    /* The text itself is invisible: what's read is the mirror behind it. Only the caret is
+       painted — inline `caret-color` overrides this with the user's own colour. */
+    color: transparent;
+    caret-color: var(--mara-fg, #e6e6e6);
+    /* Above the mirror, so clicks/drag-selection land on the real field. */
+    position: relative;
+    z-index: 1;
     max-height: 160px;
     /* Resting state: no scrollbar. autosize() switches this to `auto` only when
        the content passes the max-height cap. */
     overflow-y: hidden;
+  }
+  /* The placeholder is drawn by the textarea, not the mirror, so it needs a colour of its
+     own — it would otherwise inherit the transparent text above and never show. */
+  textarea::placeholder {
+    color: var(--mara-fg, #e6e6e6);
+    opacity: 0.5;
+  }
+  /* Translucent, so the highlighted text underneath still reads through the selection.
+     A solid selection would blank the field while dragging over it. */
+  textarea::selection {
+    background: rgba(59, 130, 246, 0.4);
+  }
+  /* ── The formatting mirror ────────────────────────────────────────────────────────────
+     A copy of the draft, marked up by highlightComposer and painted in the same box as the
+     textarea. Every property that affects where a glyph lands must match the textarea
+     exactly: font (both `inherit` from the field), padding, border width, and the wrapping
+     rules a textarea gets from the UA stylesheet (pre-wrap + break-word).
+
+     The same constraint governs the styles below: NOTHING may change a glyph's advance
+     width, or the highlighting drifts out from under the caret as a line goes on. Colour,
+     background, opacity and decoration are all free; font-family, font-size and font-weight
+     are not — which is why bold is drawn as a stroke and italic is forced to a synthesised
+     slant of the regular face rather than a (differently spaced) real italic. */
+  .mara-hl {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    pointer-events: none;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    /* Matches the textarea's padding, plus whatever width its scrollbar has taken (0 until
+       the field starts scrolling — see autosize). */
+    padding: 0.45rem calc(var(--mara-actions-pad, 4.3rem) + var(--mara-hl-gutter, 0px)) 0.45rem
+      0.6rem;
+    border: 1px solid var(--mara-border, #333);
+    border-radius: 6px;
+    background: var(--mara-input-bg, #2a2a2a);
+    color: inherit;
+  }
+  /* Syntax markers (`**`, `> `, backticks…) stay where they were typed but recede, so the
+     text reads as prose while the formatting is still obviously there — Discord's treatment. */
+  .mara-hl :global(.mara-hl-mk) {
+    opacity: 0.45;
+  }
+  /* Bold without `font-weight`: a stroke thickens the regular face in place, where a real
+     bold face would be wider and shove the rest of the line off the caret. */
+  .mara-hl :global(strong),
+  .mara-hl :global(.mara-hl-h1),
+  .mara-hl :global(.mara-hl-h2),
+  .mara-hl :global(.mara-hl-h3) {
+    font-weight: inherit;
+    -webkit-text-stroke: 0.4px currentColor;
+  }
+  .mara-hl :global(.mara-hl-h1) {
+    -webkit-text-stroke-width: 0.6px;
+  }
+  /* Italic is drawn by shearing the regular face, never by switching to the italic one — that
+     face is spaced differently and would drag the line out from under the caret (see the note
+     in highlight.ts). `<em>` itself is therefore held upright against the UA default; the
+     slant is applied per WORD, and a transform doesn't affect layout, so each word still
+     occupies exactly the width it would unstyled and the line breaks in the same places. */
+  .mara-hl :global(em) {
+    font-style: normal;
+  }
+  .mara-hl :global(.mara-hl-em) {
+    display: inline-block;
+    /* Pivoted near the baseline, so the word leans the way a real italic does rather than
+       sliding sideways. */
+    transform: skewX(-11deg);
+    transform-origin: 0 78%;
+  }
+  .mara-hl :global(.mara-hl-code) {
+    background: var(--mara-bg-alt, rgba(127, 127, 127, 0.18));
+    border-radius: 4px;
+  }
+  .mara-hl :global(.mara-hl-link) {
+    color: var(--mara-link, #5aa9ff);
+    text-decoration: underline;
+  }
+  .mara-hl :global(.mara-hl-emoji),
+  .mara-hl :global(.mara-hl-mention) {
+    color: var(--mara-accent, #3b82f6);
+    background: rgba(59, 130, 246, 0.14);
+    border-radius: 3px;
+  }
+  /* Hidden-until-clicked in the log; here it just shows as covered ground. */
+  .mara-hl :global(.mara-hl-spoiler) {
+    background: rgba(127, 127, 127, 0.3);
+    border-radius: 3px;
+  }
+  .mara-hl :global(.mara-hl-quote) {
+    background: rgba(127, 127, 127, 0.12);
+  }
+  .mara-hl :global(.mara-hl-subtext) {
+    opacity: 0.6;
+  }
+  /* Forced-colours mode paints every foreground with the system colour, which would make the
+     transparent textarea text visible on top of the mirror — two copies of the draft, one
+     over the other. Drop back to a plain field there. */
+  @media (forced-colors: active) {
+    .mara-hl {
+      display: none;
+    }
+    textarea {
+      color: inherit;
+    }
   }
   /* Pure icon button living INSIDE the field at the bottom-right corner, so it
      can't drift out of height-sync with the textarea: the field grows, the icon

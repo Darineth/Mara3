@@ -10,6 +10,7 @@ export {
   DEFAULT_EMOTICONS,
   type RenderTextOptions,
 } from './text.js';
+export { highlightComposer, type HighlightOptions } from './highlight.js';
 export {
   renderLine,
   monogramInitial,

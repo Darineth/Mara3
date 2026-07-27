@@ -4,7 +4,18 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.31] - unreleased
 
-_In development._
+### Added
+
+- **The message box shows its formatting as you type.** `**bold**` reads bold while you're
+  writing it, `*italic*` leans, a code span picks up its tint, spoilers go under a grey
+  block, headings and quotes and list markers stand out, and links, `@mentions` and your
+  server's `:emoji:` light up the moment they're recognised. The syntax stays where you put
+  it — the asterisks and backticks just fade back, so you can still see and edit exactly what
+  you typed. What the box shows is decided by the same code that renders the sent message, so
+  it can't promise formatting the message wouldn't get: an emoji name your server doesn't
+  have, or a `@name` nobody's using, stays plain text.
+  Everything about typing is unchanged — the cursor, selection, history recall, F-key macros
+  and the emoji/mention menus all behave exactly as before.
 
 ## [3.0.30] - 2026-07-25
 
