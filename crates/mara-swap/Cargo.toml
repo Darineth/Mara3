@@ -1,0 +1,23 @@
+[package]
+# NOT "mara-update", however much it wants to be. Windows' installer-detection heuristic
+# demands elevation from any unmanifested executable whose *filename* contains install /
+# setup / update / patch — which is what cargo names this crate's test binary, so `cargo
+# test` fails with "requires elevation" (os error 740) before a line of it runs. The name
+# describes the mechanism instead; the update flow that uses it lives in each client.
+name = "mara-swap"
+version = "0.1.0"
+description = "In-place swap of a portable Mara client's executable: verify an archive, install what's inside."
+authors = ["Darineth"]
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[dependencies]
+sha2 = "0.10"
+# The shapes the release publishes: .zip for the Windows builds, .tar.gz for Linux (where
+# it's what carries the executable bit). zip pulls flate2 anyway, so tar costs almost nothing.
+# Version matched to the copy tauri-plugin-updater already puts in the shell's tree, so the
+# modern client doesn't compile two of them.
+zip = { version = "4", default-features = false, features = ["deflate"] }
+flate2 = "1"
+tar = "0.4"

@@ -1,6 +1,6 @@
 [package]
 name = "mara-client-legacy"
-version = "3.0.32"
+version = "3.0.34"
 description = "Mara 3 — legacy desktop client (Windows 7, Tauri 1)"
 authors = ["Darineth"]
 edition = "2021"
@@ -21,6 +21,16 @@ serde_json = "1"
 # feature isn't otherwise enabled, dropping that default and failing to compile — so
 # force it on here; feature unification then restores it for kuchikiki.
 indexmap = { version = "1", features = ["std"] }
+# In-place update (src/update.rs). The file work is shared with the modern shell so the two
+# clients can't drift; reqwest fetches the manifest and archive. rustls (not the OS stack):
+# Windows 7's schannel only negotiates TLS 1.2 on a machine that's been updated and told to,
+# and GitHub accepts nothing less — bundling the TLS makes the download work regardless.
+mara-swap = { path = "../../../crates/mara-swap" }
+reqwest = { version = "0.12", default-features = false, features = [
+  "blocking",
+  "rustls-tls",
+  "json",
+] }
 
 [features]
 # Tauri 1 release builds enable this (the CLI passes --features custom-protocol).

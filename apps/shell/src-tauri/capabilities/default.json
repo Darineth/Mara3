@@ -11,6 +11,9 @@
     "allow-set-auto-connect",
     "allow-open-app",
     "allow-switch-server",
-    "allow-mara-log"
+    "allow-mara-log",
+    "allow-check-update",
+    "allow-install-update",
+    "allow-restart-client"
   ]
 }

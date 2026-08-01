@@ -207,11 +207,16 @@ same way: a `#[tauri::command]` in `lib.rs` + a wrapper in `native.ts`.
 
 ## Updates (portable "update available" nudge)
 
-The client stays a **portable single exe** and never self-installs — but it can
-_notify_ when a newer build exists. One base URL drives it: `MARA_UPDATE_BASE_URL`
-(default the repo's GitHub Releases `latest` download endpoint, so `<base>/<asset>`
-always resolves to the newest release; point it at any host you like). The
-packaging scripts:
+The client stays a **portable single exe** — and updates itself in place rather than
+through an installer: the banner's **Update now** downloads the archive, checks it against
+the manifest's SHA-256, swaps this executable for the one inside, and restarts (see
+`src-tauri/src/update.rs`, with the file work in `crates/mara-swap`). The **Download** link
+is still offered for doing it by hand.
+
+Two URLs drive it, and they are not the same host: `MARA_UPDATE_BASE_URL` is where the
+*archive* is downloaded from (default the repo's GitHub Releases `latest` endpoint), while
+`MARA_MANIFEST_BASE_URL` is where the *manifest* is read from (default the CORS-enabled
+raw-content copy of `updates/`). The packaging scripts:
 
 - bake `MARA_UPDATE_URL = <base>/latest-<os>.json` into the binary (`scripts/package.mjs`,
   OS-specific: `latest-windows-x64.json` / `latest-linux-x64.json`), and
@@ -219,17 +224,19 @@ packaging scripts:
 
 To publish an update: attach the new `Mara3-windows-x64-latest.zip` **and** the generated
 `latest-windows-x64.json` to the release (`pnpm release:github`, or upload them to your own
-host); the host must serve the JSON with `Access-Control-Allow-Origin: *` (it's fetched
-cross-origin). On launch the client compares its `version`
+host). On launch the client compares its `version`
 to its own and, if newer, shows a dismissible **"update available"** banner with a
 **Download** link (opens the host in the system browser). The banner shows in two
 places: the launch picker, and — because `lib.rs` injects the update context on every
 page — the live web UI itself (so it persists after auto-connect navigates past the
 picker; a plain browser, with nothing to update, never shows it).
 
-> **Host requirement:** serve `latest-windows-x64.json` with `Access-Control-Allow-Origin: *`
-> (it's fetched cross-origin from both the picker and the web UI). On a static host
-> that's one header (nginx `add_header`, Apache `Header set`, S3/CDN CORS rule).
+> **Host requirement:** the picker asks Rust for the manifest, so it doesn't care about
+> CORS — but the **web UI's** banner still fetches it from the page. Serve the manifest with
+> `Access-Control-Allow-Origin: *` or that second banner goes quiet. On a static host that's
+> one header (nginx `add_header`, Apache `Header set`, S3/CDN CORS rule). This is exactly
+> what the GitHub *Releases* endpoint does not do — it redirects to a host that sends no CORS
+> headers, which is why the manifest is read from raw content instead.
 
 **Permanent download link (for a MOTD etc.).** The version-stamped zip name changes
 every release, so it's a poor link target. Packaging therefore also emits stable-named
@@ -238,10 +245,13 @@ the versioned zips. Upload them to the same host and link the permanent URL from
 e.g. a server MOTD (which renders markdown):
 `[Mara 3 for Windows](https://<host>/<path>/Mara3-windows-x64-latest.zip)`.
 
-Build with `MARA_UPDATE_URL=` (empty) to ship with the check disabled. This only
-notifies; to graduate to Tauri's **signed, silent** auto-installer later, see the
-deferred item in the repo `TODO.md` (the signing keypair under `.tauri/` and the
-embedded pubkey in `tauri.conf.json` are already in place).
+Build with `MARA_UPDATE_URL=` (empty) to ship with the check disabled.
+
+The install is deliberately narrow: it runs only from the bundled picker (the command is
+granted to the local page and withheld from `grant_remote_ipc`), and Rust re-reads the baked
+manifest itself rather than trusting the caller for a URL — so a server you connect to can
+neither trigger an update nor choose what it installs. Tauri's own updater plugin stays
+unused: it replaces app *bundles*, which is the model this client exists to avoid.
 
 ## Security — important
 

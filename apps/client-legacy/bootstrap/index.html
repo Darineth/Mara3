@@ -120,6 +120,26 @@
         white-space: nowrap;
         cursor: pointer;
       }
+      /* "Update now" leads (it's the one that needs no follow-up), so the manual download
+         beside it steps back to an outline. */
+      #update-install {
+        padding: 0.25rem 0.6rem;
+        border-radius: 5px;
+        background: #7aa2f7;
+        color: #15161e;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        min-width: 7.5rem;
+      }
+      #update-install[hidden] {
+        display: none;
+      }
+      #update-install:not([hidden]) ~ #update-link {
+        background: transparent;
+        color: #a9b1d6;
+        border: 1px solid #3a3a3a;
+      }
       #update-dismiss {
         padding: 0.1rem 0.4rem;
         background: transparent;
@@ -147,6 +167,7 @@
   <body>
     <div id="update" hidden>
       <span id="update-text"></span>
+      <button id="update-install" type="button" hidden>Update now</button>
       <a id="update-link" href="#" role="button">Download</a>
       <button id="update-dismiss" type="button" title="Dismiss" aria-label="Dismiss">×</button>
     </div>
@@ -247,13 +268,28 @@
         const info = window.__MARA_UPDATE__;
         if (!info || !info.manifestUrl) return; // updates off → leave the bare version
         setMeta('Checking for updates…');
+        // Ask Rust first. The manifest is cross-origin to this page, and a host that
+        // answers without CORS headers makes the fetch below fail no matter what it
+        // returns — which is how every shipped client ended up reporting "Update check
+        // failed". Rust isn't bound by that. The fetch stays as the fallback for running
+        // this page in a plain browser.
         let manifest;
-        try {
-          const res = await fetch(info.manifestUrl, { cache: 'no-store' });
-          if (!res.ok) throw 0;
-          manifest = await res.json();
-        } catch {
-          return setMeta('Update check failed');
+        if (invoke) {
+          try {
+            manifest = await invoke('check_update');
+          } catch {
+            manifest = undefined; // command absent on this build — fall through
+          }
+        }
+        if (manifest === null) return setMeta(''); // updates deliberately off
+        if (!manifest) {
+          try {
+            const res = await fetch(info.manifestUrl, { cache: 'no-store' });
+            if (!res.ok) throw 0;
+            manifest = await res.json();
+          } catch {
+            return setMeta('Update check failed');
+          }
         }
         if (!manifest || !manifest.version) return setMeta('Update check failed');
         if (cmpVersion(manifest.version, info.current) <= 0) return setMeta('Up to date');
@@ -276,11 +312,57 @@
           link.hidden = true;
         }
 
+        // Offer the in-app install when this client can actually do it: a native build
+        // (there's a Rust side to ask) whose manifest publishes the checksum the install is
+        // verified against. Otherwise the manual Download link stands alone, as before.
+        const install = document.getElementById('update-install');
+        if (invoke && info.canInstall && typeof manifest.sha256 === 'string' && manifest.sha256) {
+          install.hidden = false;
+          install.addEventListener('click', () => installUpdate(manifest.version));
+        }
+
         const bar = document.getElementById('update');
         document.getElementById('update-dismiss').addEventListener('click', () => {
           bar.hidden = true;
         });
         bar.hidden = false;
+      }
+
+      // Download, verify and swap in Rust, then relaunch into the new build. Rust re-reads
+      // the manifest itself and takes the URL and checksum from there — we pass nothing but
+      // the request — so this button can't be talked into installing something else. The
+      // button doubles as the progress readout; anything that goes wrong says so and leaves
+      // the manual Download link right where it was.
+      async function installUpdate(version) {
+        const button = document.getElementById('update-install');
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Starting…';
+        let stopListening;
+        try {
+          const events = T && T.event;
+          if (events && events.listen) {
+            stopListening = await events.listen('update://progress', ({ payload }) => {
+              const received = (payload && payload.received) || 0;
+              const total = (payload && payload.total) || 0;
+              button.textContent = total
+                ? `Downloading ${Math.floor((received / total) * 100)}%`
+                : `Downloading ${(received / 1048576).toFixed(1)} MB`;
+            });
+          }
+          const installed = await invoke('install_update');
+          button.textContent = 'Restarting…';
+          document.getElementById('update-text').textContent =
+            `Mara 3 ${installed || version} installed. Restarting…`;
+          await invoke('restart_client');
+        } catch (err) {
+          button.disabled = false;
+          button.textContent = label;
+          document.getElementById('update-text').textContent =
+            `Couldn't install the update: ${err && err.message ? err.message : err}`;
+        } finally {
+          if (stopListening) stopListening();
+        }
       }
 
       // Ensure exactly one trailing slash: required for a server hosted under a

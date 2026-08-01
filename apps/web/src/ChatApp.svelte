@@ -33,7 +33,12 @@
   import { openPopout, popoutBus, type PopoutBusMessage, type SoloView } from './lib/popout.js';
   import type { MaraSettings, MessageStyle, Theme } from './lib/settings.js';
   import { clientBuild, shortBuild } from './lib/version.js';
-  import { getUpdateStatus, updateStatusText, type UpdateStatus } from './lib/update.js';
+  import {
+    desktopVersion,
+    getUpdateStatus,
+    updateStatusText,
+    type UpdateStatus,
+  } from './lib/update.js';
   import { uploadAttachment, uploadAvatar, uploadEmoji } from './lib/upload.js';
   import MacrosDialog from './MacrosDialog.svelte';
   import FormattingHelp from './FormattingHelp.svelte';
@@ -153,6 +158,8 @@
   // Desktop-only: the result of the launch update check (shared/memoized with the
   // UpdateBanner), shown in the menu so the user can see a check ran and its outcome.
   let updateStatus = $state<UpdateStatus | null>(null);
+  // The installed client's version — absent in a plain browser, where there's only the page.
+  const appVer = desktopVersion();
   onMount(async () => {
     if (isDesktop()) updateStatus = await getUpdateStatus();
   });
@@ -1286,9 +1293,16 @@
                 · {$self.name}{/if}
             </div>
             <div class="versions">
-              <span class:warn={stale}
-                >client {clientBuild.version} · {shortBuild(clientBuild.buildId)}</span
+              <!-- "web", not "client": this is the build of the page, which the server
+                   serves and updates on its own schedule. In a native client the app's own
+                   version is a separate number (below) — calling this one "client" made an
+                   up-to-date app look a release behind whenever the server was. -->
+              <span class:warn={stale} title="The web UI this server is serving"
+                >web {clientBuild.version} · {shortBuild(clientBuild.buildId)}</span
               >
+              {#if appVer}
+                <span title="The Mara client installed on this device">app {appVer}</span>
+              {/if}
               {#if $serverInfo}
                 <span>server {$serverInfo.version} · proto {$serverInfo.protocol}</span>
               {/if}

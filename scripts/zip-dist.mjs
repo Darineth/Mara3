@@ -462,11 +462,16 @@ for (const { component, manifest, label } of [
   { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
   { component: 'Mara3-windows7-x64', manifest: 'latest-windows7-x64.json', label: 'windows7-x64' },
   { component: 'Mara3-linux-x64', manifest: 'latest-linux-x64.json', label: 'linux-x64' },
+  // The APK gets one too. It can't self-install the way the desktop clients do (Android
+  // hands a sideloaded package to the system installer), but without a manifest to poll its
+  // picker had no way to even say an update existed.
+  { component: 'Mara3-android-arm64', manifest: 'latest-android-arm64.json', label: 'android-arm64' },
 ]) {
   const built = archives.find((a) => a.component === component);
   if (!built) continue;
   const comp = COMPONENTS.find((c) => c.name === component);
-  const ext = comp.archive === 'tar.gz' ? '.tar.gz' : '.zip';
+  // The Android component ships the .apk as-is rather than an archive of it.
+  const ext = comp.ext ? comp.ext : comp.archive === 'tar.gz' ? '.tar.gz' : '.zip';
   // The manifest version is the CLIENT version (not the product version), so the nudge
   // compares like-for-like against the installed shell's baked version — an app-only
   // release never makes installed clients think a new client exists.

@@ -34,10 +34,15 @@ const dryRun = process.argv.includes('--dry-run');
 // instead of failing the whole release. A present-but-broken WSL still hard-fails.
 const optional = process.argv.includes('--optional');
 
-// Keep in sync with package.mjs / zip-dist.mjs. The Linux client polls its own manifest.
-const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
-const updateBase = (process.env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
-const updateUrl = process.env.MARA_UPDATE_URL ?? `${updateBase}/latest-linux-x64.json`;
+// Keep in sync with package.mjs. The Linux client polls its own manifest, read from the
+// CORS-enabled raw-content copy of `updates/` — the releases endpoint redirects to a host
+// with no CORS headers, which blocks the picker's fetch outright.
+const MANIFEST_BASE_URL = 'https://raw.githubusercontent.com/Darineth/Mara3/main/updates';
+const manifestBase = (process.env.MARA_MANIFEST_BASE_URL || MANIFEST_BASE_URL).replace(
+  /\/+$/,
+  '',
+);
+const updateUrl = process.env.MARA_UPDATE_URL ?? `${manifestBase}/latest-linux-x64.json`;
 
 const distro = process.env.MARA_WSL_DISTRO || '';
 const distroArg = distro ? `-d ${distro}` : '';

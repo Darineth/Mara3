@@ -4,7 +4,40 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.34] - unreleased
 
-_In development._
+### Added
+
+- **The desktop clients update themselves.** When a new build is out, the banner on the
+  server picker now offers **Update now** beside the download link: it fetches the archive,
+  checks it against the checksum the release publishes, puts the new executable in place of
+  the running one, and restarts into it — a few seconds, no unzipping over your folder.
+  Your `settings.json`, your logs, and (on the Windows 7 client) the WebView2 runtime you
+  installed are all left exactly where they are, and the previous executable is kept beside
+  the new one until the next launch, so a bad update is one rename away from undone.
+  Windows, Linux and the Windows 7 client all do this; the download link is still there if
+  you'd rather do it by hand. Nothing is written until the download is complete and its
+  checksum matches, and what gets installed is decided by the build's own update manifest —
+  a server you connect to can neither name it nor ask for it.
+
+### Fixed
+
+- **The "update available" banner actually appears now.** It never could: the clients read
+  their update manifest from the GitHub Releases endpoint, which redirects to a host that
+  answers without CORS headers, so the browser discarded every response and the check quietly
+  reported "Update check failed" on every client ever shipped. The clients now ask their own
+  Rust side for the manifest — which no such rule applies to — and the published manifest URL
+  points at the copy that *is* served with CORS, so the in-page check works too.
+- **The Windows 7 client no longer needs its launcher.** It now finds the bundled WebView2
+  runtime beside itself at startup, so double-clicking `Mara3.exe` works — where before, only
+  `Run-Mara3.bat` set the variable that points at it, and starting the exe any other way gave
+  you a blank window. That also removes a trap the new self-update would have walked into: its
+  relaunch worked only because a spawned process inherits its parent's environment. The
+  launcher still ships and still works, and an explicit `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
+  still wins, for anyone keeping the runtime elsewhere.
+- **Android says when there's an update.** The APK was built without an update manifest URL
+  baked in at all, so it never checked, and no Android manifest was published for it to check
+  against. Both exist now, and the phone shows the same banner as the desktop clients — with
+  the download link rather than an install button, since a sideloaded APK is replaced through
+  Android's own installer.
 
 ## [3.0.33] - 2026-07-31
 

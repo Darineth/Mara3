@@ -1,6 +1,6 @@
 [package]
 name = "mara-shell"
-version = "3.0.32"
+version = "3.0.34"
 description = "Mara 3 — cross-platform chat"
 authors = ["Darineth"]
 edition = "2021"
@@ -25,6 +25,12 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Desktop-only: signed auto-update (replaces Mara 2's MaraUpdater).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
+# In-place update of the portable install (src/update.rs): the file work is shared with the
+# Windows 7 client so the two can't drift, and reqwest fetches the manifest and archive.
+# It's already in the tree via the updater plugin — naming it here costs no extra build —
+# and tracks that plugin's TLS choice (rustls) rather than pulling in a second stack.
+mara-swap = { path = "../../../crates/mara-swap" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Windows-only: RegisterApplicationRestart, so the client is relaunched after a
 # Restart Manager reboot (Windows Update). Version pinned to the copy Tauri already

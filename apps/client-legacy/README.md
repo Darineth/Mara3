@@ -51,9 +51,10 @@ connect to servers you trust, since that page can then call the native command.
 
 ## Updates (portable "update available" nudge)
 
-Mirrors the modern shell's nudge — the exe stays portable and never self-installs,
-but the picker shows an **"update available"** banner (with a **Download** link that
-opens the system browser via Tauri 1's `shell.open`) when a newer build exists. Because
+Mirrors the modern shell — the exe stays portable, and the picker's **"update available"**
+banner offers **Update now** (download, checksum, swap the exe, restart — shared with the
+modern client via `crates/mara-swap`) beside the **Download** link that opens the system
+browser via Tauri 1's `shell.open`. Because
 this is a **separate download** from the modern desktop client, it polls its **own**
 manifest: `MARA_UPDATE_BASE_URL/latest-windows7-x64.json` (default base the repo's GitHub
 Releases `latest` download endpoint, baked in by `scripts/package-legacy.mjs`),
@@ -101,19 +102,26 @@ Several in-tree workarounds make the binary build and actually run on Win7:
 The built exe's import table is verified to reference **only Win7-available DLLs/APIs**
 (`dumpbin /imports` — no ETW, no UCRT, nothing Win8+).
 
-### 2. Add the fixed-version WebView2 runtime + launcher
+### 2. Add the fixed-version WebView2 runtime
 
 Win7 has no evergreen WebView2, so ship a **Fixed Version** runtime beside the exe.
-Download it from Microsoft's WebView2 distribution page (last Win7-capable ≈ Chromium 109) and extract it into a `webview2-runtime` folder next to `Mara3.exe`. Then
-launch via [`Run-Mara3.bat`](Run-Mara3.bat) (ship it too), which points
-`WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` at that folder so WebView2 uses the fixed runtime.
+Download it from Microsoft's WebView2 distribution page (last Win7-capable ≈ Chromium 109)
+and extract it into a `webview2-runtime` folder next to `Mara3.exe`. That's all: at startup
+`use_bundled_webview2` (`src-tauri/src/main.rs`) points `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
+at that folder before the first window is built, which is when WebView2's loader reads it —
+so double-clicking `Mara3.exe` works, and the self-update's relaunch doesn't depend on
+inheriting the variable from whatever started the app. An explicit value in the environment
+always wins, so [`Run-Mara3.bat`](Run-Mara3.bat) (which sets it, then launches the exe) still
+works and is still shipped for anyone whose shortcut points at it, or who keeps the runtime
+elsewhere. The folder is only adopted when it really holds `msedgewebview2.exe`, so testing
+this build on a modern Windows still uses the evergreen runtime.
 
 So a Win7 deployment folder is:
 
 ```
-Mara3.exe
-Run-Mara3.bat             <- run this
+Mara3.exe                 <- run this
 webview2-runtime\         <- the extracted fixed runtime (msedgewebview2.exe, ~120 MB)
+Run-Mara3.bat             <- optional launcher / override
 settings.json             <- created on first run (portable, next to the exe)
 ```
 

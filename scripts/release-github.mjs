@@ -98,6 +98,8 @@ const stableUpdateAssets = [
   'Mara3-windows7-x64-latest.zip',
   'latest-linux-x64.json',
   'Mara3-linux-x64-latest.tar.gz',
+  'latest-android-arm64.json',
+  'Mara3-android-arm64-latest.apk',
 ];
 const missing = stableUpdateAssets.filter((n) => !files.has(n));
 if (missing.length) {

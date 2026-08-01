@@ -8,6 +8,9 @@
 #[cfg(windows)]
 mod win7_compat;
 
+/// In-place update of this portable install, mirroring the modern shell's.
+mod update;
+
 use std::fs::create_dir_all;
 use std::io::Write;
 use std::path::PathBuf;
@@ -591,7 +594,40 @@ fn open_app(window: tauri::Window) -> Result<(), String> {
     window.eval(&js).map_err(|e| e.to_string())
 }
 
+/// Point WebView2 at the fixed-version runtime sitting beside the executable, before any
+/// webview exists.
+///
+/// Windows 7 has no evergreen WebView2, so this client ships next to a `webview2-runtime`
+/// folder the user fills in, and `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` is what tells the
+/// loader to use it. That used to be `Run-Mara3.bat`'s only job — which made the launcher
+/// load-bearing in ways nobody could see: run the .exe directly and you got a blank window,
+/// and the self-update's relaunch only worked because a spawned process inherits its
+/// parent's environment, so the variable the .bat set happened to ride along. Setting it
+/// here removes both traps: the loader reads the variable when it *creates* the browser
+/// environment (at window build, below), not at process start, so in-process is soon enough.
+///
+/// An explicit value from the environment always wins, so the .bat — and anyone pointing at
+/// a runtime elsewhere — keeps working. The folder is only adopted when it actually holds a
+/// runtime, so a machine with the evergreen WebView2 (any modern Windows, where this client
+/// is often tested) isn't sent to an empty directory.
+#[cfg(windows)]
+fn use_bundled_webview2() {
+    const VAR: &str = "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER";
+    if std::env::var_os(VAR).is_some_and(|v| !v.is_empty()) {
+        return;
+    }
+    let Ok(dir) = exe_dir() else { return };
+    let runtime = dir.join("webview2-runtime");
+    if runtime.join("msedgewebview2.exe").is_file() {
+        std::env::set_var(VAR, &runtime);
+    }
+}
+
 fn main() {
+    // Before Tauri builds a window — see the function's note on why this can't wait.
+    #[cfg(windows)]
+    use_bundled_webview2();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             mara_log,
@@ -602,9 +638,16 @@ fn main() {
             open_popout,
             request_attention,
             close_self,
-            focus_self
+            focus_self,
+            update::check_update,
+            update::install_update,
+            update::restart_client
         ])
         .setup(|app| {
+            // Sweep away the executable a previous self-update stepped aside (see update.rs).
+            // Only possible now that its process — this one's predecessor — has exited.
+            update::clear_stale_backup();
+
             // Open the bundled picker page first; it persists the chosen server and
             // asks open_app to navigate to the live UI. Seed it with saved settings.
             let settings = load_settings();
@@ -618,7 +661,10 @@ fn main() {
             // `http://tauri.localhost` with dangerousUseHttpScheme); the remote server page
             // never matches. Mirrors the modern shell.
             let init = format!(
-                "window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
+                // canInstall: this client can swap itself in place (see update.rs); the
+                // picker keys its "Update now" button off it, as the modern shell's does.
+                "window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url}, \
+                   canInstall: true }}; \
                  (function () {{ \
                    var l = window.location; \
                    if (l.protocol !== 'tauri:' && l.hostname !== 'tauri.localhost') return; \

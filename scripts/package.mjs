@@ -37,10 +37,25 @@ const skipAndroid = args.has('--skip-android');
 // zip-dist.mjs's UPDATE_BASE_URL.
 const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
 
+// Where the client READS the manifest, which is not where it downloads the archive from.
+// The releases endpoint above redirects to a host that sends no CORS headers, so a fetch
+// from the picker page (or the hosted chat page) is blocked by the browser and the check
+// dies with "Update check failed" — which is exactly what shipped clients did. The same
+// manifests are committed to `updates/` and served by raw.githubusercontent with
+// `Access-Control-Allow-Origin: *`, so read them there and keep the download on releases.
+// Override with MARA_MANIFEST_BASE_URL (self-hosting: any CORS-enabled folder will do).
+const MANIFEST_BASE_URL = 'https://raw.githubusercontent.com/Darineth/Mara3/main/updates';
+
 // The shell builds for the host OS, so it polls that OS's manifest (matching the name
 // zip-dist.mjs emits). Build the Linux client on Linux, the Windows one on Windows.
 const CLIENT_MANIFEST =
   process.platform === 'linux' ? 'latest-linux-x64.json' : 'latest-windows-x64.json';
+
+// The APK is built from the same crate but polls its own manifest — the download is an APK,
+// not a desktop archive, and the Android build can happen on either host OS. Without this
+// the Android build inherited no MARA_UPDATE_URL at all, which bakes in an empty one and
+// silently disables the update banner on the phone.
+const ANDROID_MANIFEST = 'latest-android-arm64.json';
 
 const LAUNCHER = `@echo off
 cd /d "%~dp0"
@@ -109,10 +124,11 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
                                  # mobile tab) is flagged "flapping" and held on THIS longer
                                  # window instead, so their churn stays silent until they send
                                  # a message or stay gone this long. 0 = disable flap damping.
-#MARA_UNRELIABLE_DROPS=2         # after this many join->leave cycles with NO message sent, a
-                                 # client is flagged "unreliable" and its join/disconnect are
-                                 # muted entirely until it next interacts (catches slow churn
-                                 # that spaces reconnects past the flap window). 0 = off.
+#MARA_UNRELIABLE_DROPS=1         # after this many dropped connections, a client is flagged
+                                 # "unreliable" and its join/disconnect are muted entirely
+                                 # until it next sends a message (which reveals it again).
+                                 # At the default of 1 the room sees someone go once, then
+                                 # hears nothing until they speak. 0 = off (always announce).
 
 # --- Messages ---
 #MARA_MAX_MESSAGE_CHARS=10000  # longest chat/emote/private message accepted, in characters.
@@ -398,7 +414,7 @@ if (!skipDesktop) {
     // zip-dist.mjs points its download at <base>/<archive>. Set MARA_UPDATE_URL= (empty)
     // to bake in nothing → the client never shows an update banner.
     if (env.MARA_UPDATE_URL === undefined) {
-      const base = (env.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+      const base = (env.MARA_MANIFEST_BASE_URL || MANIFEST_BASE_URL).replace(/\/+$/, '');
       env.MARA_UPDATE_URL = `${base}/${CLIENT_MANIFEST}`;
     }
     run('pnpm --filter @mara/shell tauri:build', env);
@@ -417,10 +433,15 @@ if (!skipAndroid) {
   } else {
     // Signed release APK (arm64 — the only Android ABI we ship). Signing config + keystore
     // live in gen/android (gitignored); without them Gradle emits an *-unsigned.apk instead.
-    run('pnpm --filter @mara/shell tauri android build --apk --target aarch64', {
-      ...process.env,
-      ...androidEnv,
-    });
+    const apkEnv = { ...process.env, ...androidEnv };
+    // Bake in the Android manifest URL, exactly as the desktop build does with its own —
+    // the picker polls it and shows the "update available" banner. Respects an explicit
+    // MARA_UPDATE_URL= (empty) to build an APK that never checks.
+    if (apkEnv.MARA_UPDATE_URL === undefined) {
+      const base = (apkEnv.MARA_MANIFEST_BASE_URL || MANIFEST_BASE_URL).replace(/\/+$/, '');
+      apkEnv.MARA_UPDATE_URL = `${base}/${ANDROID_MANIFEST}`;
+    }
+    run('pnpm --filter @mara/shell tauri android build --apk --target aarch64', apkEnv);
     const relDir = join(
       root,
       'apps',

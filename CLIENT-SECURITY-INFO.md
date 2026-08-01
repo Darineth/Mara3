@@ -33,8 +33,14 @@ Granted to the remote origin by `grant_remote_ipc`
 
 **Not** granted to the remote origin (local picker capability only): `get_settings`,
 `set_server_url`, `set_auto_connect`, `open_app` — a server can't read/rewrite the
-settings file or force a redirect. The opener and updater plugins are **not** granted
-to the remote origin either.
+settings file or force a redirect — and `check_update`, `install_update`,
+`restart_client`, so a server can't make the client download and run anything. The opener
+and updater plugins are **not** granted to the remote origin either.
+
+The self-update is doubly bounded: beyond that capability line, `install_update` takes no
+arguments. Rust re-fetches the manifest URL compiled into the build and reads the download
+location and SHA-256 from it, so a caller can ask for an update but can never say what the
+update *is*; a mismatched checksum installs nothing.
 
 Injected globals: only `__MARA_UPDATE__` (this build's version + the public manifest
 URL — non-sensitive, needed by the hosted update banner) reaches the remote page. The

@@ -6,8 +6,10 @@
  * navigated past the picker into the live UI.
  *
  * Plain browsers have no `__MARA_UPDATE__` (and nothing to update), so every check
- * here is a safe no-op outside the shell. The check only NOTIFIES — the client stays
- * a portable single exe; the Download link opens the host in the system browser.
+ * here is a safe no-op outside the shell. This surface only NOTIFIES: the install lives
+ * in the client's own picker, which is deliberately out of a server page's reach (see
+ * apps/shell/src-tauri/src/update.rs), so the Download link opens the host in the system
+ * browser as before.
  *
  * NOTE: the manifest is fetched cross-origin (this UI's server origin → the update
  * host), so the host MUST serve it with `Access-Control-Allow-Origin: *` (or this
@@ -60,7 +62,10 @@ export function updateConfig(): UpdateConfig | null {
 }
 
 /** The running desktop client's version, or null in a plain browser. Used for the
- *  titlebar / splash so they show the SHELL's version (not the web build's). */
+ *  titlebar / splash / menu so they show the SHELL's version (not the web build's) — the
+ *  two move independently, since the server decides which web build you load, and showing
+ *  only one of them under the label "client" is how an up-to-date app reads as a release
+ *  behind whenever its server is. */
 export function desktopVersion(): string | null {
   return updateConfig()?.current ?? null;
 }

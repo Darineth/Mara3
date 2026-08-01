@@ -42,14 +42,15 @@ const skipBuild = process.argv.includes('--skip-build');
 
 // "Update available" nudge: bake the Win7 client's OWN manifest URL into the build.
 // It's a separate download from the modern desktop, so it polls latest-windows7-x64.json
-// (not latest-windows-x64.json). Defaults to the repo's GitHub Releases "latest" download
-// endpoint — keep UPDATE_BASE_URL in sync with package.mjs / zip-dist.mjs. Override with
-// MARA_UPDATE_BASE_URL, or MARA_UPDATE_URL= (empty) to disable. zip-dist.mjs emits the
-// matching latest-windows7-x64.json.
-const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/download';
+// (not latest-windows-x64.json). Read from the CORS-enabled raw-content copy of `updates/`
+// rather than the releases endpoint, which redirects to a host that sends no CORS headers
+// and so breaks the picker's fetch — keep MANIFEST_BASE_URL in sync with package.mjs.
+// Override with MARA_MANIFEST_BASE_URL, or MARA_UPDATE_URL= (empty) to disable. zip-dist.mjs
+// emits the matching latest-windows7-x64.json.
+const MANIFEST_BASE_URL = 'https://raw.githubusercontent.com/Darineth/Mara3/main/updates';
 const buildEnv = { ...process.env };
 if (buildEnv.MARA_UPDATE_URL === undefined) {
-  const base = (buildEnv.MARA_UPDATE_BASE_URL || UPDATE_BASE_URL).replace(/\/+$/, '');
+  const base = (buildEnv.MARA_MANIFEST_BASE_URL || MANIFEST_BASE_URL).replace(/\/+$/, '');
   buildEnv.MARA_UPDATE_URL = `${base}/latest-windows7-x64.json`;
 }
 
@@ -171,7 +172,8 @@ Get the RIGHT download — the "Fixed Version" runtime, NOT the Evergreen instal
 (MicrosoftEdgeWebview2Setup.exe) or the Edge offline installer; those contain/install Edge
 but do not give you a runtime folder with msedgewebview2.exe.
 
-Then run Run-Mara3.bat.
+Then start Mara3.exe (double-click it, or run Run-Mara3.bat — either works; the exe
+finds this folder on its own).
 `,
   );
   console.log(

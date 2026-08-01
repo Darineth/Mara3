@@ -29,6 +29,11 @@ fn main() {
             "open_popout",
             "close_self",
             "focus_self",
+            // Self-update. Declared here for the permission, but granted only to the local
+            // picker (capabilities/default.json) — never to a server's origin.
+            "check_update",
+            "install_update",
+            "restart_client",
         ]));
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }

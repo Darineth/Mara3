@@ -3,6 +3,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+/// In-place update of the portable install. Desktop only: the Android build updates
+/// through its APK, and there's no writable install directory to swap anyway.
+#[cfg(desktop)]
+mod update;
+
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::CapabilityBuilder;
@@ -14,10 +19,14 @@ use tauri_plugin_opener::OpenerExt;
 /// default — disables the check entirely (no banner ever shows). The manifest is
 /// `{ "version": "3.0.1", "url": "https://…/Mara3-windows-x64-….zip", "notes": "…" }`
 /// (its own `latest-windows-x64.json`);
-/// the bootstrap picker compares `version` to this build's version and, if newer,
-/// shows a non-blocking "update available" banner linking to `url`. We deliberately
-/// keep the portable single-exe model — this only *notifies*; it never self-installs.
-const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
+/// the bootstrap picker compares `version` to this build's version and, if newer, shows a
+/// non-blocking "update available" banner offering to install it (see update.rs) or to
+/// download it by hand. The install keeps the portable single-exe model — it swaps this
+/// executable for the one in the archive rather than running an installer.
+///
+/// Read by Rust as well as by the page: `check_update` fetches this manifest itself,
+/// because the page's own fetch is cross-origin and dies without CORS headers.
+pub(crate) const UPDATE_MANIFEST_URL: &str = match option_env!("MARA_UPDATE_URL") {
     Some(u) => u,
     None => "",
 };
@@ -428,9 +437,11 @@ fn grant_remote_ipc(app: &AppHandle, url: &tauri::Url) {
         }
     }
     // Minimal set the loaded server page actually needs. Deliberately NOT granted:
-    // `opener:default` (replaced by the scheme-checked `open_external` command below) and
-    // `updater:default` (the update flow is a plain manifest fetch + external link — the
-    // updater plugin is never invoked from the page, so it stays unreachable to servers).
+    // `opener:default` (replaced by the scheme-checked `open_external` command below),
+    // `updater:default` (the updater plugin is never invoked from the page, so it stays
+    // unreachable to servers), and `allow-install-update`/`allow-restart-client` — the
+    // self-update is driven by the bundled picker alone, so no server can ask this client
+    // to download and run a new executable.
     let cap = CapabilityBuilder::new(id)
         .remote(origin)
         .local(false)
@@ -662,7 +673,10 @@ pub fn run() {
         request_attention,
         open_popout,
         close_self,
-        focus_self
+        focus_self,
+        update::check_update,
+        update::install_update,
+        update::restart_client
     ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -686,6 +700,11 @@ pub fn run() {
             // `--resumed` flag, reconnects to the last server. No-op on other platforms.
             #[cfg(windows)]
             register_for_restart();
+
+            // Sweep away the executable a previous self-update stepped aside (see update.rs).
+            // Only possible now that its process — this one's predecessor — has exited.
+            #[cfg(desktop)]
+            update::clear_stale_backup();
 
             // Mobile has no writable "beside the exe" dir, so point persisted state (the
             // chosen server, recents, logs) at the app's config dir. Set BEFORE the first
@@ -712,7 +731,8 @@ pub fn run() {
             // __MARA_UPDATE__. The picker does the fetch/compare/banner in JS — see
             // bootstrap/index.html.
             let init = format!(
-                "window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url} }}; \
+                "window.__MARA_UPDATE__ = {{ current: {current}, manifestUrl: {url}, \
+                   canInstall: {can_install} }}; \
                  (function () {{ \
                    var l = window.location; \
                    if (l.protocol !== 'tauri:' && l.hostname !== 'tauri.localhost') return; \
@@ -723,6 +743,11 @@ pub fn run() {
                 settings = serde_json::to_string(&settings).unwrap_or_else(|_| "{}".to_string()),
                 current = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_default(),
                 url = serde_json::to_string(UPDATE_MANIFEST_URL).unwrap_or_default(),
+                // Whether this build can install an update itself. Android can't — a
+                // sideloaded APK is replaced through the system installer, and there's no
+                // writable install directory to swap — and `invoke` exists there too, so the
+                // picker can't tell from its own side. It shows the download link instead.
+                can_install = cfg!(desktop),
                 log = log_location_json(),
                 resume = resumed_after_restart(),
             );
