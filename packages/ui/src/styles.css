@@ -21,6 +21,17 @@
   --mara-ok: #3fb950;
   /* Inline-image frame: a translucent edge that reads on this background. */
   --mara-img-border: rgba(255, 255, 255, 0.45);
+
+  /* Device safe areas — what a layout must keep clear of the system UI. Zero on desktop.
+   * `env()` covers browsers, but the Android WebView only ever reports the display cutout
+   * there: it knows nothing about the status / navigation bars the native shell is drawing
+   * the page under, so an always-visible (3-button) nav bar would cover the composer. The
+   * shell pushes the real bar insets in as --mara-android-inset-* (MainActivity.kt); take
+   * whichever source is larger so both paths are covered without double-counting. */
+  --mara-safe-top: max(env(safe-area-inset-top), var(--mara-android-inset-top, 0px));
+  --mara-safe-right: max(env(safe-area-inset-right), var(--mara-android-inset-right, 0px));
+  --mara-safe-bottom: max(env(safe-area-inset-bottom), var(--mara-android-inset-bottom, 0px));
+  --mara-safe-left: max(env(safe-area-inset-left), var(--mara-android-inset-left, 0px));
 }
 
 /* Light palette — applied for an explicit "light" choice, and (below) for

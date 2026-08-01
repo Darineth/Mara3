@@ -878,9 +878,10 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem;
-    /* Lift the composer above the device's bottom inset (gesture bar / home indicator);
-       0 on desktop, so unchanged there. */
-    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    /* Lift the composer above the device's bottom inset (gesture bar / home indicator /
+       always-visible navigation bar); 0 on desktop, so unchanged there. Falls back to the
+       raw env() if the shared theme isn't loaded. */
+    padding-bottom: calc(0.5rem + var(--mara-safe-bottom, env(safe-area-inset-bottom)));
     border-top: 1px solid var(--mara-border, #333);
     /* Opaque so nothing shows through: the composer sits over the message list, and when it
        grows (multi-line input, attachments) an unpainted background would let messages behind

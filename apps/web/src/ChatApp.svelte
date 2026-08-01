@@ -1446,9 +1446,9 @@
     height: 100dvh;
     /* Keep content out from under the system bars / display cutout. The insets are 0 on
        desktop, so this is a no-op there. Bottom is handled by the composer. */
-    padding-top: env(safe-area-inset-top);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
+    padding-top: var(--mara-safe-top, env(safe-area-inset-top));
+    padding-left: var(--mara-safe-left, env(safe-area-inset-left));
+    padding-right: var(--mara-safe-right, env(safe-area-inset-right));
     background: var(--mara-bg);
     color: var(--mara-fg);
   }
@@ -1678,9 +1678,9 @@
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
     overflow: hidden;
     /* Clear the system bars / display cutout on mobile (0 on desktop). */
-    padding-top: env(safe-area-inset-top);
-    padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: var(--mara-safe-top, env(safe-area-inset-top));
+    padding-right: var(--mara-safe-right, env(safe-area-inset-right));
+    padding-bottom: var(--mara-safe-bottom, env(safe-area-inset-bottom));
   }
   .users-drawer :global(.mara-userlist) {
     width: 100%;

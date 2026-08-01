@@ -4,7 +4,14 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.32] - unreleased
 
-_In development._
+### Fixed
+
+- **Android: the chat no longer runs under the navigation bar.** On phones with the
+  always-visible three-button bar, the message box sat behind it — the WebView's own
+  safe-area insets only cover a display cutout, never the system bars the app draws under.
+  The native shell now hands the real bar sizes to the layout, so the composer (and the user
+  drawer) clear the bar, while the background still runs edge to edge behind it. Nothing
+  changes when the keyboard is up, or on gesture navigation, or anywhere else.
 
 ## [3.0.31] - 2026-07-26
 
