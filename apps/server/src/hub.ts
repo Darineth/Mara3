@@ -74,10 +74,11 @@ export class Hub {
   private readonly flap = new Map<Token, { drops: number[]; damped: boolean }>();
   /** Last-window closes within `flapSettleMs` that flag a user as flapping. */
   private static readonly FLAP_THRESHOLD = 3;
-  /** Interaction-based *unreliable* flag (keyed by user token, outliving sessions): how
-   *  many consecutive sessions ended with no chat/emote, and whether the user is currently
-   *  flagged unreliable — join/disconnect muted until they next interact. Catches slow
-   *  join/leave churn that `flapSettleMs` (a time window) misses. See
+  /** Interaction-based *unreliable* flag (keyed by user token, outliving sessions): how many
+   *  connections have died since the user last said anything, and whether they're currently
+   *  flagged unreliable — join/disconnect muted until they next interact. Catches the churn
+   *  `flapSettleMs` (a time window) misses: reconnects spaced too far apart to hold the
+   *  session, and users who talk often enough to keep clearing the flap history. See
    *  {@link finalizeDisconnect} / {@link revealIfUnreliable}. */
   private readonly quiet = new Map<Token, { drops: number; unreliable: boolean }>();
 
@@ -314,20 +315,21 @@ export class Hub {
     if (wasFlapping) this.clearFlap(token);
 
     // Whether this token was ALREADY flagged unreliable coming into this disconnect decides
-    // if we announce it. Then update the count: a session that ended without a single
-    // chat/emote is another quiet cycle (flag once it reaches the threshold); one that
-    // interacted was a real presence, so forget the count and announce normally.
+    // if we announce it — so the drop that crosses the threshold is still announced, and the
+    // room always watches them go before they start reconnecting invisibly. Then count this
+    // drop towards the flag.
     //
-    // A deliberate quit counts as a real presence too, whether or not they said anything:
-    // the churn counter is there to catch clients that drop and reconnect on their own, and
-    // a client that hangs up cleanly is doing the opposite of that. It also forgets any flap
-    // history, so their next connect starts from a clean slate.
+    // A connection that died counts even when the session did chat: someone who talks and
+    // then keeps dropping is exactly the churn this damps, and their next words reveal them
+    // again (see revealIfUnreliable), so the mute lasts only as long as the silence does.
+    //
+    // A deliberate quit doesn't count: the tally is there to catch clients that drop and
+    // reconnect on their own, and a client that hangs up cleanly is doing the opposite of
+    // that. It also forgets any flap history, so their next connect starts from a clean slate.
     const muted = this.isUnreliable(token);
     if (reason === 'quit') {
       this.quiet.delete(token);
       this.clearFlap(token);
-    } else if (session.interacted) {
-      this.quiet.delete(token);
     } else if (this.cfg.unreliableDrops > 0) {
       const rec = this.quiet.get(token) ?? { drops: 0, unreliable: false };
       rec.drops += 1;

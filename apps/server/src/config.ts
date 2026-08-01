@@ -84,11 +84,14 @@ export interface ServerConfig {
    * chat/emote) clears the flag. `<= 0` disables flap damping entirely. */
   flapSettleMs: number;
   /**
-   * Consecutive join→leave cycles a client racks up *without ever sending a message*
-   * before it's flagged **unreliable** — after which its join/disconnect churn is muted
-   * entirely until it next interacts (then it's revealed and the count resets). Catches a
-   * flap-y client whose reconnects are spaced too far apart for `flapSettleMs` to hold the
-   * session. `<= 0` disables the flag (every join/disconnect always announces). */
+   * Dropped connections a client racks up before it's flagged **unreliable** — after which
+   * its join/disconnect churn is muted entirely until it next interacts (then it's revealed
+   * and the count resets). At the default of 1 a client goes quiet from its first dropped
+   * connection, so a flapper announces its departure once and then reconnects invisibly
+   * until it says something. Catches the churn `flapSettleMs` misses, either because the
+   * reconnects are spaced too far apart to hold the session or because the client talks
+   * often enough to keep clearing the flap history. A deliberate quit doesn't count and
+   * forgets the tally. `<= 0` disables the flag (every join/disconnect always announces). */
   unreliableDrops: number;
   /**
    * File the per-channel message history is persisted to (so backlog survives a
@@ -177,7 +180,7 @@ const DEFAULTS = {
   msgFloodKick: 300,
   disconnectGraceMs: 15_000,
   flapSettleMs: 300_000,
-  unreliableDrops: 2,
+  unreliableDrops: 1,
 };
 
 // Parse a numeric env var, falling back on missing/blank/non-finite input

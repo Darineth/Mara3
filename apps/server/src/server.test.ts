@@ -1309,7 +1309,7 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
         identityFile: '',
         disconnectGraceMs: 0, // finalize immediately
         flapSettleMs: 0, // isolate the interaction-based flag from the time-windowed one
-        unreliableDrops: 2,
+        unreliableDrops: 1, // the default: quiet from the first dropped connection
       },
       createLogger('silent'),
     );
@@ -1328,20 +1328,17 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
     await w.closed;
   }
 
-  it('mutes join/disconnect after two no-interaction cycles, until the client speaks', async () => {
+  it('mutes join/disconnect from the first dropped connection, until the client speaks', async () => {
     const bob = await TestClient.connect(u);
     await login(bob, 'bob');
     await bob.waitFor('channelJoined'); // bob's own lobby join
 
-    // Two silent cycles are still announced (some churn is expected before flagging).
+    // The first cycle is announced in full — the room has to see them arrive and go.
     await silentCycle();
     const j1 = await bob.waitFor('userJoinedChannel');
     await bob.waitFor('userDisconnect');
-    await silentCycle();
-    await bob.waitFor('userJoinedChannel');
-    await bob.waitFor('userDisconnect');
 
-    // Now flagged unreliable: a third silent cycle is fully muted. Prove it by connecting a
+    // Now flagged unreliable: the next silent cycle is fully muted. Prove it by connecting a
     // DIFFERENT user right after — bob's next join is that user, not the (muted) flapper.
     await silentCycle();
     const charlie = await TestClient.connect(u);
@@ -1365,6 +1362,48 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
     expect(msg.text).toBe('hello at last');
     expect(msg.from).toBe(j1.token);
     star.close();
+    bob.close();
+  });
+
+  // The churn that prompted this: a user who DOES talk, drops, comes back, drops again...
+  // Chatting used to wipe the tally, so every one of those cycles announced in full. It now
+  // only reveals them for as long as they keep talking.
+  it('mutes a talker that drops too — chatting reveals it, it does not re-arm the churn', async () => {
+    const bob = await TestClient.connect(u);
+    await login(bob, 'bob');
+    await bob.waitFor('channelJoined'); // bob's own lobby join
+
+    // A perfectly ordinary session: join, say something, then the connection dies.
+    const star = await TestClient.connect(u);
+    const sid = await login(star, 'star', '#cccccc', 'star-key');
+    const lobby = await star.waitFor('channelJoined');
+    await bob.waitFor('userJoinedChannel');
+    star.send({ type: 'chat', channelToken: lobby.channelToken, text: 'hi' });
+    await bob.waitFor('chat');
+    star.close();
+    await star.closed;
+    const gone = await bob.waitFor('userDisconnect');
+    expect(gone.token).toBe(sid.token);
+
+    // Back again without a word — muted, even though the last session chatted. Prove it the
+    // same way: the next join bob sees is a different user's.
+    await silentCycle();
+    const charlie = await TestClient.connect(u);
+    const c = await login(charlie, 'charlie');
+    const nextJoin = await bob.waitFor('userJoinedChannel');
+    expect(nextJoin.token).toBe(c.token);
+    expect(nextJoin.token).not.toBe(sid.token);
+    charlie.close();
+
+    // Speaking reveals it again — the mute lasts exactly as long as the silence.
+    const back = await TestClient.connect(u);
+    await login(back, 'star', '#cccccc', 'star-key');
+    const room = await back.waitFor('channelJoined');
+    back.send({ type: 'chat', channelToken: room.channelToken, text: 'still here' });
+    const reveal = await bob.waitFor('userJoinedChannel');
+    expect(reveal.token).toBe(sid.token);
+    expect((await bob.waitFor('chat')).text).toBe('still here');
+    back.close();
     bob.close();
   });
 });

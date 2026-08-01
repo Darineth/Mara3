@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.33] - unreleased
 
-_In development._
+### Changed
+
+- **Reconnect churn goes quiet after the first drop.** When someone's connection dies, the
+  room sees them go — and then hears nothing more from that client until it says something:
+  the reconnect, the next drop, and every cycle after it stay silent, and their next message
+  brings them back with a single join. Before, only a client that had *never* said anything
+  was muted, and one message wiped the tally — so anyone who both chatted and had a flappy
+  connection announced every drop and rejoin, for hours. Tunable via `MARA_UNRELIABLE_DROPS`
+  (now 1; 0 disables the muting entirely).
 
 ## [3.0.32] - 2026-07-31
 
