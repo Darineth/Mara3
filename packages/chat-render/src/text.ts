@@ -303,10 +303,70 @@ export function applyMarkdown(input: string): string {
   );
 }
 
+// A table cell boundary is a LONE pipe: `||` is a spoiler, so a spoiler inside a cell
+// (`| ||hidden|| |`) stays one cell. The cost is GFM's `a||b` empty cell, which has to be
+// written `a| |b` here. A `\|` never reaches this point as a pipe — the backslash escape
+// stashes it — and neither does a pipe inside a code span.
+const CELL_SPLIT_RE = /(?<!\|)\|(?!\|)/;
+const DELIM_CELL_RE = /^:?-+:?$/;
+
+// A row's cells, with the optional outer pipes dropped. Null when the line has no lone pipe
+// at all, so it can't be a table row.
+function tableCells(line: string): string[] | null {
+  if (!CELL_SPLIT_RE.test(line)) return null;
+  let s = line.trim();
+  if (s.startsWith('|') && !s.startsWith('||')) s = s.slice(1);
+  if (s.endsWith('|') && !s.endsWith('||')) s = s.slice(0, -1);
+  return s.split(CELL_SPLIT_RE).map((c) => c.trim());
+}
+
+/**
+ * A table starting at `lines[start]`, or null if there isn't one. Needs a header row and
+ * a delimiter row (`| --- | :-: | --: |`) with matching column counts — the delimiter row
+ * is what keeps an ordinary line with a pipe in it from turning into a table. Body rows
+ * run until a line without a pipe; each is padded or trimmed to the header's width.
+ * Cell contents get inline markdown only. Alignment rides in a fixed `style` value, never
+ * anything the author typed.
+ */
+function tableAt(lines: string[], start: number): { html: string; end: number } | null {
+  const head = tableCells(lines[start] ?? '');
+  const delim = tableCells(lines[start + 1] ?? '');
+  if (!head || !delim || head.length !== delim.length) return null;
+  if (!delim.every((c) => DELIM_CELL_RE.test(c))) return null;
+
+  const align = delim.map((c) =>
+    c.startsWith(':') && c.endsWith(':')
+      ? ' style="text-align:center"'
+      : c.endsWith(':')
+        ? ' style="text-align:right"'
+        : c.startsWith(':')
+          ? ' style="text-align:left"'
+          : '',
+  );
+  const row = (cells: string[], tag: 'th' | 'td'): string =>
+    '<tr>' +
+    align.map((a, col) => `<${tag}${a}>${applyMarkdown(cells[col] ?? '')}</${tag}>`).join('') +
+    '</tr>';
+
+  let end = start + 2;
+  const body: string[] = [];
+  for (let cells; end < lines.length && (cells = tableCells(lines[end] ?? '')); end++) {
+    body.push(row(cells, 'td'));
+  }
+  // Wrapped so a table wider than the chat scrolls sideways on its own instead of
+  // stretching the whole message.
+  const html =
+    `<div class="mara-table-wrap"><table class="mara-table">` +
+    `<thead>${row(head, 'th')}</thead>` +
+    (body.length ? `<tbody>${body.join('')}</tbody>` : '') +
+    `</table></div>`;
+  return { html, end };
+}
+
 /**
  * Apply Discord block-level markdown to already-escaped text, line by line: headers
  * (`# `/`## `/`### `), subtext (`-# `), block quotes (`> ` and the multi-line `>>> `),
- * and bullet (`-`/`*`) / numbered (`1.`) lists. Inline markdown ({@link applyMarkdown})
+ * bullet (`-`/`*`) / numbered (`1.`) lists, and GitHub-style tables. Inline markdown ({@link applyMarkdown})
  * is applied to each line's content — never across line breaks, matching Discord. The
  * line markers are checked on the ESCAPED text, so `>` arrives as `&gt;`.
  *
@@ -366,6 +426,14 @@ export function applyBlocks(input: string): string {
         block: true,
         html: `<blockquote class="mara-quote">${q.join('\n')}</blockquote>`,
       });
+      continue;
+    }
+    // GitHub-style table: a header row, a `---` delimiter row with the same number of
+    // columns, then every following row that still has a pipe in it.
+    const table = tableAt(lines, i);
+    if (table) {
+      pieces.push({ block: true, html: table.html });
+      i = table.end;
       continue;
     }
     // Headers (1–3 `#`) and subtext (`-# `). Both need text after the marker.
@@ -455,7 +523,7 @@ export interface RenderTextOptions {
   images?: boolean;
   /** Set false to skip markdown formatting. */
   markdown?: boolean;
-  /** Set false to skip block-level markdown (headers/subtext/quotes/lists) and apply only
+  /** Set false to skip block-level markdown (headers/subtext/quotes/lists/tables) and apply only
    *  inline formatting — for single-line contexts like emotes and away lines. */
   blocks?: boolean;
   /** Known users: an `@Name` mention of one renders bold in that user's colour with a

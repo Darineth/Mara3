@@ -4,7 +4,17 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.35] - unreleased
 
-_In development._
+### Added
+
+- **Tables in chat.** Write a header row, a `| --- | --- |` divider under it, then the
+  rows, and the message shows a proper table — the same syntax GitHub uses, outer pipes
+  optional. Colons in the divider set a column's alignment (`:--` left, `:-:` centre,
+  `--:` right), cells take the usual inline formatting (bold, links, emoji, mentions,
+  code), and a table wider than the chat scrolls sideways on its own instead of
+  stretching the message. A line with a pipe in it but no divider row stays plain text.
+  Since `||` is a spoiler, an empty cell in the middle of a row is written `a| |b` rather
+  than `a||b`; a spoiler inside a cell works as you'd expect. Listed in the formatting
+  help.
 
 ## [3.0.34] - 2026-08-01
 

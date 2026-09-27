@@ -632,6 +632,53 @@ describe('renderText — Discord block markdown', () => {
     );
   });
 
+  it('renders a table with header, body, and alignment', () => {
+    expect(renderText('| a | b | c |\n| :-- | :-: | --: |\n| 1 | **2** | 3 |')).toBe(
+      '<div class="mara-table-wrap"><table class="mara-table">' +
+        '<thead><tr><th style="text-align:left">a</th><th style="text-align:center">b</th>' +
+        '<th style="text-align:right">c</th></tr></thead>' +
+        '<tbody><tr><td style="text-align:left">1</td><td style="text-align:center">' +
+        '<strong>2</strong></td><td style="text-align:right">3</td></tr></tbody>' +
+        '</table></div>',
+    );
+    // Outer pipes are optional; short rows are padded and long ones trimmed to the header.
+    expect(renderText('a | b\n--- | ---\nx |\n1 | 2 | 3')).toBe(
+      '<div class="mara-table-wrap"><table class="mara-table">' +
+        '<thead><tr><th>a</th><th>b</th></tr></thead>' +
+        '<tbody><tr><td>x</td><td></td></tr><tr><td>1</td><td>2</td></tr></tbody>' +
+        '</table></div>',
+    );
+  });
+
+  it('ends a table at the first line without a pipe', () => {
+    expect(renderText('| a |\n| - |\n| 1 |\nafter')).toBe(
+      '<div class="mara-table-wrap"><table class="mara-table">' +
+        '<thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody>' +
+        '</table></div>after',
+    );
+  });
+
+  it('needs a matching delimiter row to make a table', () => {
+    // A plain line with a pipe in it is just text.
+    expect(renderText('this | that')).toBe('this | that');
+    // Column count mismatch between header and delimiter: not a table.
+    expect(renderText('| a | b |\n| --- |')).toBe('| a | b |\n| --- |');
+    // Delimiter cells must be dashes (with optional colons).
+    expect(renderText('| a |\n| x |')).toBe('| a |\n| x |');
+  });
+
+  it('keeps spoilers, escaped pipes, and code pipes inside one cell', () => {
+    const html = renderText('| a | b |\n| - | - |\n| ||s|| | x \\| y `p|q` |');
+    expect(html).toContain('<td><span class="mara-spoiler">s');
+    expect(html).toContain('<td>x | y <code class="mara-code">p|q</code></td>');
+  });
+
+  it('escapes HTML inside table cells', () => {
+    expect(renderText('| <b> |\n| - |\n| <img src=x> |')).toContain(
+      '<th>&lt;b&gt;</th></tr></thead><tbody><tr><td>&lt;img src=x&gt;</td>',
+    );
+  });
+
   it('does not block-format when blocks are disabled (emote/away contexts)', () => {
     // A leading `#`/`>` stays literal; inline markdown still applies.
     expect(renderText('# not a header **but bold**', { blocks: false })).toBe(

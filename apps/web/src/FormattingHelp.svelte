@@ -64,6 +64,11 @@
       <div class="row">
         <code>- item</code><span class="dim">bullet list (or <code>1.</code> for numbered)</span>
       </div>
+      <div class="row">
+        <code>| a | b |</code><span class="dim"
+          >table: a header row, then <code>| --- | --- |</code>, then rows</span
+        >
+      </div>
     </div>
 
     <h3>Links &amp; images</h3>

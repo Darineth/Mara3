@@ -2097,6 +2097,26 @@
     margin: 0.4em 0;
     padding-left: 1.5em;
   }
+  .mara-chatview :global(.mara-table-wrap) {
+    margin: 0.4em 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .mara-chatview :global(.mara-table) {
+    border-collapse: collapse;
+    white-space: normal;
+  }
+  .mara-chatview :global(.mara-table th),
+  .mara-chatview :global(.mara-table td) {
+    padding: 0.2em 0.6em;
+    border: 1px solid var(--mara-border, #555);
+    text-align: left;
+    vertical-align: top;
+  }
+  .mara-chatview :global(.mara-table th) {
+    font-weight: 700;
+    background: rgba(127, 127, 127, 0.12);
+  }
   /* A message never opens with a leading gap from its first block's top margin. */
   .mara-chatview :global(.mara-text > :first-child) {
     margin-top: 0;
