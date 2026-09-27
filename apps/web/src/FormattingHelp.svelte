@@ -88,6 +88,11 @@
         <code>[img]https://…[/img]</code><span class="dim">inline image (legacy)</span>
       </div>
       <div class="row">
+        <code>paste from a page</code><span class="dim"
+          >keeps bold, links, lists, tables &amp; code — <code>Ctrl+Shift+V</code> pastes plain</span
+        >
+      </div>
+      <div class="row">
         <code>drag / paste / 📎</code><span class="dim"
           >attach a file of any type — it posts and lands as a download card</span
         >

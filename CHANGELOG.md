@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.37] - unreleased
 
-_In development._
+### Added
+
+- **Pasting from web pages keeps the formatting.** Copy something from a web page, a Google
+  Doc, Word or a spreadsheet and paste it into the message box, and it comes in as Mara
+  formatting instead of flat text: bold, italic, underline and strikethrough; headings;
+  bullet and numbered lists; quotes; code and code blocks; tables; and pictures. Links whose
+  text isn't the address come in as `text (address)`. Pastes from code editors and plain
+  text are unchanged, and **Ctrl+Shift+V** pastes without formatting, as it does elsewhere.
+  Listed in the formatting help.
 
 ## [3.0.36] - 2026-09-27
 

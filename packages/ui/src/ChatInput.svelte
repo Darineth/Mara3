@@ -1,7 +1,8 @@
 ﻿<!-- Message composer: autosizing textarea with sent-line history recall, F-key
      macros, and image attachments (drag-drop / paste) that upload in the
-     background and are appended to the message as URLs on send. A long text paste
-     becomes a `message.txt` attachment rather than flooding the draft.
+     background and are appended to the message as URLs on send. Pasted web content keeps
+     its formatting (converted to markdown; Ctrl+Shift+V pastes plain), and a long text
+     paste becomes a `message.txt` attachment rather than flooding the draft.
 
      The field shows its own formatting as it is typed (see the `.mara-hl` mirror below):
      the textarea's text is transparent and a highlighted copy of the draft is painted
@@ -12,6 +13,7 @@
   import { openLightbox, closeLightboxFor } from './lightbox.js';
   import { emojiSrc, matchEmojiShortcode } from './emojiComplete.js';
   import { matchMention } from './mentionComplete.js';
+  import { htmlToMarkdown } from './htmlToMarkdown.js';
 
   let {
     onsend,
@@ -326,26 +328,61 @@
       .filter((f): f is File => f != null);
   }
 
-  /** If `pasted` should go in as a file rather than as text, attach it and return true.
-   *  "Should" = long enough to swamp the chat, or more than a whole message can hold (on a
-   *  server with a low limit), where it would otherwise be silently cut off at `maxlength`.
-   *  A short paste into a nearly full draft still pastes as text. */
-  function pasteTextAsFile(pasted: string): boolean {
+  /** If `pasted` should go in as a file rather than as text, attach `body` (the plain text,
+   *  when the paste was converted from HTML) and return true. "Should" = long enough to swamp
+   *  the chat, or more than a whole message can hold (on a server with a low limit), where it
+   *  would otherwise be cut off. A short paste into a nearly full draft still pastes as text. */
+  function pasteTextAsFile(pasted: string, body = pasted): boolean {
     if (!upload || !longPasteAsFile) return false;
     if (pasted.length <= LONG_PASTE_CHARS && pasted.length <= maxLength) return false;
-    void uploadFiles([new File([pasted], 'message.txt', { type: 'text/plain' })]);
+    void uploadFiles([new File([body || pasted], 'message.txt', { type: 'text/plain' })]);
     return true;
   }
 
+  // Ctrl/Cmd+Shift+V is the browser's "paste as plain text", and it's honoured here too: the
+  // paste event can't tell the two apart (both carry the HTML), so the keystroke is noted
+  // just before and the paste that follows skips the conversion.
+  let plainPasteAt = 0;
+  $effect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v')
+        plainPasteAt = Date.now();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
+
+  /** A paste's HTML as Mara markdown, when it carries formatting worth keeping (see
+   *  htmlToMarkdown); null means paste the plain text as usual. */
+  function richText(cd: DataTransfer): string | null {
+    const plain = Date.now() - plainPasteAt < 1000;
+    plainPasteAt = 0;
+    const html = plain ? '' : cd.getData('text/html');
+    if (!html) return null;
+    try {
+      return htmlToMarkdown(html);
+    } catch {
+      return null; // a converter bug must never break pasting
+    }
+  }
+
   function onPaste(event: ClipboardEvent) {
-    if (!upload || !event.clipboardData) return;
-    const files = filesFromClipboard(event.clipboardData);
+    const cd = event.clipboardData;
+    if (!cd) return;
+    const files = upload ? filesFromClipboard(cd) : [];
     if (files.length > 0) {
       event.preventDefault();
       void uploadFiles(files);
       return;
     }
-    if (pasteTextAsFile(event.clipboardData.getData('text'))) event.preventDefault();
+    const plain = cd.getData('text');
+    const rich = richText(cd);
+    if (pasteTextAsFile(rich ?? plain, plain)) {
+      event.preventDefault();
+    } else if (rich !== null) {
+      event.preventDefault();
+      void insertAtCursor(rich);
+    }
   }
 
   // A Ctrl/Cmd+V paste while focus is on the chat area (not a text field) routes into the
@@ -364,10 +401,11 @@
         void uploadFiles(files);
         return;
       }
-      const pasted = event.clipboardData.getData('text');
+      const plain = event.clipboardData.getData('text');
+      const pasted = richText(event.clipboardData) ?? plain;
       if (pasted) {
         event.preventDefault();
-        if (!pasteTextAsFile(pasted)) void insertAtCursor(pasted);
+        if (!pasteTextAsFile(pasted, plain)) void insertAtCursor(pasted);
       }
     };
     window.addEventListener('paste', onWindowPaste);
@@ -382,6 +420,8 @@
     }
     const start = ta.selectionStart ?? text.length;
     const end = ta.selectionEnd ?? text.length;
+    // Setting the value directly bypasses `maxlength`, so hold to it here as typing would.
+    snippet = snippet.slice(0, Math.max(0, typedMax - (text.length - (end - start))));
     text = text.slice(0, start) + snippet + text.slice(end);
     await tick();
     const pos = start + snippet.length;

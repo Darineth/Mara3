@@ -27,6 +27,7 @@
     "svelte": "^5.0.0"
   },
   "devDependencies": {
+    "happy-dom": "^20.14.5",
     "svelte": "^5.15.0",
     "svelte-check": "^4.1.1"
   }
