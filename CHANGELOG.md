@@ -4,7 +4,16 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.36] - unreleased
 
-_In development._
+### Added
+
+- **Long pastes become a file.** Pasting more than 2,000 characters of text — or more than
+  a single message can hold on the server — attaches it as `message.txt` instead of dumping
+  it into the message box, so a log or a wall of code doesn't flood the channel. It shows
+  up as a normal attachment tile you can remove before sending. Shorter pastes are
+  unchanged. Can be turned off in Options ("Paste long text as a file").
+- **Jump to latest.** Scroll up to read history and a round arrow button appears at the
+  bottom-right of the chat; click it to glide back down to the newest messages and resume
+  following along. It sits beside the "Back to reply" button when both are showing.
 
 ## [3.0.35] - 2026-09-26
 

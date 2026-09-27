@@ -935,6 +935,7 @@
     messageStyle: MessageStyle;
     avatar: string;
     showAvatars: boolean;
+    longPasteAsFile: boolean;
   }) {
     const newName = next.name.trim();
     const update: { name?: string; color?: string; avatar?: string } = {};
@@ -955,6 +956,7 @@
     settings.autoRefresh = next.autoRefresh;
     settings.messageStyle = next.messageStyle;
     settings.showAvatars = next.showAvatars;
+    settings.longPasteAsFile = next.longPasteAsFile;
     persist();
   }
 
@@ -1376,6 +1378,7 @@
         placeholder={`Message ${title}`}
         macros={settings.macros}
         upload={(file) => uploadAttachment(file, client.sessionToken)}
+        longPasteAsFile={settings.longPasteAsFile}
         focusKey={activeKey}
         color={settings.color}
         emoji={$emoji}

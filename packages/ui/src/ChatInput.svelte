@@ -1,6 +1,7 @@
 ﻿<!-- Message composer: autosizing textarea with sent-line history recall, F-key
      macros, and image attachments (drag-drop / paste) that upload in the
-     background and are appended to the message as URLs on send.
+     background and are appended to the message as URLs on send. A long text paste
+     becomes a `message.txt` attachment rather than flooding the draft.
 
      The field shows its own formatting as it is typed (see the `.mara-hl` mirror below):
      the textarea's text is transparent and a highlighted copy of the draft is painted
@@ -26,6 +27,7 @@
     mentionNames = [],
     replyingTo = null,
     onCancelReply,
+    longPasteAsFile = true,
   }: {
     onsend: (text: string) => void;
     /** Hard cap on the field's length, in characters. Owners pass the connected server's
@@ -61,7 +63,14 @@
     replyingTo?: { name: string; color: string; excerpt: string } | null;
     /** Cancel the pending reply (the chip's ×, or Escape on an empty field). */
     onCancelReply?: () => void;
+    /** Turn a long text paste (see {@link LONG_PASTE_CHARS}), or one too big to fit in the
+     *  field, into a `message.txt` attachment instead of dumping it into the draft. Needs
+     *  `upload`; without it the text pastes as usual. */
+    longPasteAsFile?: boolean;
   } = $props();
+
+  /** A text paste longer than this becomes an attachment (when {@link longPasteAsFile}). */
+  const LONG_PASTE_CHARS = 2000;
 
   // Validate before it's interpolated into an inline style (as renderLine does for the
   // author colour); an invalid value falls through to the mirror's `color: inherit`.
@@ -317,13 +326,26 @@
       .filter((f): f is File => f != null);
   }
 
+  /** If `pasted` should go in as a file rather than as text, attach it and return true.
+   *  "Should" = long enough to swamp the chat, or more than a whole message can hold (on a
+   *  server with a low limit), where it would otherwise be silently cut off at `maxlength`.
+   *  A short paste into a nearly full draft still pastes as text. */
+  function pasteTextAsFile(pasted: string): boolean {
+    if (!upload || !longPasteAsFile) return false;
+    if (pasted.length <= LONG_PASTE_CHARS && pasted.length <= maxLength) return false;
+    void uploadFiles([new File([pasted], 'message.txt', { type: 'text/plain' })]);
+    return true;
+  }
+
   function onPaste(event: ClipboardEvent) {
     if (!upload || !event.clipboardData) return;
     const files = filesFromClipboard(event.clipboardData);
     if (files.length > 0) {
       event.preventDefault();
       void uploadFiles(files);
+      return;
     }
+    if (pasteTextAsFile(event.clipboardData.getData('text'))) event.preventDefault();
   }
 
   // A Ctrl/Cmd+V paste while focus is on the chat area (not a text field) routes into the
@@ -345,7 +367,7 @@
       const pasted = event.clipboardData.getData('text');
       if (pasted) {
         event.preventDefault();
-        void insertAtCursor(pasted);
+        if (!pasteTextAsFile(pasted)) void insertAtCursor(pasted);
       }
     };
     window.addEventListener('paste', onWindowPaste);

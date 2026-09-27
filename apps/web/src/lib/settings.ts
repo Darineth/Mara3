@@ -42,6 +42,9 @@ export interface MaraSettings {
   /** Show user avatars (in the user list and messages). Local display preference; off falls
    *  back to names only (no avatar images or monograms). */
   showAvatars: boolean;
+  /** Paste long text (or text too big for the field) as a `message.txt` attachment instead
+   *  of into the message. On by default. */
+  longPasteAsFile: boolean;
 }
 
 const KEY = 'mara3.settings';
@@ -126,6 +129,7 @@ export const defaultSettings: MaraSettings = {
   autoRefresh: true,
   messageStyle: 'mara',
   showAvatars: true,
+  longPasteAsFile: true,
 };
 
 /** Clamp a stored value to a known message style (defaulting to 'mara'), so an old or

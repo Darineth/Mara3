@@ -456,6 +456,15 @@
     if (id !== undefined) scrollToLine(id);
   }
 
+  /** The floating "jump to latest" button: cancel any jump, re-pin, and glide to the bottom.
+   *  Pinning first means messages (or images) that land mid-glide keep the view at the bottom
+   *  rather than leaving it just short. */
+  function scrollToBottom() {
+    cancelJump();
+    pinnedToBottom = true;
+    viewport?.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+  }
+
   /**
    * Retire hops the user has already made for themselves. If you scroll back down under your own
    * steam and the message you jumped from is on screen again, that hop is done — offering to take
@@ -1171,30 +1180,55 @@
       <div class="mara-empty">No messages yet.</div>
     {/if}
   </div>
-  <!-- Back button: appears once you've followed a quote bar up, and walks the chain back down
-       one hop per click (sticky to the bottom of the log, displacing nothing). -->
-  {#if jumpStack.length > 0}
+  <!-- Floating controls, sticky to the bottom of the log (displacing nothing). Back appears
+       once you've followed a quote bar up, and walks the chain back down one hop per click; the
+       arrow appears whenever you've scrolled up off the latest, and takes you back to it. -->
+  {#if jumpStack.length > 0 || !pinnedToBottom}
     <div class="mara-back-dock">
-      <button
-        type="button"
-        class="mara-back"
-        onclick={jumpBack}
-        title="Back to the reply you came from"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+      {#if jumpStack.length > 0}
+        <button
+          type="button"
+          class="mara-back"
+          onclick={jumpBack}
+          title="Back to the reply you came from"
         >
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <polyline points="19 12 12 19 5 12" />
-        </svg>
-        <span>Back to reply{jumpStack.length > 1 ? ` (${jumpStack.length})` : ''}</span>
-      </button>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <polyline points="19 12 12 19 5 12" />
+          </svg>
+          <span>Back to reply{jumpStack.length > 1 ? ` (${jumpStack.length})` : ''}</span>
+        </button>
+      {/if}
+      {#if !pinnedToBottom}
+        <button
+          type="button"
+          class="mara-back mara-to-bottom"
+          onclick={scrollToBottom}
+          title="Jump to the latest messages"
+          aria-label="Jump to the latest messages"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 8 12 14 18 8" />
+            <line x1="6" y1="19" x2="18" y2="19" />
+          </svg>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
@@ -1261,6 +1295,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: flex-end;
+    gap: 0.4rem;
     overflow: visible;
   }
   .mara-back {
@@ -1287,6 +1322,17 @@
     width: 0.85rem;
     height: 0.85rem;
     flex: none;
+  }
+  /* Icon-only round variant of the pill: the jump-to-latest arrow. */
+  .mara-to-bottom {
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+  }
+  .mara-to-bottom svg {
+    width: 1rem;
+    height: 1rem;
   }
   /* Per-message wrapper. A very tall message is clamped to 60% of the viewport and fades out at
      the bottom, with a "Show more" toggle over the fade; expanding drops the clamp. Short

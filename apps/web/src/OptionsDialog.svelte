@@ -26,6 +26,7 @@
       messageStyle: MessageStyle;
       avatar: string;
       showAvatars: boolean;
+      longPasteAsFile: boolean;
     }) => void;
     onClose: () => void;
     /** Downscale + upload an avatar image, returning its hosted path. */
@@ -49,6 +50,8 @@
   let messageStyle = $state<MessageStyle>(settings.messageStyle);
   // svelte-ignore state_referenced_locally
   let showAvatars = $state(settings.showAvatars);
+  // svelte-ignore state_referenced_locally
+  let longPasteAsFile = $state(settings.longPasteAsFile);
   // svelte-ignore state_referenced_locally
   let avatar = $state(settings.avatar);
   let avatarBusy = $state(false);
@@ -108,6 +111,7 @@
       messageStyle,
       avatar,
       showAvatars,
+      longPasteAsFile,
     });
     onClose();
   }
@@ -197,6 +201,16 @@
           <small
             >New PM conversations pop out instead of opening a tab. Works best with history kept on
             this device.</small
+          >
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={longPasteAsFile} />
+        <span>
+          Paste long text as a file
+          <small
+            >Pasting more than 2,000 characters (or more than fits in a message) attaches it as
+            message.txt instead.</small
           >
         </span>
       </label>
