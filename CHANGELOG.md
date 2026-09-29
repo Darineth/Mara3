@@ -4,7 +4,12 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.38] - unreleased
 
-_In development._
+### Changed
+
+- **One limit for long pastes: the server's.** A text paste now becomes a `message.txt`
+  attachment only when it's longer than a message can hold (10,000 characters unless the
+  server sets its own limit), rather than at a fixed 2,000. Anything that fits in a message
+  pastes as text.
 
 ## [3.0.37] - 2026-09-27
 

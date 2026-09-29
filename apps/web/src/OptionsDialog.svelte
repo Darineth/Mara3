@@ -209,8 +209,8 @@
         <span>
           Paste long text as a file
           <small
-            >Pasting more than 2,000 characters (or more than fits in a message) attaches it as
-            message.txt instead.</small
+            >Pasting more than fits in a message attaches it as message.txt instead of cutting it
+            off.</small
           >
         </span>
       </label>

@@ -65,14 +65,11 @@
     replyingTo?: { name: string; color: string; excerpt: string } | null;
     /** Cancel the pending reply (the chip's ×, or Escape on an empty field). */
     onCancelReply?: () => void;
-    /** Turn a long text paste (see {@link LONG_PASTE_CHARS}), or one too big to fit in the
-     *  field, into a `message.txt` attachment instead of dumping it into the draft. Needs
+    /** Turn a text paste longer than a whole message can hold ({@link maxLength}, the
+     *  server's limit) into a `message.txt` attachment instead of cutting it off. Needs
      *  `upload`; without it the text pastes as usual. */
     longPasteAsFile?: boolean;
   } = $props();
-
-  /** A text paste longer than this becomes an attachment (when {@link longPasteAsFile}). */
-  const LONG_PASTE_CHARS = 2000;
 
   // Validate before it's interpolated into an inline style (as renderLine does for the
   // author colour); an invalid value falls through to the mirror's `color: inherit`.
@@ -329,12 +326,12 @@
   }
 
   /** If `pasted` should go in as a file rather than as text, attach `body` (the plain text,
-   *  when the paste was converted from HTML) and return true. "Should" = long enough to swamp
-   *  the chat, or more than a whole message can hold (on a server with a low limit), where it
-   *  would otherwise be cut off. A short paste into a nearly full draft still pastes as text. */
+   *  when the paste was converted from HTML) and return true. "Should" = more than a whole
+   *  message can hold, the one limit that matters: the server's. Anything that fits pastes as
+   *  text, including a short paste into a nearly full draft. */
   function pasteTextAsFile(pasted: string, body = pasted): boolean {
     if (!upload || !longPasteAsFile) return false;
-    if (pasted.length <= LONG_PASTE_CHARS && pasted.length <= maxLength) return false;
+    if (pasted.length <= maxLength) return false;
     void uploadFiles([new File([body || pasted], 'message.txt', { type: 'text/plain' })]);
     return true;
   }

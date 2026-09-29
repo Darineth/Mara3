@@ -42,8 +42,8 @@ export interface MaraSettings {
   /** Show user avatars (in the user list and messages). Local display preference; off falls
    *  back to names only (no avatar images or monograms). */
   showAvatars: boolean;
-  /** Paste long text (or text too big for the field) as a `message.txt` attachment instead
-   *  of into the message. On by default. */
+  /** Paste text too long for a message (the server's limit) as a `message.txt` attachment
+   *  instead of cutting it off. On by default. */
   longPasteAsFile: boolean;
 }
 
