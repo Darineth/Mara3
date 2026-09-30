@@ -12,6 +12,9 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 
 export const SERVER_VERSION: string = pkg.version;
 
+/** When this server process started (epoch ms). */
+export const STARTED_AT: number = Math.round(Date.now() - process.uptime() * 1000);
+
 /**
  * Read the build id of the web assets we are serving (written to dist/version.json
  * by the web build). Returns undefined in dev/headless, or if the file is missing
@@ -36,5 +39,6 @@ export function getServerInfo(webRoot: string | null, name: string): ServerInfo 
     version: SERVER_VERSION,
     protocol: PROTOCOL_VERSION,
     webBuild: readWebBuild(webRoot),
+    startedAt: STARTED_AT,
   };
 }

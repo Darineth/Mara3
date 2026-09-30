@@ -11,7 +11,7 @@
   import { ChatView, ChatInput, UserList, Lightbox, markFileGone, markFileSaving } from '@mara/ui';
   import { replyExcerpt } from '@mara/protocol';
   import type { ChannelState, ChatLine, MaraClient, Token, UserInfo } from '@mara/client-core';
-  import { connectionNotice, type NoticeState } from './lib/connectionNotice.js';
+  import { connectedNotice, connectionNotice, type NoticeState } from './lib/connectionNotice.js';
   import {
     closeNativePopout,
     focusNativePopout,
@@ -400,7 +400,7 @@
       // under whatever restored lines the window opened with (0 disables it).
       if (!solo) {
         sessionStart = client.serverNow();
-        pushSystem(`Connected to ${$serverInfo.name} (v${$serverInfo.version}).`);
+        pushSystem(connectedNotice($serverInfo));
       }
       // The MOTD is pushed later, on the first channel join, so it reads
       // Connected → joined → MOTD.
@@ -558,7 +558,7 @@
       client.events.on('chat', onChannelMessage),
       client.events.on('emote', onChannelMessage),
       client.events.on('statusChanged', (status) => {
-        const notice = connectionNotice(status, noticeState);
+        const notice = connectionNotice(status, noticeState, client.lastCloseCode);
         if (notice) pushSystem(notice);
       }),
       // While the emoji manager is open, surface server rejections (name clash, library full)

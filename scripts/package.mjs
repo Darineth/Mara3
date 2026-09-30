@@ -200,7 +200,7 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 
 # --- Clean stop (admin) ---
 # A secret that turns on POST /admin/shutdown, which stops the server cleanly: it saves
-# history, identities and emoji, tells clients it's restarting, and exits so the launcher
+# history, identities and emoji, tells clients it's shutting down, and exits so the launcher
 # doesn't relaunch it. Use it instead of taskkill or ending the scheduled task, which kill
 # the server without saving. Only accepted from this machine (never through a proxy).
 # Unset = the endpoint is off.

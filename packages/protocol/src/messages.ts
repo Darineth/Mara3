@@ -188,6 +188,9 @@ export const serverInfoSchema = z.object({
   /** Build id of the web assets the server is serving; absent in dev/headless.
    *  A client compares it to its own build id to detect a stale (un-refreshed) page. */
   webBuild: z.string().max(128).optional(),
+  /** When the server process started (epoch ms), shown in the client's "Connected" line.
+   *  Optional — an older server sends none. */
+  startedAt: z.number().int().nonnegative().optional(),
 });
 export type ServerInfo = z.infer<typeof serverInfoSchema>;
 

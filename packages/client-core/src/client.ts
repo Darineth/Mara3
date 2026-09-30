@@ -91,6 +91,8 @@ export class MaraClient {
   private socket: WebSocketLike | null = null;
   /** Suppresses auto-reconnect when the close was caused by us (disconnect/denied). */
   private intentionalClose = false;
+  /** Close code of the most recent socket close (e.g. 1012 when the server shut down cleanly). */
+  private _lastCloseCode: number | null = null;
   /** Consecutive failed connect attempts; drives backoff and the "was this a reconnect" check. */
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,6 +195,12 @@ export class MaraClient {
   /** Current connection status without subscribing. */
   get status(): ConnectionState {
     return get(this._connection);
+  }
+
+  /** Close code of the most recent socket close, or null before any close. Set before the
+   *  status moves to `reconnecting`, so a status listener can read why the socket dropped. */
+  get lastCloseCode(): number | null {
+    return this._lastCloseCode;
   }
 
   /**
@@ -324,7 +332,7 @@ export class MaraClient {
     };
     ws.onmessage = (ev) => this.onRaw(String(ev.data));
     ws.onerror = () => this.events.emit('error', { message: 'socket error' });
-    ws.onclose = () => this.onClose();
+    ws.onclose = (ev) => this.onClose(ev.code);
   }
 
   private resolveCtor(): WebSocketCtor {
@@ -334,9 +342,10 @@ export class MaraClient {
     throw new Error('no WebSocket implementation available; pass options.webSocket');
   }
 
-  private onClose(): void {
+  private onClose(code: number): void {
     this.stopHeartbeat();
     this.socket = null;
+    this._lastCloseCode = code;
     if (this.intentionalClose) {
       this.setStatus('closed');
       return;

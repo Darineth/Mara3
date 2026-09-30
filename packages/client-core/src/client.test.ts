@@ -695,6 +695,8 @@ describe('reconnect', () => {
       status = await waitEvent(client, 'statusChanged');
     }
     expect(status).toBe('reconnecting');
+    // A clean server stop closes with 1012 (service restart), readable once reconnecting.
+    expect(client.lastCloseCode).toBe(1012);
     client.disconnect();
   });
 

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION } from '@mara/protocol';
-import { getServerInfo, readWebBuild, SERVER_VERSION } from './version.js';
+import { getServerInfo, readWebBuild, SERVER_VERSION, STARTED_AT } from './version.js';
 
 let dir: string;
 beforeEach(() => {
@@ -21,6 +21,13 @@ describe('server version + served web build', () => {
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(info.protocol).toBe(PROTOCOL_VERSION);
     expect(info.webBuild).toBeUndefined(); // no web root → nothing served
+  });
+
+  it('reports when the process started', () => {
+    const info = getServerInfo(null, 'My Server');
+    expect(info.startedAt).toBe(STARTED_AT);
+    expect(STARTED_AT).toBeLessThanOrEqual(Date.now());
+    expect(Date.now() - STARTED_AT).toBeLessThan(10 * 60 * 1000); // this test process, not 1970
   });
 
   it('reads the build id of the served web assets from version.json', () => {

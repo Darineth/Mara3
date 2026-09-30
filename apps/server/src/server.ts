@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { CLOSE_SERVICE_RESTART } from '@mara/protocol';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import sirv from 'sirv';
 import { WebSocketServer } from 'ws';
@@ -40,9 +41,6 @@ export const SHUTDOWN_ENDPOINT = '/admin/shutdown';
  * in-flight HTTP requests finish) before dropping whatever is left.
  */
 const CLOSE_GRACE_MS = 1000;
-
-/** WebSocket close code 1012, "service restart": a planned stop, so clients should reconnect. */
-const CLOSE_SERVICE_RESTART = 1012;
 
 /** Whether a socket's remote address is this machine. */
 export function isLoopback(address: string | undefined): boolean {
@@ -325,10 +323,10 @@ export function startServer(
             // Persist pending history, identities + user emoji first, synchronously, so
             // the data is on disk whatever happens to the sockets below.
             hub.flush();
-            // Close with 1012 "service restart" so clients know this is a planned stop,
-            // not a network fault, and reconnect promptly.
+            // Close with 1012 ("service restart", the standard code for a deliberate
+            // server stop) so clients can tell a clean shutdown from a network fault.
             for (const client of wss.clients)
-              client.close(CLOSE_SERVICE_RESTART, 'server restarting');
+              client.close(CLOSE_SERVICE_RESTART, 'server shutting down');
             wss.close();
             // A client that never answers the close handshake, or an upload still
             // streaming in, mustn't hold the process open: after a short grace, drop

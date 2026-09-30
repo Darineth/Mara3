@@ -75,11 +75,13 @@ The client speaks first — there is no separate version/hello round-trip.
 never broadcast). The server de-duplicates display names, so `self.name` may differ
 from the requested name.
 
-`server` carries `{ version, protocol, webBuild? }` so a client can display the
+`server` carries `{ name, version, protocol, webBuild?, startedAt? }` so a client can display the
 running versions and detect when it is itself stale: `webBuild` is the build id
 of the web assets the server is serving, and a client whose own compiled build id
 differs knows its page is running cached old code and prompts a reload. It is
 optional (absent for a headless/dev server, or one too old to send it).
+`startedAt` is when the server process started (epoch ms), shown in the client's
+"Connected" line; also optional (older servers don't send it).
 
 `limits` carries the operator-tunable bounds a client must know to behave correctly —
 currently `{ maxMessageChars }`, the longest chat/emote/private message this server
@@ -137,8 +139,8 @@ identity. Presence is per-channel: clients learn who is present from each
 
 When the server itself stops cleanly (Ctrl+C, the console closing, or `POST /admin/shutdown`)
 it closes every socket with **1012** ("service restart") before exiting, so a client can tell
-a planned restart from a network fault. A client should treat it like any other drop and
-reconnect.
+a deliberate shutdown from a network fault. The server may or may not come back, so a client
+should say it shut down (not that it's restarting) and keep trying to reconnect as usual.
 
 A browser tab closing or navigating away sends **1001**, which counts as `lost` on purpose:
 that is the backgrounded-mobile-tab case the grace window exists to absorb, and reading it

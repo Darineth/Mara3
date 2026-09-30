@@ -11,6 +11,12 @@
  */
 export const PROTOCOL_VERSION = 5;
 
+/**
+ * WebSocket close code 1012, "service restart": the server is stopping cleanly (it sends this
+ * to every socket on shutdown), so a client can say so rather than report a lost connection.
+ */
+export const CLOSE_SERVICE_RESTART = 1012;
+
 export * from './primitives.js';
 export * from './messages.js';
 export * from './codec.js';
