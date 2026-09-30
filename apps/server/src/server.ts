@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import sirv from 'sirv';
 import { WebSocketServer } from 'ws';
@@ -30,6 +31,71 @@ import {
  * default per frame.
  */
 const MAX_FRAME_BYTES = 256 * 1024;
+
+/** Local-only endpoint that asks the server to stop cleanly (see {@link ServerConfig.adminToken}). */
+export const SHUTDOWN_ENDPOINT = '/admin/shutdown';
+
+/**
+ * How long {@link MaraServer.close} lets clients answer the WebSocket close handshake (and
+ * in-flight HTTP requests finish) before dropping whatever is left.
+ */
+const CLOSE_GRACE_MS = 1000;
+
+/** WebSocket close code 1012, "service restart": a planned stop, so clients should reconnect. */
+const CLOSE_SERVICE_RESTART = 1012;
+
+/** Whether a socket's remote address is this machine. */
+export function isLoopback(address: string | undefined): boolean {
+  if (!address) return false;
+  return address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.');
+}
+
+/** Constant-time comparison of a presented secret against the configured one. */
+function secretMatches(presented: string, expected: string): boolean {
+  const digest = (v: string) => createHash('sha256').update(v).digest();
+  return timingSafeEqual(digest(presented), digest(expected));
+}
+
+/**
+ * `POST /admin/shutdown`: stop the server cleanly on request. Windows can't deliver SIGTERM
+ * and every outside stop (taskkill, Stop-Process, ending a scheduled task) is a hard kill, so
+ * this is the one way to request a stop that runs the flush-and-close path however the server
+ * was launched. It's locked down three ways: disabled unless `MARA_ADMIN_TOKEN` is set, only
+ * accepted from this machine, and refused if it came through a proxy — a reverse proxy on the
+ * same box makes every outside request look local, so a forwarding header disqualifies it.
+ */
+function handleShutdownRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: ServerConfig,
+  log: Logger,
+  onShutdownRequest: (() => void) | undefined,
+): void {
+  const reply = (status: number, body: string) => {
+    res.writeHead(status, { 'content-type': 'text/plain', connection: 'close' });
+    res.end(body);
+  };
+  // Disabled: answer as if the route doesn't exist.
+  if (!cfg.adminToken || !onShutdownRequest) return reply(404, 'Not found');
+  if (req.method !== 'POST') return reply(405, 'Method not allowed');
+  const proxied =
+    req.headers['x-forwarded-for'] !== undefined ||
+    req.headers.forwarded !== undefined ||
+    req.headers['x-real-ip'] !== undefined;
+  if (!isLoopback(req.socket.remoteAddress) || proxied) {
+    log.warn({ remote: req.socket.remoteAddress, proxied }, 'refused non-local shutdown request');
+    return reply(403, 'Forbidden');
+  }
+  const auth = req.headers.authorization ?? '';
+  const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : '';
+  if (!secretMatches(token, cfg.adminToken)) {
+    log.warn('refused shutdown request with a bad or missing admin token');
+    return reply(401, 'Unauthorized');
+  }
+  res.writeHead(202, { 'content-type': 'text/plain', connection: 'close' });
+  // Answer first, then stop, so the caller learns the request was accepted.
+  res.end('shutting down\n', onShutdownRequest);
+}
 
 /**
  * Content-Security-Policy for the web app's document responses. This is
@@ -71,12 +137,21 @@ export interface MaraServer {
   close(): Promise<void>;
 }
 
+export interface ServerHooks {
+  /** Called when an authorized `POST /admin/shutdown` arrives. Without it the endpoint is off. */
+  onShutdownRequest?: () => void;
+}
+
 /**
  * Start the unified server and resolve once it is listening. A single HTTP
  * server hosts the built web client (and a `/health` check) while the WebSocket
  * endpoint shares the same port on {@link ServerConfig.wsPath}.
  */
-export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer> {
+export function startServer(
+  cfg: ServerConfig,
+  log: Logger,
+  hooks: ServerHooks = {},
+): Promise<MaraServer> {
   return new Promise((resolve, reject) => {
     const hub = new Hub(cfg, log);
 
@@ -121,6 +196,10 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
             protocol: hub.serverInfo.protocol,
           }),
         );
+        return;
+      }
+      if (req.url === SHUTDOWN_ENDPOINT) {
+        handleShutdownRequest(req, res, cfg, log, hooks.onShutdownRequest);
         return;
       }
       if (req.url === UPLOAD_ENDPOINT) {
@@ -243,13 +322,29 @@ export function startServer(cfg: ServerConfig, log: Logger): Promise<MaraServer>
           new Promise<void>((res, rej) => {
             if (closed) return res();
             closed = true;
-            // Persist any pending message history + identities before teardown.
+            // Persist pending history, identities + user emoji first, synchronously, so
+            // the data is on disk whatever happens to the sockets below.
             hub.flush();
-            // terminate(), not close(): drop sockets immediately so a slow/idle
-            // client can't hold the process open past shutdown.
-            for (const client of wss.clients) client.terminate();
+            // Close with 1012 "service restart" so clients know this is a planned stop,
+            // not a network fault, and reconnect promptly.
+            for (const client of wss.clients)
+              client.close(CLOSE_SERVICE_RESTART, 'server restarting');
             wss.close();
-            httpServer.close((err) => (err ? rej(err) : res()));
+            // A client that never answers the close handshake, or an upload still
+            // streaming in, mustn't hold the process open: after a short grace, drop
+            // whatever is left.
+            const force = setTimeout(() => {
+              for (const client of wss.clients) client.terminate();
+              httpServer.closeAllConnections();
+            }, CLOSE_GRACE_MS);
+            force.unref();
+            httpServer.close((err) => {
+              clearTimeout(force);
+              // Catch anything that changed while the sockets drained.
+              hub.flush();
+              if (err) rej(err);
+              else res();
+            });
           }),
       });
     });

@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { avatarSchema, colorSchema, type Token } from '@mara/protocol';
+import { writeFileAtomic, writeFileAtomicSync } from './atomicWrite.js';
 import type { Logger } from './logger.js';
 
 /** The parts of a user's presence that are *visible to others* — so they belong to
@@ -158,8 +157,7 @@ export class IdentityStore {
     if (!this.dirty) return;
     this.dirty = false;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      await writeFile(this.file, this.snapshot());
+      await writeFileAtomic(this.file, this.snapshot());
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to persist identities');
       this.dirty = true;
@@ -175,8 +173,7 @@ export class IdentityStore {
     if (!this.file || !this.dirty) return;
     this.dirty = false;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, this.snapshot());
+      writeFileAtomicSync(this.file, this.snapshot());
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to flush identities on shutdown');
     }

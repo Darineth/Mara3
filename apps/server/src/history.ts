@@ -1,7 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFileSync, renameSync } from 'node:fs';
 import { channelHistoryEntrySchema, type ChannelHistoryEntry } from '@mara/protocol';
+import { writeFileAtomic, writeFileAtomicSync } from './atomicWrite.js';
 import type { Logger } from './logger.js';
 
 /**
@@ -171,13 +170,7 @@ export class HistoryStore {
     if (!this.dirty) return;
     this.dirty = false;
     try {
-      // Atomic: write a temp file, then rename over the real one. An in-place write
-      // interrupted by a crash/power cut leaves truncated JSON — which the next boot
-      // can't parse, and whose replacement would erase the history for good.
-      mkdirSync(dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      await writeFile(tmp, this.snapshot());
-      await rename(tmp, this.file);
+      await writeFileAtomic(this.file, this.snapshot());
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to persist history; will retry');
       // Retry on our own schedule — "on the next change" isn't enough, because if no
@@ -197,10 +190,7 @@ export class HistoryStore {
     if (!this.file || !this.dirty) return;
     this.dirty = false;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      writeFileSync(tmp, this.snapshot());
-      renameSync(tmp, this.file);
+      writeFileAtomicSync(this.file, this.snapshot());
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to flush history on shutdown');
     }

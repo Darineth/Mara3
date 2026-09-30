@@ -4,7 +4,32 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.39] - unreleased
 
-_In development._
+### Added
+
+- **A clean way to stop the server from outside.** Set `MARA_ADMIN_TOKEN` in `mara.config`
+  and a `POST` to `/admin/shutdown` stops the server properly: it saves history, identities
+  and emoji, tells clients it's restarting, and exits. On Windows this is the only outside
+  stop that saves first; `taskkill` and ending a scheduled task kill it outright. The
+  request is only accepted from the server's own machine, with the secret, and never
+  through a proxy. Without the setting, the endpoint is off.
+
+### Changed
+
+- **The launcher no longer restarts a server you asked to stop.** A requested stop (Ctrl+C,
+  closing the window, or the admin endpoint) now ends `Mara3-Server.bat` too, instead of
+  relaunching the server 3 seconds later. A crash still restarts it.
+- **Clients hear "restarting", not a dropped connection.** On a clean stop the server closes
+  each connection with WebSocket code 1012 (service restart) instead of cutting it.
+
+### Fixed
+
+- **Stopping the server can no longer corrupt identities or user emoji.** Both files are now
+  written to a temporary file and swapped in, as history already was, so a kill mid-save
+  leaves the previous copy intact instead of a half-written one.
+- **Closing the server window saves first.** Ctrl+Break and closing the console window now
+  run the same save-and-close as Ctrl+C. A stop that hangs gives up after 5 seconds (the
+  data is saved before that), a second Ctrl+C exits at once, and a failure while closing
+  no longer leaves the process stuck.
 
 ## [3.0.38] - 2026-09-29
 

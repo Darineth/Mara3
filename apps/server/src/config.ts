@@ -106,6 +106,12 @@ export interface ServerConfig {
    * empty to disable (in-memory only; tests do this).
    */
   identityFile: string;
+  /**
+   * Shared secret for the local admin endpoint (`POST /admin/shutdown`), which asks the server
+   * to stop cleanly: flush state, close sockets, exit 0. Requests must come from this machine
+   * and carry `Authorization: Bearer <secret>`. Empty (the default) disables the endpoint.
+   */
+  adminToken: string;
 }
 
 /** Where the web client build lands by default: `apps/web/dist`, relative to here. */
@@ -301,5 +307,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     // Persist by default; set MARA_HISTORY_FILE='' to disable (in-memory only).
     historyFile: (env.MARA_HISTORY_FILE ?? join(base, 'data', 'history.json')).trim(),
     identityFile: (env.MARA_IDENTITY_FILE ?? join(base, 'data', 'identity.json')).trim(),
+    adminToken: env.MARA_ADMIN_TOKEN?.trim() ?? '',
   };
 }

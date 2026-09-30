@@ -72,21 +72,29 @@ echo (Port/host come from the environment or mara.config; see README.txt.)
 echo Open that URL in a browser to use the chat. Close this window (or Ctrl+C) to stop.
 echo Server output is written to server.log next to this launcher.
 
-rem Auto-restart: if the server exits (crash, unhandled error), relaunch it after a short
-rem pause so a transient failure doesn't take the server offline. Uses ping (not timeout)
+rem Auto-restart: if the server crashes (non-zero exit), relaunch it after a short pause so a
+rem transient failure doesn't take the server offline. A requested stop exits 0 -- Ctrl+C,
+rem closing the window, or POST /admin/shutdown (see mara.config.example) -- and that ends
+rem the loop, so nothing is relaunched and no node is left running. Uses ping (not timeout)
 rem for the delay so it also works headless under Task Scheduler, where timeout has no
 rem console and would fail. stdout/stderr go to server.log so a background run still
-rem captures logs. To stop for good: close the window, Ctrl+C then Y, or stop the scheduled
-rem task -- killing node alone just makes this loop relaunch it.
+rem captures logs. Killing node by force (taskkill /F, ending the task) skips the final save
+rem and counts as a crash here -- prefer the admin endpoint.
 :run
 echo [%date% %time%] starting Mara 3 server>>"%~dp0server.log"
 "%~dp0node.exe" "%~dp0app\\dist\\main.js">>"%~dp0server.log" 2>&1
 set "rc=%errorlevel%"
+if "%rc%"=="0" goto stopped
 echo.
 echo Mara 3 server stopped (exit code %rc%). Restarting in 3s -- close this window or stop the task.
 echo [%date% %time%] server exited (code %rc%); restarting in 3s>>"%~dp0server.log"
 ping -n 4 127.0.0.1 >nul
 goto run
+
+:stopped
+echo.
+echo Mara 3 server stopped.
+echo [%date% %time%] server stopped on request; not restarting>>"%~dp0server.log"
 `;
 
 const CONFIG_EXAMPLE = `# Mara 3 server configuration.
@@ -189,6 +197,15 @@ const CONFIG_EXAMPLE = `# Mara 3 server configuration.
 #MARA_UPLOAD_DIR=D:\\Mara3-Data\\uploads
 #MARA_HISTORY_FILE=D:\\Mara3-Data\\history.json
 #MARA_IDENTITY_FILE=D:\\Mara3-Data\\identity.json
+
+# --- Clean stop (admin) ---
+# A secret that turns on POST /admin/shutdown, which stops the server cleanly: it saves
+# history, identities and emoji, tells clients it's restarting, and exits so the launcher
+# doesn't relaunch it. Use it instead of taskkill or ending the scheduled task, which kill
+# the server without saving. Only accepted from this machine (never through a proxy).
+# Unset = the endpoint is off.
+#     curl -X POST -H "Authorization: Bearer <secret>" http://127.0.0.1:5050/admin/shutdown
+#MARA_ADMIN_TOKEN=pick-a-long-random-string
 `;
 
 const SERVER_README = `Mara 3 Server (self-contained)
@@ -217,8 +234,16 @@ Your data (created on first run, kept next to this launcher - NOT inside app\\):
   uploads\\      uploaded images (size-capped cache)
   server.log    server output/log (grows over time; safe to delete or trim anytime)
 
+Stopping:
+  Close the launcher window or press Ctrl+C: the server saves everything and exits,
+  and the launcher does not restart it. To stop it from outside (a script, a scheduled
+  task, before an update), set MARA_ADMIN_TOKEN in mara.config and POST to
+  http://127.0.0.1:5050/admin/shutdown (see mara.config.example). Avoid taskkill /F or
+  ending the task: that kills the server before its last few seconds of changes are
+  saved.
+
 Updating without losing settings or data:
-  Replace the CODE, keep your state. Overwrite these from the new version:
+  Stop the server first (see above). Replace the CODE, keep your state. Overwrite these from the new version:
       app\\   web\\   node.exe   Mara3-Server.bat   README.txt   mara.config.example
   Leave these alone:
       mara.config   data\\   uploads\\

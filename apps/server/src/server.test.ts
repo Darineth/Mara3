@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { PROTOCOL_VERSION } from '@mara/protocol';
-import { startServer, type MaraServer } from './server.js';
+import { isLoopback, SHUTDOWN_ENDPOINT, startServer, type MaraServer } from './server.js';
 import { EmojiStore } from './emoji.js';
 import { login, TestClient } from './harness.js';
 
@@ -85,6 +85,109 @@ describe('http', () => {
     } finally {
       await s.close();
     }
+  });
+});
+
+describe('graceful shutdown', () => {
+  it('closes client sockets with 1012 (service restart) rather than dropping them', async () => {
+    const s = await startServer(
+      {
+        ...loadConfig(),
+        host: '127.0.0.1',
+        port: 0,
+        defaultChannel: '',
+        historyFile: '',
+        userEmojiFile: '',
+        identityFile: '',
+      },
+      createLogger('silent'),
+    );
+    const client = await TestClient.connect(`ws://127.0.0.1:${s.port}/ws`);
+    await login(client, 'alice');
+    await s.close();
+    const { code } = await client.closed;
+    expect(code).toBe(1012);
+  });
+
+  it('treats only this machine as local', () => {
+    expect(isLoopback('127.0.0.1')).toBe(true);
+    expect(isLoopback('::1')).toBe(true);
+    expect(isLoopback('::ffff:127.0.0.1')).toBe(true);
+    expect(isLoopback('192.168.1.10')).toBe(false);
+    expect(isLoopback('::ffff:10.0.0.5')).toBe(false);
+    expect(isLoopback(undefined)).toBe(false);
+  });
+
+  it('hides the shutdown endpoint when no admin token is configured', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}${SHUTDOWN_ENDPOINT}`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer anything' },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  describe('with an admin token', () => {
+    let s: MaraServer;
+    let endpoint: string;
+    let requests = 0;
+
+    beforeEach(async () => {
+      requests = 0;
+      s = await startServer(
+        {
+          ...loadConfig(),
+          host: '127.0.0.1',
+          port: 0,
+          defaultChannel: '',
+          historyFile: '',
+          userEmojiFile: '',
+          identityFile: '',
+          adminToken: 's3cret',
+        },
+        createLogger('silent'),
+        { onShutdownRequest: () => requests++ },
+      );
+      endpoint = `http://127.0.0.1:${s.port}${SHUTDOWN_ENDPOINT}`;
+    });
+
+    afterEach(async () => {
+      await s.close();
+    });
+
+    it('accepts an authorized local POST and requests the stop', async () => {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { authorization: 'Bearer s3cret' },
+      });
+      expect(res.status).toBe(202);
+      await res.text();
+      expect(requests).toBe(1);
+    });
+
+    it('refuses a missing or wrong token', async () => {
+      expect((await fetch(endpoint, { method: 'POST' })).status).toBe(401);
+      const wrong = await fetch(endpoint, {
+        method: 'POST',
+        headers: { authorization: 'Bearer nope' },
+      });
+      expect(wrong.status).toBe(401);
+      expect(requests).toBe(0);
+    });
+
+    it('refuses anything but POST', async () => {
+      const res = await fetch(endpoint, { headers: { authorization: 'Bearer s3cret' } });
+      expect(res.status).toBe(405);
+      expect(requests).toBe(0);
+    });
+
+    it('refuses a request forwarded by a proxy, even with the right token', async () => {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { authorization: 'Bearer s3cret', 'x-forwarded-for': '203.0.113.9' },
+      });
+      expect(res.status).toBe(403);
+      expect(requests).toBe(0);
+    });
   });
 });
 

@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import type { EmojiEntry, Token } from '@mara/protocol';
+import { writeFileAtomic, writeFileAtomicSync } from './atomicWrite.js';
 import { EMOJI_ROUTE } from './emoji.js';
 import type { Logger } from './logger.js';
 
@@ -237,8 +237,7 @@ export class UserEmojiStore {
     if (!this.dirty) return;
     this.dirty = false;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      await writeFile(this.file, this.snapshot());
+      await writeFileAtomic(this.file, this.snapshot());
       this.recordMtime(); // so the watcher recognizes this write as ours
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to persist user emoji');
@@ -256,8 +255,7 @@ export class UserEmojiStore {
     if (!this.file || !this.dirty) return;
     this.dirty = false;
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, this.snapshot());
+      writeFileAtomicSync(this.file, this.snapshot());
       this.recordMtime();
     } catch (err) {
       this.log.error({ err, file: this.file }, 'failed to flush user emoji on shutdown');

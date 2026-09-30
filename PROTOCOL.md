@@ -135,6 +135,11 @@ identity. Presence is per-channel: clients learn who is present from each
   frame with no status (1005). The departure is held for `MARA_DISCONNECT_GRACE_MS` (and
   longer for a flapping client), so a reconnect inside that window is silent.
 
+When the server itself stops cleanly (Ctrl+C, the console closing, or `POST /admin/shutdown`)
+it closes every socket with **1012** ("service restart") before exiting, so a client can tell
+a planned restart from a network fault. A client should treat it like any other drop and
+reconnect.
+
 A browser tab closing or navigating away sends **1001**, which counts as `lost` on purpose:
 that is the backgrounded-mobile-tab case the grace window exists to absorb, and reading it
 as a goodbye would announce departures for users who are about to return.
