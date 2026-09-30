@@ -2,7 +2,7 @@
 
 All notable changes to Mara 3 are documented here.
 
-## [3.0.40] - unreleased
+## [3.0.40] - 2026-09-30
 
 ### Added
 
