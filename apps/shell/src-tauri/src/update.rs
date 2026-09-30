@@ -67,6 +67,11 @@ pub async fn check_update() -> Result<Option<Manifest>, String> {
 /// hand and the checksum matches.
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<String, String> {
+    // A macOS client is a .app bundle, not the single executable mara-swap replaces, so it
+    // updates by download; the picker never offers the button there (`canInstall`).
+    if cfg!(target_os = "macos") {
+        return Err("in-app updates aren't supported on macOS — download the new build".to_string());
+    }
     if UPDATE_MANIFEST_URL.is_empty() {
         return Err("this build has no update manifest — updates are off".to_string());
     }

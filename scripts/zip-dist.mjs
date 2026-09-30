@@ -47,9 +47,10 @@ const PRODUCT_VERSION = pkg.version;
 // tauri.conf.json) rather than the app/product version — so its zip name + update
 // manifest reflect the client's own version, and an app-only release never bumps it or
 // false-fires the update nudge. Components without it use the product version.
-// `file` (instead of `dir`) is a ready-made single-file artifact (the Android .apk) that
-// ships AS-IS — copied into dist/zips under a version-stamped name, never zipped (an APK is
-// already a package; sideloading needs the raw file). `ext` names its suffix.
+// `file` (instead of `dir`) is a ready-made single-file artifact (the Android .apk, the macOS
+// .dmg) that ships AS-IS — copied into dist/zips under a version-stamped name, never zipped
+// (both are already packages). `ext` names its suffix. `staged` marks one that sits in
+// dist/prebuilt/ and so must pass the same stale-build check as a prebuilt archive.
 const COMPONENTS = [
   {
     dir: 'server',
@@ -88,6 +89,18 @@ const COMPONENTS = [
     // is present and gets archived the normal way instead.
     prebuilt: 'prebuilt/Mara3-linux-x64.tar.gz',
     // Same shell crate as the Windows desktop client → same client version track.
+    versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
+  },
+  {
+    file: 'prebuilt/Mara3-macos-universal.dmg',
+    name: 'Mara3-macos-universal',
+    desc: 'Desktop client, macOS universal (Apple Silicon + Intel; Tauri 2, ad-hoc signed DMG)',
+    ext: '.dmg',
+    latest: true,
+    // Built on a Mac, like Linux on Linux: `pnpm package:macos` builds it over SSH and
+    // stages the finished drag-to-Applications DMG here. A DMG is already a package, so it
+    // ships as-is — but it's staged, so it gets the same stale-build check as the Linux one.
+    staged: true,
     versionFrom: { file: 'apps/shell/src-tauri/tauri.conf.json', path: ['version'] },
   },
   {
@@ -213,7 +226,7 @@ function assertPrebuiltFresh(comp, prebuiltPath) {
   if (stale && process.env.MARA_ALLOW_STALE_PREBUILT !== '1') {
     throw new Error(
       `staged build is ${tag(meta)} (built ${meta.builtAt ?? '?'}) but this release is ${tag(want)} — ` +
-        're-run `pnpm package:linux` (or set MARA_ALLOW_STALE_PREBUILT=1 to override)',
+        're-run `pnpm package:linux` / `pnpm package:macos` (or set MARA_ALLOW_STALE_PREBUILT=1 to override)',
     );
   }
 }
@@ -326,6 +339,15 @@ for (const comp of COMPONENTS) {
     if (!existsSync(src)) {
       console.log(`  - ${comp.file} — absent, skipping (${comp.name})`);
       continue;
+    }
+    if (comp.staged) {
+      try {
+        assertPrebuiltFresh(comp, src);
+      } catch (err) {
+        failures.push(comp.name);
+        console.error(`  ! ${comp.name} — ${String(err.message).split('\n')[0]}`);
+        continue;
+      }
     }
     const outName = `${comp.name}-v${verTagFor(componentVersion(comp))}${comp.ext}`;
     const outPath = join(outDir, outName);
@@ -462,10 +484,19 @@ for (const { component, manifest, label } of [
   { component: 'Mara3-windows-x64', manifest: 'latest-windows-x64.json', label: 'windows-x64' },
   { component: 'Mara3-windows7-x64', manifest: 'latest-windows7-x64.json', label: 'windows7-x64' },
   { component: 'Mara3-linux-x64', manifest: 'latest-linux-x64.json', label: 'linux-x64' },
+  {
+    component: 'Mara3-macos-universal',
+    manifest: 'latest-macos-universal.json',
+    label: 'macos-universal',
+  },
   // The APK gets one too. It can't self-install the way the desktop clients do (Android
   // hands a sideloaded package to the system installer), but without a manifest to poll its
   // picker had no way to even say an update existed.
-  { component: 'Mara3-android-arm64', manifest: 'latest-android-arm64.json', label: 'android-arm64' },
+  {
+    component: 'Mara3-android-arm64',
+    manifest: 'latest-android-arm64.json',
+    label: 'android-arm64',
+  },
 ]) {
   const built = archives.find((a) => a.component === component);
   if (!built) continue;

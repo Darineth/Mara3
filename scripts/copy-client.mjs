@@ -11,7 +11,16 @@
 // <distSubdir> is the folder under dist/ to copy into (e.g. desktop, desktop-legacy).
 // [target] (optional) is the Rust target triple — when cross/tier-3 building, the
 // binary lands in target/<triple>/release/ instead of target/release/.
-import { copyFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const [crateDir, srcBase, destBase, distSubdir, target] = process.argv.slice(2);
@@ -34,6 +43,34 @@ const subdir =
   distSubdir === 'desktop' && process.platform === 'linux' ? 'desktop-linux' : distSubdir;
 const destDir = join(root, 'dist', subdir);
 const dest = join(destDir, `${destBase}${ext}`);
+
+// macOS ships the .app bundle (tauri.macos.conf.json turns the bundler on there), not the
+// bare binary — without the bundle it runs iconless, outside the Dock, unsigned. Copy the
+// whole bundle into dist/desktop-macos/, symlinks kept as-is, plus the drag-to-Applications
+// DMG built beside it.
+if (process.platform === 'darwin' && distSubdir === 'desktop') {
+  const conf = JSON.parse(
+    readFileSync(join(root, crateDir, 'src-tauri', 'tauri.conf.json'), 'utf8'),
+  );
+  const app = `${conf.productName}.app`;
+  const bundle = join(releaseDir, 'bundle', 'macos', app);
+  if (!existsSync(bundle)) {
+    console.error(`copy-client: app bundle not found at ${bundle} — did "tauri build" run?`);
+    process.exit(1);
+  }
+  const macDir = join(root, 'dist', 'desktop-macos');
+  rmSync(macDir, { recursive: true, force: true });
+  mkdirSync(macDir, { recursive: true });
+  cpSync(bundle, join(macDir, app), { recursive: true, verbatimSymlinks: true });
+  console.log(`copy-client: ${join(macDir, app)}`);
+  const dmgDir = join(releaseDir, 'bundle', 'dmg');
+  for (const f of existsSync(dmgDir) ? readdirSync(dmgDir) : []) {
+    if (!f.endsWith('.dmg')) continue;
+    copyFileSync(join(dmgDir, f), join(macDir, f));
+    console.log(`copy-client: ${join(macDir, f)}`);
+  }
+  process.exit(0);
+}
 
 if (!existsSync(src)) {
   console.error(`copy-client: build output not found at ${src} — did "tauri build" run?`);

@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.40] - unreleased
 
-_In development._
+### Added
+
+- **Mara for Mac.** A desktop client for macOS, one download for both Apple Silicon and
+  Intel Macs: `Mara3-macos-universal-latest.dmg`. Open it and drag Mara 3 into
+  Applications. It's signed but not notarized by Apple, so the first launch is blocked:
+  open System Settings → Privacy & Security and click **Open Anyway**. Settings are kept
+  in `~/Library/Application Support/com.mara.chat/`, so they survive updates. When a new
+  version is out, the Mac client says so and links the download, but it doesn't install
+  updates itself the way the Windows and Linux clients do.
 
 ## [3.0.39] - 2026-09-29
 

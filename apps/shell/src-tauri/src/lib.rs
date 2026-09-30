@@ -135,8 +135,9 @@ fn exe_dir() -> Result<PathBuf, String> {
 
 /// Writable base dir for `settings.json`/logs, set once at startup. On mobile there is
 /// no "beside the exe" (the app runs from a read-only package), so setup() resolves the
-/// app's config dir into this; on desktop it stays unset and we fall back to the exe dir
-/// (the portable model — copy the exe folder, carry its config).
+/// app's config dir into this, and on macOS too (the exe sits inside a signed .app). On
+/// Windows/Linux it stays unset and we fall back to the exe dir (the portable model —
+/// copy the exe folder, carry its config).
 static APP_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// The base directory for persisted state: the app config dir on mobile (set at startup),
@@ -715,6 +716,18 @@ pub fn run() {
                 let _ = APP_DIR.set(dir);
             }
 
+            // macOS ships a signed .app bundle, not a loose exe: writing settings.json into
+            // Contents/MacOS would break the bundle's seal, and a quarantined app runs from a
+            // read-only translocated copy anyway. So state goes to Application Support, like
+            // mobile. The working directory also moves there — a Finder launch starts in `/`,
+            // where the default relative `logs/` could never be created.
+            #[cfg(target_os = "macos")]
+            if let Ok(dir) = app.path().app_config_dir() {
+                let _ = create_dir_all(&dir);
+                let _ = std::env::set_current_dir(&dir);
+                let _ = APP_DIR.set(dir);
+            }
+
             // Load the local bootstrap page first; it shows the server picker, polls
             // the chosen server, and asks us to navigate to the live UI once it is
             // reachable. Seed the picker with the saved settings.
@@ -747,7 +760,9 @@ pub fn run() {
                 // sideloaded APK is replaced through the system installer, and there's no
                 // writable install directory to swap — and `invoke` exists there too, so the
                 // picker can't tell from its own side. It shows the download link instead.
-                can_install = cfg!(desktop),
+                // Nor can macOS: the client is a .app bundle, and the swap replaces a single
+                // executable, which would leave the bundle's signature and Info.plist stale.
+                can_install = cfg!(desktop) && !cfg!(target_os = "macos"),
                 log = log_location_json(),
                 resume = resumed_after_restart(),
             );

@@ -47,9 +47,13 @@ const UPDATE_BASE_URL = 'https://github.com/Darineth/Mara3/releases/latest/downl
 const MANIFEST_BASE_URL = 'https://raw.githubusercontent.com/Darineth/Mara3/main/updates';
 
 // The shell builds for the host OS, so it polls that OS's manifest (matching the name
-// zip-dist.mjs emits). Build the Linux client on Linux, the Windows one on Windows.
+// zip-dist.mjs emits). Build the Linux client on Linux, the Windows one on Windows, the
+// macOS one on a Mac (package-macos.mjs drives that from Windows, over SSH).
 const CLIENT_MANIFEST =
-  process.platform === 'linux' ? 'latest-linux-x64.json' : 'latest-windows-x64.json';
+  {
+    linux: 'latest-linux-x64.json',
+    darwin: 'latest-macos-universal.json',
+  }[process.platform] ?? 'latest-windows-x64.json';
 
 // The APK is built from the same crate but polls its own manifest — the download is an APK,
 // not a desktop archive, and the Android build can happen on either host OS. Without this
@@ -379,8 +383,9 @@ if (!skipTests) {
 }
 
 step(4, total, 'Cleaning dist/');
-// Wipe last run's output, but PRESERVE dist/prebuilt/ — a cross-platform build staged
-// by `pnpm package:linux` (built in WSL) that the later zip-dist folds in. Otherwise the
+// Wipe last run's output, but PRESERVE dist/prebuilt/ — cross-platform builds staged
+// by `pnpm package:linux` (built in WSL) and `pnpm package:macos` (built on a Mac over
+// SSH) that the later zip-dist folds in. Otherwise the
 // only working order would be package -> package:linux -> zip; preserving it lets you
 // stage the Linux client once and re-run packaging freely.
 if (existsSync(dist)) {
@@ -507,7 +512,9 @@ if (!skipDesktop)
   console.log(
     process.platform === 'linux'
       ? '   desktop-linux/  portable Mara3 (if Rust was available; needs webkit2gtk-4.1)'
-      : '   desktop\\  portable Mara3.exe (if Rust was available)',
+      : process.platform === 'darwin'
+        ? '   desktop-macos/  Mara 3.app (if Rust was available)'
+        : '   desktop\\  portable Mara3.exe (if Rust was available)',
   );
 if (androidApkBuilt) console.log('   android\\  Mara3.apk (signed release, arm64)');
 console.log('============================================================');

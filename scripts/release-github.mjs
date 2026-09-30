@@ -63,7 +63,9 @@ function has(cmd) {
 
 // --- preflight ------------------------------------------------------------------
 if (!has('gh')) {
-  fail('GitHub CLI (gh) not found. Install it from https://cli.github.com and run `gh auth login`.');
+  fail(
+    'GitHub CLI (gh) not found. Install it from https://cli.github.com and run `gh auth login`.',
+  );
 }
 try {
   execSync('gh auth status', { stdio: 'ignore' });
@@ -71,7 +73,9 @@ try {
   fail('GitHub CLI is not authenticated — run `gh auth login` (needs push access to the repo).');
 }
 if (!existsSync(zipsDir)) {
-  fail('No dist/zips/ — run `pnpm package:all` first (it builds every package, bundles the clients, and zips).');
+  fail(
+    'No dist/zips/ — run `pnpm package:all` first (it builds every package, bundles the clients, and zips).',
+  );
 }
 
 // Every regular file in dist/zips/ becomes a release asset: the version-stamped archives,
@@ -98,6 +102,8 @@ const stableUpdateAssets = [
   'Mara3-windows7-x64-latest.zip',
   'latest-linux-x64.json',
   'Mara3-linux-x64-latest.tar.gz',
+  'latest-macos-universal.json',
+  'Mara3-macos-universal-latest.dmg',
   'latest-android-arm64.json',
   'Mara3-android-arm64-latest.apk',
 ];
@@ -115,9 +121,7 @@ if (missing.length) {
 function changelogNotes(v) {
   try {
     const md = readFileSync(join(root, 'CHANGELOG.md'), 'utf8');
-    const section = md
-      .split(/\n(?=## \[)/)
-      .find((s) => s.startsWith(`## [${v}]`));
+    const section = md.split(/\n(?=## \[)/).find((s) => s.startsWith(`## [${v}]`));
     return section ? section.replace(/^## \[[^\n]*\n/, '').trim() : '';
   } catch {
     return '';
@@ -157,7 +161,9 @@ if (releaseExists) {
 console.log(`\nMara 3 → GitHub release`);
 console.log(`  repo    Darineth/Mara3`);
 console.log(`  tag     ${tag}${releaseExists ? '  (exists → refreshing assets)' : ''}`);
-console.log(`  notes   ${releaseExists ? '(unchanged)' : notesFile ? `CHANGELOG [${version}]` : 'auto-generated'}`);
+console.log(
+  `  notes   ${releaseExists ? '(unchanged)' : notesFile ? `CHANGELOG [${version}]` : 'auto-generated'}`,
+);
 console.log(`  assets  (${assets.length})`);
 for (const p of assets) console.log(`            ${p.split(/[\\/]/).pop()}`);
 console.log(`\n  gh ${ghArgs.join(' ')}\n`);
@@ -170,6 +176,8 @@ if (dryRun) {
 try {
   execFileSync('gh', ghArgs, { cwd: root, stdio: 'inherit' });
 } catch {
-  fail('gh failed. If the tag was created at the wrong commit, `git push --follow-tags` first (the release should sit on the pushed tag).');
+  fail(
+    'gh failed. If the tag was created at the wrong commit, `git push --follow-tags` first (the release should sit on the pushed tag).',
+  );
 }
 console.log(`\n✓ Published ${tag} to GitHub.`);

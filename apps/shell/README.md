@@ -149,6 +149,55 @@ The self-contained _server_ bundle (`dist/server/`) is still Windows-shaped
 (`node.exe` + `.bat`); a Linux server bundle isn't produced yet. The server itself
 runs on Linux via `pnpm --filter @mara/server start`.
 
+### macOS
+
+Same crate again, built **on a Mac** (Tauri can't cross-compile the webview, and the
+macOS SDK and `codesign` only exist there). `tauri.macos.conf.json` is merged in on Mac
+builds: it turns the bundler on for `.app` and `.dmg` and ad-hoc signs the bundle
+(`signingIdentity: "-"`). The client ships as a DMG that opens to the usual window: `Mara 3`
+on the left, an Applications shortcut on the right, and an arrow between them. The window's
+background is `src-tauri/dmg/background.tiff` (1x and 2x in one file, for Retina), drawn by
+`scripts/generate-dmg-background.ps1`. Rerun that script after changing the icon positions
+in `bundle.macOS.dmg`, so the arrow still lines up.
+
+**From the Windows dev box, over SSH.** `pnpm package:all` runs `package:macos --optional`,
+which streams the working tree to the Mac, builds a universal (Apple Silicon + Intel) app and
+its DMG there, and stages the DMG as `dist/prebuilt/Mara3-macos-universal.dmg`. `zip-dist`
+ships it as-is (`Mara3-macos-universal-v<version>-….dmg` plus a stable `-latest.dmg`), and it
+gets the same stale-build check as the Linux tarball. Without a reachable Mac, the step skips
+with a warning. One-time setup:
+
+- On the Mac: Xcode command-line tools (`xcode-select --install`), Rust with **both**
+  targets (`rustup target add aarch64-apple-darwin x86_64-apple-darwin`), Node ≥ 20 and pnpm.
+- Enable **Remote Login** (System Settings → General → Sharing) and set up key-based SSH
+  from Windows. The build runs with `BatchMode`, so it never answers a password prompt;
+  connect once by hand to accept the host key.
+- Set `MARA_MAC_HOST` (e.g. `me@mac-mini.local` or an `~/.ssh/config` alias).
+  `MARA_MAC_DIR` overrides the Mac-side build dir (default `$HOME/mara-macos-build`;
+  `node_modules` and `target` persist there between builds).
+- **The DMG layout is applied by scripting Finder**, so the Mac needs someone logged in to
+  the desktop (a Mac mini left at the login window won't do). The first build shows a
+  prompt on the Mac's screen asking to let `sshd` control Finder. Allow it (it's listed
+  afterwards under System Settings → Privacy & Security → Automation). If you miss the
+  prompt, the build fails with a Finder or `-1743` error. The script unsets `CI`, because
+  with `CI` set Tauri skips the layout and ships an unarranged window.
+
+On the Mac itself, a plain `tauri:build` also works: `copy-client` deploys the `.app` and the DMG
+to `dist/desktop-macos/`.
+
+How the macOS client differs:
+
+- **Settings and logs live in `~/Library/Application Support/com.mara.chat/`**, not beside
+  the executable. Writing inside the bundle would break its signature, and a quarantined
+  app runs from a read-only translocated copy. A relative `logDir` resolves there too.
+- **No in-app install.** The update banner offers the download link only, because the
+  swap replaces a single executable and a `.app` is a signed bundle.
+- **Gatekeeper.** The app is ad-hoc signed, not notarized, so the first launch of a
+  downloaded copy is blocked: use System Settings → Privacy & Security → **Open Anyway**, or
+  `xattr -dr com.apple.quarantine "Mara 3.app"`. Notarizing needs an Apple Developer ID. Set
+  `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` on the Mac and
+  Tauri signs and notarizes during the build.
+
 ### Android
 
 `pnpm package:all` also builds a **signed release APK** (arm64) when the Android toolchain is
