@@ -54,6 +54,10 @@ export interface ChatLine {
    *  wholesale from each `reaction` frame (and seeded from backlog), never patched, so a
    *  missed frame can't leave a count drifting. Channels only, like `replyTo`. */
   reactions?: Reaction[];
+  /** Set on a channel's "joined" / "lost connection" system lines: whose presence changed
+   *  and how. Lets the client collapse a run of reconnect churn (see `MaraClient`'s
+   *  `presenceLine`) instead of matching on display text. */
+  presence?: { token: Token; event: 'join' | 'lost' };
 }
 
 /**

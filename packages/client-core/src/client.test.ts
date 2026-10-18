@@ -568,6 +568,44 @@ describe('presence system messages', () => {
     b.disconnect();
   });
 
+  it('collapses reconnect churn to the oldest lost connection and the newest join', async () => {
+    const b = makeClient('bob');
+    await connected(b);
+    b.joinChannel('lobby');
+    const { token: lobby } = await waitEvent(b, 'channelJoined');
+
+    // Feed presence frames straight in for a flaky user, so the run is fully deterministic.
+    const feed = (msg: object) => (b as unknown as { handle(m: object): void }).handle(msg);
+    const flaky = 999_999;
+    const join = (at: number) =>
+      feed({ type: 'userJoinedChannel', token: flaky, channelToken: lobby, at });
+    const lost = (at: number) => feed({ type: 'userDisconnect', token: flaky, reason: 'lost', at });
+    const presence = () =>
+      (get(b.channelMessages).get(lobby) ?? [])
+        .filter((l) => l.presence?.token === flaky)
+        .map((l) => `${l.presence?.event}@${l.at}`);
+
+    join(1);
+    lost(2); // a first drop always shows, after the arrival it follows
+    expect(presence()).toEqual(['join@1', 'lost@2']);
+    join(3);
+    lost(4); // a repeat drop folds into the oldest one, taking the stale join with it
+    expect(presence()).toEqual(['lost@2']);
+    join(5);
+    join(6); // only the newest join survives
+    expect(presence()).toEqual(['lost@2', 'join@6']);
+
+    // A message ends the run: churn after it starts over with lines of its own.
+    b.sendChat(lobby, 'hello');
+    await waitEvent(b, 'chat');
+    lost(7);
+    join(8);
+    lost(9);
+    expect(presence()).toEqual(['lost@2', 'join@6', 'lost@7']);
+
+    b.disconnect();
+  });
+
   it('updates the roster and own self on a setProfile broadcast', async () => {
     const a = makeClient('alice');
     const b = makeClient('bob');

@@ -466,7 +466,11 @@ export class MaraClient {
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) {
             channelTokens.push(channelToken);
-            this.systemLine(channelToken, text, msg.at);
+            // A dropped connection collapses with the user's other reconnect churn; a quit
+            // (or an unknown reason) is a real goodbye and always gets its own line.
+            if (msg.reason === 'lost')
+              this.presenceLine(channelToken, msg.token, 'lost', text, msg.at);
+            else this.systemLine(channelToken, text, msg.at);
           }
         }
         // Also note it in any private conversation with them, so a PM clearly
@@ -598,7 +602,13 @@ export class MaraClient {
 
       case 'userJoinedChannel':
         this.mutateMembers(msg.channelToken, (m) => m.add(msg.token));
-        this.systemLine(msg.channelToken, `${this.nameOf(msg.token)} joined`, msg.at);
+        this.presenceLine(
+          msg.channelToken,
+          msg.token,
+          'join',
+          `${this.nameOf(msg.token)} joined`,
+          msg.at,
+        );
         this.events.emit('userJoinedChannel', { token: msg.token, channelToken: msg.channelToken });
         return;
 
@@ -823,6 +833,56 @@ export class MaraClient {
 
   private systemLine(channelToken: Token, text: string, at?: number): void {
     this.pushLine(this._channelMessages, channelToken, { kind: 'system', from: null, text, at });
+  }
+
+  /**
+   * A "joined" / "lost connection" line, collapsed against the presence lines already
+   * posted since the channel last saw a message. Someone on a flaky connection would
+   * otherwise fill a quiet channel with drop/rejoin pairs; within that run we keep only
+   * their *oldest* lost connection (when they first went) and their *newest* join (that
+   * they're back now). A drop after that join removes it again rather than adding a second
+   * lost line, so the run never claims they're here while they're gone. A chat or emote
+   * ends the run — churn on either side of a message is reported separately.
+   */
+  private presenceLine(
+    channelToken: Token,
+    token: Token,
+    event: 'join' | 'lost',
+    text: string,
+    at?: number,
+  ): void {
+    this._channelMessages.update((map) => {
+      const lines = map.get(channelToken) ?? [];
+      // The run: trailing lines back to the last message (or a cleared-backlog marker).
+      let start = lines.length;
+      while (start > 0) {
+        const kind = lines[start - 1]?.kind;
+        if (kind === 'chat' || kind === 'emote' || kind === 'cleared') break;
+        start--;
+      }
+      const theirs = (i: number, e: 'join' | 'lost') => {
+        const p = lines[i]?.presence;
+        return i >= start && p?.token === token && p.event === e;
+      };
+      const firstLost = lines.findIndex((_, i) => theirs(i, 'lost'));
+      // Drop superseded joins: every earlier one on a new join, or those after the oldest
+      // lost connection on a repeat drop (that lost line already says they went).
+      const kept = lines.filter(
+        (_, i) => !(theirs(i, 'join') && (event === 'join' || (firstLost >= 0 && i > firstLost))),
+      );
+      if (event === 'join' || firstLost < 0) {
+        kept.push({
+          id: ++this.lineSeq,
+          kind: 'system',
+          from: null,
+          text,
+          at: at ?? this.now(),
+          presence: { token, event },
+        });
+        if (kept.length > this.historyLimit) kept.splice(0, kept.length - this.historyLimit);
+      }
+      return new Map(map).set(channelToken, kept);
+    });
   }
 
   /**

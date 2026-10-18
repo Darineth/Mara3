@@ -4,7 +4,15 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.41] - unreleased
 
-_In development._
+### Changed
+
+- **A flaky connection no longer floods the channel.** Someone whose connection keeps
+  dropping used to leave a "lost connection" / "joined" pair in every channel they were in,
+  each time — hours of them in a quiet room. Between messages, those now collapse to the
+  first time they lost connection and the latest time they joined, or just the lost
+  connection while they're still gone. Anyone leaving on purpose still gets their own
+  "left" line, and a message in the channel starts a fresh run, so churn either side of a
+  conversation is still shown where it happened.
 
 ## [3.0.40] - 2026-09-30
 
