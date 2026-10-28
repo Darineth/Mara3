@@ -568,6 +568,36 @@ describe('presence system messages', () => {
     b.disconnect();
   });
 
+  it('applies silent presence to rosters and members without a line', async () => {
+    const b = makeClient('bob');
+    await connected(b);
+    b.joinChannel('lobby');
+    const { token: lobby } = await waitEvent(b, 'channelJoined');
+
+    const feed = (msg: object) => (b as unknown as { handle(m: object): void }).handle(msg);
+    const flaky = 999_999;
+    const user = { token: flaky, name: 'flaky', color: '#cccccc', avatar: '', away: '' };
+    const lines = () => (get(b.channelMessages).get(lobby) ?? []).length;
+    const member = () => get(b.channels).get(lobby)?.members.has(flaky) ?? false;
+    const before = lines();
+
+    // A muted reconnect: no lines, but they're back in the roster and the channel's members —
+    // missing this left half the room invisible until a reload.
+    feed({ type: 'userConnect', user, silent: true });
+    feed({ type: 'userJoinedChannel', token: flaky, channelToken: lobby, at: 1, silent: true });
+    expect(get(b.users).has(flaky)).toBe(true);
+    expect(member()).toBe(true);
+    expect(lines()).toBe(before);
+
+    // And a muted drop takes them out again, still without a line.
+    feed({ type: 'userDisconnect', token: flaky, reason: 'lost', at: 2, silent: true });
+    expect(get(b.users).has(flaky)).toBe(false);
+    expect(member()).toBe(false);
+    expect(lines()).toBe(before);
+
+    b.disconnect();
+  });
+
   it('collapses reconnect churn to the oldest lost connection and the newest join', async () => {
     const b = makeClient('bob');
     await connected(b);

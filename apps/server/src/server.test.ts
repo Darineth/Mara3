@@ -1438,29 +1438,35 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
 
     // The first cycle is announced in full — the room has to see them arrive and go.
     await silentCycle();
+    expect((await bob.waitFor('userConnect')).silent).toBeUndefined();
     const j1 = await bob.waitFor('userJoinedChannel');
-    await bob.waitFor('userDisconnect');
+    expect(j1.silent).toBeUndefined();
+    expect((await bob.waitFor('userDisconnect')).silent).toBeUndefined();
 
-    // Now flagged unreliable: the next silent cycle is fully muted. Prove it by connecting a
-    // DIFFERENT user right after — bob's next join is that user, not the (muted) flapper.
+    // Now flagged unreliable: the next cycle is muted — every frame still arrives, so bob's
+    // rosters keep up, but each is flagged silent so nothing announces it.
     await silentCycle();
-    const charlie = await TestClient.connect(u);
-    const c = await login(charlie, 'charlie');
-    const nextJoin = await bob.waitFor('userJoinedChannel');
-    expect(nextJoin.token).toBe(c.token);
-    expect(nextJoin.token).not.toBe(j1.token);
-    charlie.close();
-    await bob.waitFor('userDisconnect'); // charlie leaves (reliable → still announced)
+    const c2 = await bob.waitFor('userConnect');
+    expect(c2.user.token).toBe(j1.token);
+    expect(c2.silent).toBe(true);
+    const j2 = await bob.waitFor('userJoinedChannel');
+    expect(j2.token).toBe(j1.token);
+    expect(j2.silent).toBe(true);
+    const d2 = await bob.waitFor('userDisconnect');
+    expect(d2.token).toBe(j1.token);
+    expect(d2.silent).toBe(true);
 
     // The flapper reconnects (still muted) and finally SPEAKS — which reveals it: bob sees
-    // its join, then its message.
+    // its silent join, then the announced one, then its message.
     const star = await TestClient.connect(u);
     const sid = await login(star, 'star', '#cccccc', 'star-key');
     const lobby = await star.waitFor('channelJoined');
     expect(sid.token).toBe(j1.token); // same identity throughout
+    expect((await bob.waitFor('userJoinedChannel')).silent).toBe(true);
     star.send({ type: 'chat', channelToken: lobby.channelToken, text: 'hello at last' });
     const reveal = await bob.waitFor('userJoinedChannel');
     expect(reveal.token).toBe(j1.token);
+    expect(reveal.silent).toBeUndefined();
     const msg = await bob.waitFor('chat');
     expect(msg.text).toBe('hello at last');
     expect(msg.from).toBe(j1.token);
@@ -1488,23 +1494,25 @@ describe('unreliable-client suppression (silent join/leave churn)', () => {
     const gone = await bob.waitFor('userDisconnect');
     expect(gone.token).toBe(sid.token);
 
-    // Back again without a word — muted, even though the last session chatted. Prove it the
-    // same way: the next join bob sees is a different user's.
+    // Back again without a word — muted, even though the last session chatted: the join and
+    // the drop both reach bob flagged silent.
     await silentCycle();
-    const charlie = await TestClient.connect(u);
-    const c = await login(charlie, 'charlie');
-    const nextJoin = await bob.waitFor('userJoinedChannel');
-    expect(nextJoin.token).toBe(c.token);
-    expect(nextJoin.token).not.toBe(sid.token);
-    charlie.close();
+    const j = await bob.waitFor('userJoinedChannel');
+    expect(j.token).toBe(sid.token);
+    expect(j.silent).toBe(true);
+    const d = await bob.waitFor('userDisconnect');
+    expect(d.token).toBe(sid.token);
+    expect(d.silent).toBe(true);
 
     // Speaking reveals it again — the mute lasts exactly as long as the silence.
     const back = await TestClient.connect(u);
     await login(back, 'star', '#cccccc', 'star-key');
     const room = await back.waitFor('channelJoined');
+    expect((await bob.waitFor('userJoinedChannel')).silent).toBe(true);
     back.send({ type: 'chat', channelToken: room.channelToken, text: 'still here' });
     const reveal = await bob.waitFor('userJoinedChannel');
     expect(reveal.token).toBe(sid.token);
+    expect(reveal.silent).toBeUndefined();
     expect((await bob.waitFor('chat')).text).toBe('still here');
     back.close();
     bob.close();

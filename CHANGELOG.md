@@ -4,7 +4,14 @@ All notable changes to Mara 3 are documented here.
 
 ## [3.0.42] - unreleased
 
-_In development._
+### Fixed
+
+- **People no longer vanish from the member list after a reconnect.** When a connection
+  drops, the server quietens anyone who has dropped before without saying anything since, so
+  their rejoin doesn't spam the room. That quiet rejoin used to skip telling clients they
+  were back at all, so anyone who stayed connected (the host's own client, say, through an
+  internet outage) saw them leave and never return until a reload. Those rejoins are now
+  sent flagged as silent: the member list updates, and only the "joined" line is skipped.
 
 ## [3.0.41] - 2026-10-18
 

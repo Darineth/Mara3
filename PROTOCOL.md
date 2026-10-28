@@ -47,11 +47,11 @@ with direction-appropriate shapes.
 | ------------------- | --------------------------------------- | --------------------------------------------- |
 | `welcome`           | `self, sessionToken, motd, server?, limits?` | Login accepted; `self` is your `UserInfo`. |
 | `loginDenied`       | `reason`                                | Login rejected (terminal; no auto-reconnect). |
-| `userConnect`       | `user`                                  | Someone logged in.                            |
-| `userDisconnect`    | `token, at, reason?`                    | Someone left (`quit`) or dropped (`lost`).    |
+| `userConnect`       | `user, silent?`                         | Someone logged in.                            |
+| `userDisconnect`    | `token, at, reason?, silent?`           | Someone left (`quit`) or dropped (`lost`).    |
 | `channelJoined`     | `channelToken, channel, users, history` | You joined; carries the roster + backlog.     |
 | `channelLeft`       | `channelToken`                          | You left a channel.                           |
-| `userJoinedChannel` | `token, channelToken`                   | Someone joined a channel you're in.           |
+| `userJoinedChannel` | `token, channelToken, silent?`          | Someone joined a channel you're in.           |
 | `userLeftChannel`   | `token, channelToken`                   | Someone left a channel you're in.             |
 | `chat`              | `id, from, channelToken, text, at, replyTo?` | A channel message (`at` = server send time). |
 | `emote`             | `id, from, channelToken, text, at, replyTo?` | A channel action.                        |
@@ -148,6 +148,19 @@ as a goodbye would announce departures for users who are about to return.
 
 `reason` is a free-form string and optional — an older server sends none, and a client that
 doesn't recognise the value should fall back to neutral wording rather than reject the frame.
+
+### Silent presence
+
+A client that keeps dropping without saying anything is flagged *unreliable*
+(`MARA_UNRELIABLE_DROPS`), and its connect / join / disconnect notices are muted until it
+next speaks — at which point the server re-sends its `userConnect` and a `userJoinedChannel`
+per channel, unflagged, so the room sees it arrive.
+
+Muted frames are still **sent**, with `silent: true`. A client must apply them to its roster
+and member lists exactly as usual and only skip the notice (and any log line). Dropping them
+instead would desync everyone who stayed connected: they'd see the user leave and never see
+them come back, until a fresh `channelJoined` snapshot. `silent` is optional; absent means
+announce as normal.
 
 ## Message backlog
 

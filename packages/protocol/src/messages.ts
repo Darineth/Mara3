@@ -255,9 +255,18 @@ const loginDenied = z.object({
   code: z.string().max(32).optional(),
 });
 
+/**
+ * Set on a presence event (`userConnect`, `userDisconnect`, `userJoinedChannel`) the server
+ * wants kept quiet — an unreliable client's reconnect churn. The client still applies the
+ * roster/membership change but shows no notice for it, so muting the noise never leaves
+ * someone missing from (or lingering in) a member list. Optional: absent means announce.
+ */
+const presenceSilent = z.boolean().optional();
+
 const userConnect = z.object({
   type: z.literal('userConnect'),
   user: userInfoSchema,
+  silent: presenceSilent,
 });
 
 /** Server send time (epoch ms) for the system line a client derives from this event, so
@@ -279,6 +288,7 @@ const userDisconnect = z.object({
    * Absent from older servers, where a client should keep its existing wording.
    */
   reason: z.string().max(16).optional(),
+  silent: presenceSilent,
 });
 
 /** Longest quoted excerpt carried on a reply. Enough to recognise the message being
@@ -366,6 +376,7 @@ const userJoinedChannel = z.object({
   token: tokenSchema,
   channelToken: tokenSchema,
   at: serverEventAt,
+  silent: presenceSilent,
 });
 
 const userLeftChannel = z.object({

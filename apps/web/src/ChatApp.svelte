@@ -594,6 +594,8 @@
       // Membership changes, by name (matching what the chat view shows). Our own join
       // arrives as channelJoined (deduped); others arrive as userJoinedChannel /
       // userLeftChannel, and a disconnect as userDisconnect (per channel they were in).
+      // `silent` ones (the server muting an unreliable client's churn) aren't shown in
+      // the chat view, so they're not logged either.
       client.events.on('channelJoined', (ch) => {
         if (loggedJoins.has(ch.name)) return;
         loggedJoins.add(ch.name);
@@ -605,15 +607,15 @@
         loggedJoins.delete(e.name); // a later rejoin should log again
         void nativeLog(e.name, `${$self?.name ?? 'You'} left`);
       }),
-      client.events.on(
-        'userJoinedChannel',
-        (e) => void nativeLog(channelFolder(e.channelToken), `${nameOf(e.token)} joined`),
-      ),
+      client.events.on('userJoinedChannel', (e) => {
+        if (!e.silent) void nativeLog(channelFolder(e.channelToken), `${nameOf(e.token)} joined`);
+      }),
       client.events.on(
         'userLeftChannel',
         (e) => void nativeLog(channelFolder(e.channelToken), `${nameOf(e.token)} left`),
       ),
       client.events.on('userDisconnect', (e) => {
+        if (e.silent) return;
         for (const token of e.channelTokens) {
           void nativeLog(channelFolder(token), `${nameOf(e.token)} disconnected`);
         }

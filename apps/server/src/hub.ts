@@ -276,7 +276,7 @@ export class Hub {
 
   /**
    * A user just interacted for the first time this session: clear their churn count, and if
-   * they were muted as unreliable, announce the presence that was suppressed — their
+   * they were muted as unreliable, announce the presence that was sent silently — their
    * connect, and a join for each channel they're in — so everyone sees them now. No-op when
    * they weren't muted (the common case).
    */
@@ -336,12 +336,14 @@ export class Hub {
       rec.unreliable = rec.unreliable || rec.drops >= this.cfg.unreliableDrops;
       this.quiet.set(token, rec);
     }
-    if (muted) {
-      this.log.debug({ user: session.info.name }, 'disconnected (muted — unreliable)');
-      return;
-    }
-    this.log.info({ user: session.info.name, flapping: wasFlapping, reason }, 'disconnected');
-    this.broadcastAll({ type: 'userDisconnect', token, at: this.now(), reason }, token);
+    // Muted still sends the frame, flagged silent: clients must drop them from their member
+    // lists either way, or a quiet mute leaves a ghost behind (and a quiet return, a hole).
+    if (muted) this.log.debug({ user: session.info.name }, 'disconnected (muted — unreliable)');
+    else this.log.info({ user: session.info.name, flapping: wasFlapping, reason }, 'disconnected');
+    this.broadcastAll(
+      { type: 'userDisconnect', token, at: this.now(), reason, ...(muted ? { silent: true } : {}) },
+      token,
+    );
   }
 
   // -- dispatch -------------------------------------------------------------
@@ -485,8 +487,12 @@ export class Hub {
       at: this.now(),
     });
     // A client already flagged unreliable (flap-y, never interacts) reconnects silently —
-    // no connect/join churn — until it actually says something (see revealIfUnreliable).
-    if (!this.isUnreliable(token)) this.broadcastAll({ type: 'userConnect', user: info }, token);
+    // no connect/join notices — until it actually says something (see revealIfUnreliable).
+    // The frames still go out, flagged silent, so everyone's rosters stay in step.
+    this.broadcastAll(
+      { type: 'userConnect', user: info, ...(this.isUnreliable(token) ? { silent: true } : {}) },
+      token,
+    );
 
     // Drop everyone into the shared default channel automatically.
     if (this.cfg.defaultChannel) this.joinChannelByName(session, this.cfg.defaultChannel);
@@ -509,9 +515,10 @@ export class Hub {
 
     // Membership is per-user, so every window of this user reflects the join.
     for (const conn of session.connections) this.sendChannelSnapshot(conn, channel);
-    // Only announce a genuinely new membership (idempotent on rejoin/resume), and stay
-    // silent for an unreliable client until it interacts (revealIfUnreliable announces then).
-    if (!alreadyMember && !this.isUnreliable(session.info.token)) {
+    // Only announce a genuinely new membership (idempotent on rejoin/resume). An unreliable
+    // client's join is flagged silent — members update, no notice — until it interacts
+    // (revealIfUnreliable announces it then).
+    if (!alreadyMember) {
       this.broadcastChannel(
         channel.token,
         {
@@ -519,6 +526,7 @@ export class Hub {
           token: session.info.token,
           channelToken: channel.token,
           at: this.now(),
+          ...(this.isUnreliable(session.info.token) ? { silent: true } : {}),
         },
         session.info.token,
       );

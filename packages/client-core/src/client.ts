@@ -462,10 +462,14 @@ export class MaraClient {
             : msg.reason === 'lost'
               ? `${name} lost connection`
               : `${name} disconnected`;
+        // A silent one (the server muting an unreliable client's churn) still removes them
+        // below — just without a line saying so.
+        const silent = msg.silent === true;
         const channelTokens: Token[] = [];
         for (const [channelToken, channel] of get(this._channels)) {
           if (channel.members.has(msg.token)) {
             channelTokens.push(channelToken);
+            if (silent) continue;
             // A dropped connection collapses with the user's other reconnect churn; a quit
             // (or an unknown reason) is a real goodbye and always gets its own line.
             if (msg.reason === 'lost')
@@ -475,7 +479,7 @@ export class MaraClient {
         }
         // Also note it in any private conversation with them, so a PM clearly
         // shows the other party left.
-        if (get(this._privateMessages).has(msg.token)) {
+        if (!silent && get(this._privateMessages).has(msg.token)) {
           this.pushLine(this._privateMessages, msg.token, {
             kind: 'system',
             from: null,
@@ -484,7 +488,7 @@ export class MaraClient {
           });
         }
         this.removeUser(msg.token);
-        this.events.emit('userDisconnect', { token: msg.token, channelTokens });
+        this.events.emit('userDisconnect', { token: msg.token, channelTokens, silent });
         return;
       }
 
@@ -600,17 +604,26 @@ export class MaraClient {
         return;
       }
 
-      case 'userJoinedChannel':
+      case 'userJoinedChannel': {
         this.mutateMembers(msg.channelToken, (m) => m.add(msg.token));
-        this.presenceLine(
-          msg.channelToken,
-          msg.token,
-          'join',
-          `${this.nameOf(msg.token)} joined`,
-          msg.at,
-        );
-        this.events.emit('userJoinedChannel', { token: msg.token, channelToken: msg.channelToken });
+        // Silent: the server is muting an unreliable client's churn — a member, no notice.
+        const silent = msg.silent === true;
+        if (!silent) {
+          this.presenceLine(
+            msg.channelToken,
+            msg.token,
+            'join',
+            `${this.nameOf(msg.token)} joined`,
+            msg.at,
+          );
+        }
+        this.events.emit('userJoinedChannel', {
+          token: msg.token,
+          channelToken: msg.channelToken,
+          silent,
+        });
         return;
+      }
 
       case 'userLeftChannel':
         // Emit the system line before removing the member so nameOf still resolves.

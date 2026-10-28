@@ -115,14 +115,16 @@ export interface ClientEvents {
   error: { message: string };
   userConnect: UserInfo;
   /** `channelTokens` are the channels the user was in at disconnect (captured before
-   *  removal), so listeners can note the departure per channel. */
-  userDisconnect: { token: Token; channelTokens: Token[] };
+   *  removal), so listeners can note the departure per channel. `silent` means the server
+   *  muted it (an unreliable client's churn): state changed, but nothing should announce it. */
+  userDisconnect: { token: Token; channelTokens: Token[]; silent: boolean };
   channelJoined: ChannelState;
   /** `reason` is 'left' for a real departure (we left / were removed — log-worthy) vs
    *  'replaced' when the server reassigned the channel a new token (internal churn, not a
    *  user action). `name` is the channel name, captured before the token is dropped. */
   channelLeft: { channelToken: Token; name: string; reason: 'left' | 'replaced' };
-  userJoinedChannel: { token: Token; channelToken: Token };
+  /** `silent` as for `userDisconnect`: a member now, but not one to announce. */
+  userJoinedChannel: { token: Token; channelToken: Token; silent: boolean };
   userLeftChannel: { token: Token; channelToken: Token };
   /** A user changed their display name and/or colour mid-session. */
   userProfile: UserInfo;
